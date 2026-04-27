@@ -1,0 +1,22 @@
+# Core Frameworks
+python-telegram-bot==22.7
+httpx==0.28.1
+
+# Database (MongoDB Async)
+motor==3.7.1
+pymongo==4.17.0
+
+# --- Inteligence Artificial ---
+google-generativeai==0.8.6
+
+# --- & Scraping ---
+playwright==1.58.0
+beautifulsoup4==4.12.3
+
+# --- Estructura & Configuración ---
+pydantic==2.13.3
+pydantic-settings==2.14.0
+python-dotenv==1.2.2
+
+# --- Utilidades ---
+loguru==0.7.2

@@ -1,0 +1,25 @@
+services:
+  app:
+    build: ./app
+    container_name: workana_bot
+    restart: always
+    volumes:
+      - ./app:/usr/src/app
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+    # Mantiene el contenedor activo para desarrollo
+    tty: true 
+
+  mongodb:
+    image: mongo:8.0
+    container_name: workana_db
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/db:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS}
