@@ -4,6 +4,7 @@ from loguru import logger
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from scraper import scraper_service
 
 # Configuración de Logs
 logger.add("logs/bot.log", rotation="10 MB", retention="10 days", level="INFO")
@@ -12,6 +13,8 @@ logger.add("logs/bot.log", rotation="10 MB", retention="10 days", level="INFO")
 load_dotenv()
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 ADMIN_ID = os.getenv('MY_TELEGRAM_ID')
+
+logger.add("logs/bot.log", rotation="10 MB", retention="10 days", level="INFO")
 
 # Middleware de Seguridad
 async def is_admin(update: Update) -> bool:
@@ -52,10 +55,23 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         logger.info("No es valido el comando...")
 
-async def lista(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update): return  # noqa: E701
+
     if update.message:    
-        await update.message.reply_text("📂 No hay proyectos analizados pendientes de aprobación.")
+        await update.message.reply_text("🔍 Consultando nuevos proyectos...")
+
+        projects = await scraper_service.get_projects()
+        if not projects:
+                await update.message.reply_text("📭 No se encontraron proyectos nuevos.")
+                return
+
+        # Por ahora solo listamos los títulos (Dummies)
+        msg = "✅ **Proyectos detectados:**\n\n"
+        for p in projects:
+            msg += f"🔹 {p['title']} - {p['budget']}\n"
+        
+        await update.message.reply_text(msg, parse_mode='Markdown')
     else:
         logger.info("No es valido el comando...")
 
@@ -70,7 +86,7 @@ if __name__ == '__main__':
         # Registro de comandos
         application.add_handler(CommandHandler('start', start))
         application.add_handler(CommandHandler('status', status))
-        application.add_handler(CommandHandler('lista', lista))
+        application.add_handler(CommandHandler('lista', fetch_projects))
         
         # Handler para mensajes de texto (opcional)
         application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), start))

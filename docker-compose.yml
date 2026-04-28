@@ -5,6 +5,7 @@ services:
     restart: always
     volumes:
       - ./app:/usr/src/app
+      - ./state.json:/usr/src/app/state.json
     env_file:
       - .env
     depends_on:
