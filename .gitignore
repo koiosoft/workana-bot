@@ -6,6 +6,7 @@ bin/
 lib/
 include/
 data/db
+user_data_clean/
 
 # Archivos de caché de Python
 __pycache__/
