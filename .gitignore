@@ -5,6 +5,7 @@ env/
 bin/
 lib/
 include/
+data/db
 
 # Archivos de caché de Python
 __pycache__/
