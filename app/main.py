@@ -11,6 +11,22 @@ TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 ADMIN_ID = os.getenv('MY_TELEGRAM_ID')
 
 logger.add("logs/bot.log", rotation="10 MB", retention="10 days", level="INFO")
+TELEGRAM_MAX_MESSAGE = 4000
+
+async def send_long_message(update: Update, text: str):
+    if not update.message:
+        return
+
+    current = ""
+    for line in text.splitlines(keepends=True):
+        if len(current) + len(line) > TELEGRAM_MAX_MESSAGE:
+            await update.message.reply_text(current)
+            current = line
+        else:
+            current += line
+
+    if current:
+        await update.message.reply_text(current)
 
 # Middleware de Seguridad
 async def is_admin(update: Update) -> bool:
@@ -63,12 +79,11 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("📭 No se encontraron proyectos nuevos.")
                 return
 
-        # Por ahora solo listamos los títulos (Dummies)
-        msg = "✅ **Proyectos detectados:**\n\n"
+        msg = "✅ Proyectos detectados:\n\n"
         for p in projects:
             msg += f"🔹 {p['title']} - {p['budget']}\n"
-        
-        await update.message.reply_text(msg, parse_mode='Markdown')
+
+        await send_long_message(update, msg)
     else:
         logger.info("No es valido el comando...")
 

@@ -1,7 +1,7 @@
 import re
 import os
 from datetime import datetime
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from loguru import logger
 from ..base import ScraperPort
 
@@ -21,6 +21,7 @@ class WorkanaScraperAdapter(ScraperPort):
                 },
             }
             self.pub_filter = os.getenv("WORKANA_PUBLICATION_FILTER", "1d")
+            self.max_pages = int(os.getenv("WORKANA_MAX_PAGES", "30"))
             self.jobs_url = (
             f"https://www.workana.com/jobs?category=it-programming"
             f"&language=es"
@@ -42,6 +43,7 @@ class WorkanaScraperAdapter(ScraperPort):
     async def get_projects(self) -> list:
         logger.info(f"🕸️ Iniciando scraping exhaustivo (Filtro: {self.pub_filter})...")
         all_projects = []
+        max_projects_first_page = None
         
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -60,13 +62,19 @@ class WorkanaScraperAdapter(ScraperPort):
             page = await context.new_page()
             
             try:
-                # Vamos a recorrer hasta 5 páginas para asegurar que no se escape nada
-                for current_page in range(1, 6):
+                # Recorremos páginas de forma dinámica con un tope de seguridad.
+                current_page = 1
+                while current_page <= self.max_pages:
                     url = f"{self.jobs_url}&page={current_page}"
                     logger.info(f"🔍 Navegando a página {current_page}...")
                     logger.info(f"🔍 URL=  {url}")
-                    
-                    await page.goto(url, wait_until="networkidle", timeout=60000)
+
+                    try:
+                        await page.goto(url, wait_until="networkidle", timeout=60000)
+                    except PlaywrightTimeoutError:
+                        logger.error(f"⏱️ Timeout navegando página {current_page}. Se cierra el flujo.")
+                        break
+
                     if current_page == 1:
                         is_logged_in = await self._is_logged_in(page)
                         logger.info(f"🔎 Sesión activa detectada: {is_logged_in}")
@@ -84,12 +92,29 @@ class WorkanaScraperAdapter(ScraperPort):
                     await self.auto_scroll(page)
                     
                     # Esperar a que el contenedor de proyectos esté presente
-                    await page.wait_for_selector(".project-item", timeout=15000)
+                    try:
+                        await page.wait_for_selector(".project-item", timeout=15000)
+                    except PlaywrightTimeoutError:
+                        logger.error(f"⏱️ Timeout esperando proyectos en página {current_page}. Se cierra el flujo.")
+                        break
                     job_elements = await page.query_selector_all(".project-item")
                     
                     if not job_elements:
                         logger.info(f"🏁 No se encontraron más proyectos en la página {current_page}.")
                         break
+
+                    page_projects_count = len(job_elements)
+                    stop_after_current_page = False
+                    if current_page == 1:
+                        max_projects_first_page = page_projects_count
+                        logger.info(f"📌 Referencia de paginación: {max_projects_first_page} proyectos en página 1.")
+                    elif max_projects_first_page and page_projects_count < max_projects_first_page:
+                        stop_after_current_page = True
+                        logger.info(
+                            "🏁 Página con menos proyectos que la primera "
+                            f"({page_projects_count} < {max_projects_first_page}). "
+                            "No se consultarán más páginas."
+                        )
 
                     for el in job_elements:
                         # 1. Título y Link
@@ -105,7 +130,8 @@ class WorkanaScraperAdapter(ScraperPort):
                         
                         if title_el and link_el:
                             title = (await title_el.inner_text()).strip()
-                            link = "https://www.workana.com" + await link_el.get_attribute("href")
+                            href = await link_el.get_attribute("href")
+                            link = f"https://www.workana.com{href}" if href else "N/A"
                             budget = (await budget_el.inner_text()).strip() if budget_el else "N/A"
                             
                             # Regex para limpiar la fecha y las propuestas
@@ -120,6 +146,16 @@ class WorkanaScraperAdapter(ScraperPort):
                                 "bids": bids_match.group(1) if bids_match else "0",
                                 "extracted_at": datetime.utcnow().isoformat()
                             })
+
+                    if stop_after_current_page:
+                        break
+
+                    current_page += 1
+
+                if current_page > self.max_pages:
+                    logger.warning(
+                        f"⚠️ Se alcanzó el tope de seguridad WORKANA_MAX_PAGES={self.max_pages}."
+                    )
 
                 # Guardamos una "foto" de la sesión en el JSON por si acaso
                 await context.storage_state(path=self.state_file)
