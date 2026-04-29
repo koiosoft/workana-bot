@@ -10,6 +10,9 @@ user_data_clean/
 app/browser_data
 app/logs
 state.json
+app/debug_screenshot.png
+app/debug_state_check.png
+bot_check.png
 
 # Archivos de caché de Python
 __pycache__/
