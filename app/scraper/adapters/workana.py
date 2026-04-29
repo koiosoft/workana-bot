@@ -1,4 +1,4 @@
-import random
+import re
 import os
 from datetime import datetime
 from playwright.async_api import async_playwright
@@ -7,90 +7,128 @@ from ..base import ScraperPort
 
 class WorkanaScraperAdapter(ScraperPort):
     def __init__(self):
-            self.user_data_dir = "./browser_data"
-            self.login_url = "https://www.workana.com/login"
-            self.state_file = "state.json"
-            self.jobs_url = "https://www.workana.com/jobs?language=es&skills=angular%2Cjavascript%2Cnode-js%2Cpostgressql%2Cpython%2Creact-native%2Cvue-js"
+            self.state_file = "./state.json"
+            self.browser_profile = {
+                "user_agent": os.getenv(
+                    "WORKANA_USER_AGENT",
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                ),
+                "locale": os.getenv("WORKANA_LOCALE", "es-ES"),
+                "timezone_id": os.getenv("WORKANA_TIMEZONE", "America/Santo_Domingo"),
+                "extra_http_headers": {
+                    "Accept-Language": os.getenv("WORKANA_ACCEPT_LANGUAGE", "es-ES,es;q=0.9,en;q=0.8")
+                },
+            }
+            self.pub_filter = os.getenv("WORKANA_PUBLICATION_FILTER", "1d")
+            self.jobs_url = (
+            f"https://www.workana.com/jobs?category=it-programming"
+            f"&language=es"
+            f"&publication={self.pub_filter}"
+            f"&skills=angular%2Cnode-js%2Cpostgressql%2Cpython%2Creact-js%2Creact-native%2Cvue-js"
+            f"&subcategory=web-development"
+        )
 
-    """Adaptador para pruebas sin riesgo"""
+    async def _is_logged_in(self, page) -> bool:
+        return await page.query_selector(".user-avatar") is not None
+            
+    async def auto_scroll(self, page):
+        """Hace scroll hacia abajo para disparar la carga de elementos lazy"""
+        logger.info("🖱️ Realizando scroll para cargar todos los proyectos...")
+        for _ in range(5): # Scroll 5 veces para asegurar
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(1500) # Esperar a que carguen los nuevos items
+            
     async def get_projects(self) -> list:
-        logger.info("🕸️ Iniciando scraping en Workana...")
-        projects = []
+        logger.info(f"🕸️ Iniciando scraping exhaustivo (Filtro: {self.pub_filter})...")
+        all_projects = []
         
         async with async_playwright() as p:
-            # Lanzamos el navegador persistente (mantiene login)
-            context = await p.chromium.launch_persistent_context(
-                self.user_data_dir,
+            browser = await p.chromium.launch(
                 headless=True,
                 args=["--no-sandbox", "--disable-setuid-sandbox"]
             )
-            
+            context_kwargs = {}
+            if os.path.exists(self.state_file) and os.path.getsize(self.state_file) > 0:
+                context_kwargs["storage_state"] = self.state_file
+                logger.info(f"🔐 Cargando sesión desde {self.state_file}...")
+            else:
+                logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
+
+            context_kwargs.update(self.browser_profile)
+            context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
             
             try:
-                # 1. Navegar a la lista de proyectos
-                await page.goto(self.jobs_url, wait_until="networkidle")
-                
-                # 2. Seleccionar los contenedores de proyectos
-                # Nota: Los selectores de Workana pueden cambiar, estos son los estándar
-                job_elements = await page.query_selector_all(".project-item")
-                
-                for el in job_elements[:10]: # Limitamos a los 10 más recientes
-                    title_el = await el.query_selector(".project-title")
-                    budget_el = await el.query_selector(".values")
-                    link_el = await el.query_selector(".project-title a")
+                # Vamos a recorrer hasta 5 páginas para asegurar que no se escape nada
+                for current_page in range(1, 6):
+                    url = f"{self.jobs_url}&page={current_page}"
+                    logger.info(f"🔍 Navegando a página {current_page}...")
+                    logger.info(f"🔍 URL=  {url}")
                     
-                    if title_el and link_el:
-                        title = (await title_el.inner_text()).strip()
-                        budget = (await budget_el.inner_text()).strip() if budget_el else "N/A"
-                        link = "https://www.workana.com" + await link_el.get_attribute("href")
+                    await page.goto(url, wait_until="networkidle", timeout=60000)
+                    if current_page == 1:
+                        is_logged_in = await self._is_logged_in(page)
+                        logger.info(f"🔎 Sesión activa detectada: {is_logged_in}")
+
+                    # 📸 TOMAR FOTO DE CONTROL
+                    screenshot_path = "debug_screenshot.png"
+                    await page.screenshot(path=screenshot_path, full_page=True)
+                    logger.info(f"📸 Foto de control guardada en: {screenshot_path}")
+
+                    # OPCIONAL: Ver el contenido del HTML en el log para ver si hay 10 o 19
+                    content = await page.content()
+                    items_count = content.count('class="project-item')
+                    logger.info(f"🔍 Conteo de 'project-item' en el HTML crudo: {items_count}")
+
+                    await self.auto_scroll(page)
+                    
+                    # Esperar a que el contenedor de proyectos esté presente
+                    await page.wait_for_selector(".project-item", timeout=15000)
+                    job_elements = await page.query_selector_all(".project-item")
+                    
+                    if not job_elements:
+                        logger.info(f"🏁 No se encontraron más proyectos en la página {current_page}.")
+                        break
+
+                    for el in job_elements:
+                        # 1. Título y Link
+                        title_el = await el.query_selector(".project-title")
+                        link_el = await el.query_selector(".project-title a")
                         
-                        projects.append({
-                            "title": title,
-                            "budget": budget,
-                            "link": link,
-                            "extracted_at": datetime.utcnow()
-                        })
-                
-                logger.success(f"📊 {len(projects)} proyectos extraídos de Workana.")
+                        # 2. Detalles (Fecha y Bids)
+                        details_el = await el.query_selector(".project-main-details")
+                        details_text = await details_el.inner_text() if details_el else ""
+                        
+                        # 3. Presupuesto
+                        budget_el = await el.query_selector(".values")
+                        
+                        if title_el and link_el:
+                            title = (await title_el.inner_text()).strip()
+                            link = "https://www.workana.com" + await link_el.get_attribute("href")
+                            budget = (await budget_el.inner_text()).strip() if budget_el else "N/A"
+                            
+                            # Regex para limpiar la fecha y las propuestas
+                            date_match = re.search(r'Publicado:\s*(.*?)(?=\s*Propuestas:|$)', details_text)
+                            bids_match = re.search(r'Propuestas:\s*(\d+)', details_text)
+                            
+                            all_projects.append({
+                                "title": title,
+                                "budget": budget,
+                                "link": link,
+                                "published": date_match.group(1).strip() if date_match else "N/A",
+                                "bids": bids_match.group(1) if bids_match else "0",
+                                "extracted_at": datetime.utcnow().isoformat()
+                            })
+
+                # Guardamos una "foto" de la sesión en el JSON por si acaso
+                await context.storage_state(path=self.state_file)
+                logger.success(f"📊 Extracción completa: {len(all_projects)} proyectos totales.")
                 
             except Exception as e:
                 logger.error(f"❌ Error durante el scraping: {e}")
             finally:
                 await context.close()
+                await browser.close()
                 
-        return projects
-
-    async def login(self) -> bool:
-        """Intenta loguearse y devuelve True si tuvo éxito"""
-        email = os.getenv("WORKANA_EMAIL")
-        password = os.getenv("WORKANA_PASS")
-        
-        async with async_playwright() as p:
-            context = await p.chromium.launch_persistent_context(
-                self.user_data_dir,
-                headless=True, # En Docker siempre True
-                args=["--no-sandbox"]
-            )
-            page = context.pages[0]
-            
-            try:
-                await page.goto(self.login_url)
-                # Si ya estamos logueados (vemos el avatar), saltamos
-                if await page.query_selector(".user-avatar"):
-                    logger.info("✅ Ya existe una sesión activa.")
-                    return True
-
-                await page.fill('input[name="email"]', email)
-                await page.fill('input[name="password"]', password)
-                await page.click('button[type="submit"]')
-                
-                await page.wait_for_timeout(5000) # Esperamos que cargue el dashboard
-                
-                if await page.query_selector(".user-avatar"):
-                    logger.success("🔑 Login exitoso en Workana")
-                    return True
-                
-                return False
-            finally:
-                await context.close()
+        return all_projects

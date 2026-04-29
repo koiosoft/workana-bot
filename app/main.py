@@ -1,13 +1,9 @@
 import os
-import asyncio
 from loguru import logger
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from scraper import scraper_service
-
-# Configuración de Logs
-logger.add("logs/bot.log", rotation="10 MB", retention="10 days", level="INFO")
 
 # Carga de variables
 load_dotenv()
@@ -62,6 +58,7 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔍 Consultando nuevos proyectos...")
 
         projects = await scraper_service.get_projects()
+        logger.info(f"Se obtuvieron {len(projects)} proyectos del scraping.")
         if not projects:
                 await update.message.reply_text("📭 No se encontraron proyectos nuevos.")
                 return
