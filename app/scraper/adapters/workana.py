@@ -1,6 +1,7 @@
 import re
 import os
 from datetime import datetime
+from urllib.parse import urljoin
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from loguru import logger
 from ..base import ScraperPort
@@ -22,6 +23,8 @@ class WorkanaScraperAdapter(ScraperPort):
             }
             self.pub_filter = os.getenv("WORKANA_PUBLICATION_FILTER", "1d")
             self.max_pages = int(os.getenv("WORKANA_MAX_PAGES", "30"))
+            self.visit_project_pages = os.getenv("WORKANA_VISIT_PROJECT_PAGES", "false").lower() == "true"
+            self.max_detail_visits = int(os.getenv("WORKANA_MAX_DETAIL_VISITS", "20"))
             self.jobs_url = (
             f"https://www.workana.com/jobs?category=it-programming"
             f"&language=es"
@@ -29,6 +32,12 @@ class WorkanaScraperAdapter(ScraperPort):
             f"&skills=angular%2Cnode-js%2Cpostgressql%2Cpython%2Creact-js%2Creact-native%2Cvue-js"
             f"&subcategory=web-development"
         )
+
+    @staticmethod
+    def _normalize_project_link(href: str | None) -> str:
+        if not href:
+            return "N/A"
+        return urljoin("https://www.workana.com", href)
 
     async def _is_logged_in(self, page) -> bool:
         return await page.query_selector(".user-avatar") is not None
@@ -104,6 +113,7 @@ class WorkanaScraperAdapter(ScraperPort):
                         break
 
                     page_projects_count = len(job_elements)
+                    page_projects: list[dict] = []
                     stop_after_current_page = False
                     if current_page == 1:
                         max_projects_first_page = page_projects_count
@@ -131,21 +141,45 @@ class WorkanaScraperAdapter(ScraperPort):
                         if title_el and link_el:
                             title = (await title_el.inner_text()).strip()
                             href = await link_el.get_attribute("href")
-                            link = f"https://www.workana.com{href}" if href else "N/A"
+                            link = self._normalize_project_link(href)
                             budget = (await budget_el.inner_text()).strip() if budget_el else "N/A"
                             
                             # Regex para limpiar la fecha y las propuestas
                             date_match = re.search(r'Publicado:\s*(.*?)(?=\s*Propuestas:|$)', details_text)
                             bids_match = re.search(r'Propuestas:\s*(\d+)', details_text)
                             
-                            all_projects.append({
+                            project = {
                                 "title": title,
                                 "budget": budget,
                                 "link": link,
                                 "published": date_match.group(1).strip() if date_match else "N/A",
                                 "bids": bids_match.group(1) if bids_match else "0",
                                 "extracted_at": datetime.utcnow().isoformat()
-                            })
+                            }
+                            all_projects.append(project)
+                            page_projects.append(project)
+
+                    if self.visit_project_pages:
+                        links_to_visit = [
+                            project["link"] for project in page_projects if project.get("link") and project["link"] != "N/A"
+                        ]
+                        if links_to_visit:
+                            detail_page = await context.new_page()
+                            try:
+                                visits_limit = min(len(links_to_visit), self.max_detail_visits)
+                                logger.info(
+                                    f"🔎 Visitando detalles de proyectos ({visits_limit}/{len(links_to_visit)}) "
+                                    f"en página {current_page}..."
+                                )
+                                for link in links_to_visit[:visits_limit]:
+                                    try:
+                                        await detail_page.goto(link, wait_until="domcontentloaded", timeout=30000)
+                                        await detail_page.wait_for_timeout(700)
+                                        logger.info(f"✅ Se abrió detalle de proyecto: {link}")
+                                    except PlaywrightTimeoutError:
+                                        logger.warning(f"⏱️ Timeout al abrir detalle: {link}")
+                            finally:
+                                await detail_page.close()
 
                     if stop_after_current_page:
                         break
