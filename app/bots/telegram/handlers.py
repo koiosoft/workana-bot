@@ -24,7 +24,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⛔ Acceso denegado.")
         return
 
-    keyboard = [["/status", "/lista"], ["/procesar", "/ayuda"]]
+    keyboard = [["/status", "/lista" ],["/procesar"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
     logger.info(f"Admin {os.getenv('MY_TELEGRAM_ID')} ha iniciado el bot." )
