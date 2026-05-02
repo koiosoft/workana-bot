@@ -1,9 +1,11 @@
 import os
+import asyncio
 from loguru import logger
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
-from scraper import scraper_service
+from scraper.factory import ScraperFactory
 from database import get_projects_repository
+from intelligence.factory import get_intelligence_service
 from .messages import send_long_message
 
 
@@ -16,15 +18,6 @@ async def is_admin(update: Update) -> bool:
     return False
 
 
-def should_propose(project: dict) -> bool:
-    # Regla inicial simple. Luego se reemplaza por evaluación con IA.
-    title = (project.get("title") or "").lower()
-    blocked_terms = ("wordpress", "shopify", "wix")
-    if any(term in title for term in blocked_terms):
-        return False
-    return True
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         if update.message:
@@ -34,7 +27,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [["/status", "/lista"], ["/procesar", "/ayuda"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-    logger.info(f"Admin {os.getenv('MY_TELEGRAM_ID')} ha iniciado el bot.")
+    logger.info(f"Admin {os.getenv('MY_TELEGRAM_ID')} ha iniciado el bot." )
     if update.message:
         await update.message.reply_text(
             "🚀 **Command Center Workana Online**\n"
@@ -45,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin(update):  # noqa: E701
+    if not await is_admin(update):
         return
     if update.message:
         await update.message.reply_text(
@@ -55,7 +48,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin(update):  # noqa: E701
+    if not await is_admin(update):
         return
 
     if not update.message:
@@ -63,7 +56,9 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     projects_repository = get_projects_repository()
     await update.message.reply_text("🔍 Consultando nuevos proyectos...")
-    projects = await scraper_service.get_projects()
+    
+    scraper = ScraperFactory.get_scraper()
+    projects = await scraper.get_projects()
     logger.info(f"Se obtuvieron {len(projects)} proyectos del scraping.")
 
     if not projects:
@@ -84,38 +79,63 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin(update):  # noqa: E701
+    if not await is_admin(update):
         return
-
     if not update.message:
         return
 
+    await update.message.reply_text("🧠 Obteniendo proyectos pendientes para evaluación con IA...")
+    
     projects_repository = get_projects_repository()
-    projects = await projects_repository.claim_pending_projects(limit=20)
+    ai_service = get_intelligence_service()
+
+    # Limitamos a 5 para pruebas y evitar agotar la cuota de la API
+    projects = await projects_repository.claim_pending_projects(limit=5)
     if not projects:
-        await update.message.reply_text("📭 No hay proyectos pendientes en MongoDB.")
+        await update.message.reply_text("📭 No hay proyectos pendientes en la base de datos.")
         return
+
+    await update.message.reply_text(f"🤖 Evaluando {len(projects)} proyectos con Gemini. Esto puede tardar un momento...")
+
+    # Ejecutamos las evaluaciones de IA en paralelo
+    evaluation_tasks = [ai_service.evaluate_project(p) for p in projects]
+    evaluations = await asyncio.gather(*evaluation_tasks)
 
     proposed_hashes: list[str] = []
     ignored_hashes: list[str] = []
-    for project in projects:
+    ai_summary: list[str] = []
+
+    for project, evaluation in zip(projects, evaluations):
         link_hash = project.get("link_hash")
         if not link_hash:
             continue
-        if should_propose(project):
+
+        should_propose = evaluation.get("should_propose", False)
+        reason = evaluation.get("reason", "Sin razón especificada.")
+        
+        title = project.get('title', 'N/A')
+        decision_emoji = "✅" if should_propose else "❌"
+        ai_summary.append(f"{decision_emoji} *{title}*: {reason}")
+
+        if should_propose:
             proposed_hashes.append(link_hash)
+            logger.success(f"IA decidió PROPONER para '{title}'. Razón: {reason}")
         else:
             ignored_hashes.append(link_hash)
+            logger.warning(f"IA decidió IGNORAR para '{title}'. Razón: {reason}")
 
-    proposed_count = await projects_repository.mark_projects_status(proposed_hashes, "proposed")
-    ignored_count = await projects_repository.mark_projects_status(ignored_hashes, "ignored")
+    # Actualizamos el estado en la base de datos
+    proposed_count = await projects_repository.mark_projects_status(proposed_hashes, "proposed_by_ai")
+    ignored_count = await projects_repository.mark_projects_status(ignored_hashes, "ignored_by_ai")
 
-    msg = "🧠 Procesamiento de proyectos completado:\n\n"
-    msg += f"- Tomados de pending: {len(projects)}\n"
-    msg += f"- Marcados proposed: {proposed_count}\n"
-    msg += f"- Marcados ignored: {ignored_count}\n\n"
-    msg += "Primeros proyectos evaluados:\n"
-    for p in projects[:10]:
-        msg += f"🔹 {p['title']} - {p['budget']}\n{p['link']}\n\n"
+    # Enviamos el resumen al usuario
+    summary_msg = (
+        "🧠 **Procesamiento con IA completado:**\n\n"
+        f"- Proyectos evaluados: {len(projects)}\n"
+        f"- Propuestas recomendadas: {proposed_count}\n"
+        f"- Ignorados: {ignored_count}\n\n"
+        "**Resumen de decisiones:**\n"
+    )
+    summary_msg += "\n\n".join(ai_summary)
 
-    await send_long_message(update, msg)
+    await send_long_message(update, summary_msg )

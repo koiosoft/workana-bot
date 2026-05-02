@@ -7,8 +7,12 @@ from .mongo import get_database
 
 class ProjectsRepository:
     def __init__(self):
-        self.collection = get_database()["projects"]
         self._indexes_ready = False
+
+    @property
+    def collection(self):
+        """Obtiene la colección de forma dinámica asegurando que la DB ya inició."""
+        return get_database()["projects"]
 
     async def ensure_indexes(self):
         if self._indexes_ready:

@@ -9,7 +9,7 @@ _db: AsyncIOMotorDatabase | None = None
 async def connect_to_mongo(application):
     """Inicializa la conexión a MongoDB y la asigna a una variable global."""
     global _client, _db
-    if _db:
+    if _db is not None:
         logger.info("La conexión a MongoDB ya existe.")
         return
 
@@ -36,6 +36,7 @@ async def connect_to_mongo(application):
         _client = None
         _db = None
         raise
+
 
 
 def get_database() -> AsyncIOMotorDatabase:
