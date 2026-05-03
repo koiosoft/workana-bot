@@ -126,17 +126,17 @@ class WorkanaScraperAdapter(ScraperPort):
                             "No se consultarán más páginas."
                         )
 
-                    for el in job_elements:
+                    for job_el in job_elements:
                         # 1. Título y Link
-                        title_el = await el.query_selector(".project-title")
-                        link_el = await el.query_selector(".project-title a")
+                        title_el = await job_el.query_selector(".project-title")
+                        link_el = await job_el.query_selector(".project-title a")
                         
                         # 2. Detalles (Fecha y Bids)
-                        details_el = await el.query_selector(".project-main-details")
+                        details_el = await job_el.query_selector(".project-main-details")
                         details_text = await details_el.inner_text() if details_el else ""
                         
                         # 3. Presupuesto
-                        budget_el = await el.query_selector(".values")
+                        budget_el = await job_el.query_selector(".values")
                         
                         if title_el and link_el:
                             title = (await title_el.inner_text()).strip()
@@ -147,6 +147,21 @@ class WorkanaScraperAdapter(ScraperPort):
                             # Regex para limpiar la fecha y las propuestas
                             date_match = re.search(r'Publicado:\s*(.*?)(?=\s*Propuestas:|$)', details_text)
                             bids_match = re.search(r'Propuestas:\s*(\d+)', details_text)
+
+                            # 1. Buscamos todos los elementos h3 que están dentro de las etiquetas de skill
+                            # Como job_el es un ElementHandle, usamos query_selector_all
+                            skill_handles = await job_el.query_selector_all(".skill h3")
+
+                            skills = []
+                            for handle in skill_handles:
+                                text = await handle.inner_text()
+                                if text.strip():
+                                    skills.append(text.strip())
+
+                            desc_el = await job_el.query_selector(".project-details")
+                            short_description = ""
+                            if desc_el:
+                                short_description = (await desc_el.inner_text()).replace("Ver más detalles", "").strip()
                             
                             project = {
                                 "title": title,
@@ -154,7 +169,9 @@ class WorkanaScraperAdapter(ScraperPort):
                                 "link": link,
                                 "published": date_match.group(1).strip() if date_match else "N/A",
                                 "bids": bids_match.group(1) if bids_match else "0",
-                                "extracted_at": datetime.utcnow().isoformat()
+                                "extracted_at": datetime.utcnow().isoformat(),
+                                "short_description": short_description,
+                                "skills": skills,
                             }
                             all_projects.append(project)
                             page_projects.append(project)

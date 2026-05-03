@@ -42,11 +42,13 @@ class ProjectsRepository:
                 "budget": project.get("budget", "N/A"),
                 "link": project.get("link", "N/A"),
                 "published": project.get("published", "N/A"),
+                "short_description": project.get("short_description", ""),
                 "bids": project.get("bids", "0"),
                 "source": "workana",
                 "proposal_status": "pending",
                 "scraped_at": now,
                 "link_hash": link_hash,
+                "skills": project.get("skills", []),
             }
             operations.append(
                 UpdateOne(
@@ -90,7 +92,14 @@ class ProjectsRepository:
 
         cursor = self.collection.find(
             {"link_hash": {"$in": link_hashes}, "proposal_status": "processing"},
-            {"_id": 0, "title": 1, "budget": 1, "link": 1, "published": 1, "link_hash": 1},
+            {"_id": 0, 
+             "title": 1, 
+             "budget": 1, 
+             "link": 1, 
+             "published": 1, 
+             "short_description":1, 
+             "link_hash": 1,
+             "bids":1},
         ).sort("scraped_at", ASCENDING)
         return await cursor.to_list(length=limit)
 
