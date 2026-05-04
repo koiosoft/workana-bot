@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from typing import cast
 from google import genai
 from loguru import logger
 from ..port import IntelligencePort
@@ -22,30 +23,45 @@ class GeminiAdapter(IntelligencePort):
 
             # Mantenemos tu perfil pero ajustamos para recibir una lista
             self.system_instructions = """
-            Actúa como un Senior Python/Node.js Developer experto.
-            Evalúa si vale la pena enviar una propuesta a los siguientes proyectos de Workana.
+                Actúa como un Senior Fullstack Developer y Technical Recruiter con gran visión de negocio en el mercado de freelancers.
+                Tu tarea es evaluar proyectos de Workana para determinar su viabilidad técnica y comercial.
 
-            **Mis Habilidades:**
-            - Backend: Python (FastAPI, Django), Node.js (Express)
-            - Frontend: React, Vue.js, Angular, TypeScript
-            - Bases de Datos: PostgreSQL, MongoDB
-            - DevOps: Docker, CI/CD
+                **MIS HABILIDADES CORE:**
+                - Backend: Python (FastAPI, Django), Node.js (Express)
+                - Frontend: React, Vue.js, Angular, TypeScript
+                - Bases de Datos: PostgreSQL, MongoDB
+                - DevOps: Docker, CI/CD
 
-            **Criterios de Evaluación:**
-            1. Ajuste Técnico (Prioridad Alta)
-            2. Presupuesto (Prioridad Media): Menos de 100 USD es poco atractivo.
-            3. Claridad de descripción.
+                **REGLAS DE EXCLUSIÓN CRÍTICA (Filtro Rojo):**
+                - Descarta inmediatamente (Score 0 y should_propose: false) cualquier proyecto que requiera: PHP o Odoo. No me interesa trabajar con estas tecnologías bajo ninguna circunstancia.
 
-            **Formato de salida:**
-            Debes devolver estrictamente un array JSON de objetos con esta estructura:
-            [
-            {
-                "link_hash": "hash_del_proyecto",
-                "score": integer (0 a 10),
-                "should_propose": boolean,
-                "reason": "explicación concisa"
-            }
-            ]
+                **CRITERIOS DE EVALUACIÓN (Lógica de Decisión):**
+
+                1. Ajuste Técnico (Prioridad Máxima):
+                - Evalúa si el stack coincide con mis habilidades. 
+                - Proyectos de IA, Automatización, APIs y Web Scraping son altamente valorados.
+                - Prioriza proyectos que hablen de: "Escalabilidad", "Optimización de base de datos", "Integraciones complejas", "Refactorización" o "Sistemas desde cero".
+                - Un proyecto que requiere un buen diseño relacional o patrones de diseño vale más que un script aislado.
+
+                2. Flexibilidad de Presupuesto (Contexto LatAm):
+                - No descartes proyectos por tener un presupuesto bajo (ej. < 100 USD) si la descripción parece ser de un proyecto serio.
+                - Entiende que muchos clientes ponen "100 USD" como placeholder para negociar después. Solo penaliza el presupuesto si el cliente parece buscar "mucho trabajo por poco dinero" de forma cerrada.
+                - Ignora también la barrera de los 100 USD si el proyecto suena a "Producto Mínimo Viable (MVP)" o "Core Business". 
+
+                3. Manejo de Información Incompleta:
+                - Si el título o la descripción son breves, NO los descartes. Si el título sugiere un desafío técnico interesante (ej: "Script de IA para leads"), asígnale un voto de confianza (5). 
+                - La falta de detalle puede ser una oportunidad para definir el alcance en la propuesta.
+
+                **FORMATO DE SALIDA (Estrictamente JSON):**
+                Devuelve un array de objetos con esta estructura:
+                [
+                {
+                    "link_hash": "string",
+                    "score": integer (0 a 10),
+                    "should_propose": boolean,
+                    "reason": "Explicación concisa justificando el score basado en el stack o el potencial de negociación."
+                }
+                ]
             """
 
             try:
@@ -79,7 +95,7 @@ class GeminiAdapter(IntelligencePort):
 
         prompt = f"{self.system_instructions}\n\n**Proyectos a evaluar:**\n{json.dumps(projects_payload, indent=2)}"
 
-        logger.info(f"Actual prompt para la IA {prompt} .")
+        # logger.info(f"Actual prompt para la IA {prompt} .")
 
         try:
             response = self.client.models.generate_content(
@@ -88,9 +104,7 @@ class GeminiAdapter(IntelligencePort):
             )
             if response.text:
                 text_response = response.text.strip()
-
-                logger.info(f"IA respondio con {response} .")
-
+                #logger.info(f"IA respondio con {response} .")
                 # Tu lógica original de limpieza de JSON mejorada para arrays
                 match = re.search(r"```json\s*(\[.*?\])\s*```", text_response, re.DOTALL)
                 if match:
@@ -100,7 +114,11 @@ class GeminiAdapter(IntelligencePort):
 
                 results = json.loads(json_part)
                 logger.info(f"IA evaluó un lote de {len(results)} proyectos.")
-                return results
+                if results:
+                    return cast( list[dict],results ) 
+                else:
+                    logger.warning("La IA devolvió una lista vacía.")
+                    return  []
 
         except Exception as e:
             logger.error(f"Error masivo en evaluación de IA: {e}")

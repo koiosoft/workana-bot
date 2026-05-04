@@ -91,7 +91,7 @@ class WorkanaScraperAdapter(ScraperPort):
                     # 📸 TOMAR FOTO DE CONTROL
                     screenshot_path = "debug_screenshot.png"
                     await page.screenshot(path=screenshot_path, full_page=True)
-                    logger.info(f"📸 Foto de control guardada en: {screenshot_path}")
+                    #logger.info(f"📸 Foto de control guardada en: {screenshot_path}")
 
                     # OPCIONAL: Ver el contenido del HTML en el log para ver si hay 10 o 19
                     content = await page.content()

@@ -122,7 +122,8 @@ class ProjectsRepository:
             },
             {
                 "_id": 0, "title": 1, "budget": 1, "link": 1, 
-                "published": 1, "short_description": 1, "link_hash": 1, "bids": 1
+                "published": 1, "short_description": 1, "link_hash": 1, "bids": 1,
+                "skills": 1
             },
         ).sort("scraped_at", ASCENDING)
         
