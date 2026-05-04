@@ -67,14 +67,69 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     save_stats = await projects_repository.save_scraped_projects(projects)
     await update.message.reply_text(
-        "💾 Guardado en MongoDB:\n"
+        f"💾 **Sincronización DB:**\n"
         f"- Nuevos: {save_stats['inserted']}\n"
-        f"- Ya existentes: {save_stats['existing']}"
+        f"- Actualizados/Existentes: {save_stats['existing']}"
     )
 
-    msg = "✅ Proyectos detectados:\n\n"
-    for p in projects:
-        msg += f"🔹 {p['title']} - {p['budget']}\n"
+    ai_service = get_intelligence_service()
+    total_processed = 0
+    all_relevant = []
+    max_iterations = 10
+    buffer_size = 10
+    iterations = 0
+    await update.message.reply_text("🧠 Evaluando cola de proyectos pendientes...")
+
+    while iterations < max_iterations:
+        iterations += 1
+        # Recuperamos un lote para no saturar la memoria ni la API de la IA
+        batch = await projects_repository.claim_pending_projects(limit=buffer_size)
+        
+        if not batch:
+            logger.info("No hay proyectos pendientes.  Batch dio Null o 0")
+            break # Ya no quedan proyectos 'pending'
+
+        link_hashes = [p["link_hash"] for p in batch]
+        await projects_repository.mark_projects_status(link_hashes, "processing")
+
+        try:
+            evaluations =  await ai_service.evaluate_projects(batch)
+        except Exception as e:
+            logger.critical(f"Abortando: Error de infraestructura en IA: {e}")
+            await update.message.reply_text(f"❌ Error crítico: {e}. El proceso se ha detenido para proteger los datos.")
+            break
+
+        for project, eval_data in zip(batch, evaluations):
+            score = eval_data.get("score", 0)
+            
+            # Actualizamos resultado en DB
+            await projects_repository.update_project_analysis(
+                project["link_hash"], 
+                score=score, 
+                reason=eval_data.get("reason", 'Sin razón especificada.'),
+                status="analyzed"
+            )
+
+            if score > 4:
+                all_relevant.append({**project, **eval_data})
+
+        total_processed += len(batch)
+        logger.info(f"Lote de {len(batch)} procesado. Total acumulado: {total_processed}")
+
+    if not all_relevant:
+        await update.message.reply_text(f"✅ Se analizaron {total_processed} proyectos. Ninguno superó el Score 6.")
+        return
+
+    msg = f"🚀 **{len(all_relevant)} Oportunidades encontradas (de {total_processed} analizados):**\n\n"
+    for p in all_relevant:
+        msg += (
+            f"⭐ **Score: {p['score']}/10**\n"
+            f"📌 {p['title']}\n"
+            f"💰 {p['budget']}\n"
+            f"💡 {p['reason']}\n"
+            f"🔗 [Ver Proyecto]({p['link']})\n\n"
+        )
+    
     await send_long_message(update, msg)
 
 
@@ -92,6 +147,7 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Limitamos a 5 para pruebas y evitar agotar la cuota de la API
     projects = await projects_repository.claim_pending_projects(limit=5)
     if not projects:
+        logger.success(f"📭 No hay proyectos pendientes en la base de datos.")
         await update.message.reply_text("📭 No hay proyectos pendientes en la base de datos.")
         return
 

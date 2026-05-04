@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class IntelligencePort(ABC):
@@ -14,4 +15,10 @@ class IntelligencePort(ABC):
         - "should_propose": bool
         - "reason": str
         """
+        pass
+
+
+    @abstractmethod
+    async def evaluate_projects(self, projects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Evalúa una lista de proyectos y devuelve decisiones individuales."""
         pass
