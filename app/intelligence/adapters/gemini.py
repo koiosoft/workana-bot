@@ -126,6 +126,71 @@ class GeminiAdapter(IntelligencePort):
                     raise e
             # Fallback: devolver todo como 'no proponer' para no romper el flujo
             return [{"link_hash": p.get("link_hash"), "score": 0, "should_propose": False, "reason": "Error en IA"} for p in projects]
+        
+
+    async def generate_proposal(self, project: dict) -> dict:
+        """
+        Genera una propuesta económica detallada con hitos basada en el valor por hora.
+        """
+        hourly_rate = 20.5
+        
+        logger.info('is generating a proposal...')
+        # Preparamos el contexto para la IA
+        proposal_context = {
+            "title": project.get("title", "Proyecto sin título"),
+            "description": project.get("full_description", project.get("description", "N/A")),
+            "skills_required": project.get("skills", []),
+            "budget_range": project.get("budget_detail", "N/A"),
+            "hourly_rate": hourly_rate
+        }
+
+        proposal_instructions = f"""
+            Actúa como un Senior Fullstack Developer. Basándote en el siguiente proyecto de Workana y mi tarifa de ${hourly_rate}/hora, 
+            genera una propuesta técnica y económica detallada.
+
+            **REGLAS DE NEGOCIO:**
+            1. Divide el proyecto en 4 hitos lógicos (Milestones).
+            2. Estima las horas reales de desarrollo para cada hito.
+            3. Calcula el costo de cada hito (horas * ${hourly_rate}).
+            4. El tono debe ser profesional, experto y persuasivo.
+            5. Si el proyecto pide tecnologías específicas (como Bolt.new y Supabase), menciona experiencia directa en ellas.
+
+            **FORMATO DE SALIDA (JSON ESTRICTO):**
+            {{
+                "introduction": "Breve saludo y validación de experiencia",
+                "technical_approach": "Resumen de cómo abordarás el stack (Bolt.new, Supabase, Vercel)",
+                "milestones": [
+                    {{
+                        "name": "Nombre del hito",
+                        "description": "Qué se entrega",
+                        "estimated_hours": integer,
+                        "cost": float
+                    }}
+                ],
+                "total_budget": float,
+                "total_estimated_days": integer,
+                "closing": "Llamado a la acción"
+            }}
+        """
+
+        prompt = f"{proposal_instructions}\n\n**DATOS DEL PROYECTO:**\n{json.dumps(proposal_context, indent=2)}"
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt
+            )
+            
+            text_response = response.text.strip()
+            # Limpieza de markdown para extraer el JSON
+            match = re.search(r"```json\s*({{.*?}})\s*```", text_response, re.DOTALL)
+            json_part = match.group(1) if match else text_response[text_response.find("{") : text_response.rfind("}") + 1]
+            
+            return json.loads(json_part)
+
+        except Exception as e:
+            logger.error(f"Error generando propuesta económica: {e}")
+            return {"error": "No se pudo generar la propuesta"}
 
     async def evaluate_project(self, project: dict) -> dict:
         prompt = self.prompt_template.format(

@@ -166,3 +166,35 @@ class ProjectsRepository:
         
         logger.warning(f"⚠️ No se pudo actualizar el análisis para el hash: {link_hash}")
         return False
+    
+
+    async def get_projects_for_deep_analysis(self, min_score: int = 5, limit: int = 10) -> list[dict[str, Any]]:
+        """Obtiene proyectos analizados con buen score que no tienen descripción completa."""
+        cursor = self.collection.find({
+            "proposal_status": "analyzed",
+            "ai_score": {"$gte": min_score},
+            "full_description": {"$exists": False} # Evitamos re-scrapear
+        }).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    async def update_full_details(self, link_hash: str, details: dict):
+        """Actualiza el proyecto con la data profunda y cambia el estado."""
+        await self.ensure_indexes()
+        now = datetime.now(timezone.utc).isoformat()
+        
+        result = await self.collection.update_one(
+            {"link_hash": link_hash},
+            {
+                "$set": {
+                    "full_description": details.get("full_description"),
+                    "skills": details.get("skills"), # Actualizamos por si hay nuevos
+                    "budget_detail": details.get("budget_detail"),
+                    "proposal_status": "ready_for_proposal", # Nuevo estado para la siguiente fase
+                    "updated_at": now
+                }
+            }
+        )
+        return result.modified_count > 0
+    
+
+

@@ -145,7 +145,45 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ai_service = get_intelligence_service()
 
     # Limitamos a 5 para pruebas y evitar agotar la cuota de la API
-    projects = await projects_repository.claim_pending_projects(limit=5)
+    projects = await projects_repository.get_projects_for_deep_analysis(limit=50)
+    if not projects:
+        logger.success(f"📭 No hay proyectos pendientes en la base de datos.")
+        await update.message.reply_text("📭 No hay proyectos pendientes en la base de datos.")
+        return
+
+    await update.message.reply_text(f"🤖 Evaluando {len(projects)} proyectos con Gemini. Esto puede tardar un momento...")
+    scraper = ScraperFactory.get_scraper()
+
+    for project in projects:
+
+        url = project.get('link', None)
+        if url is not None:
+            full_detail = await scraper.fetch_full_detail(url)
+            proposal  = await ai_service.generate_proposal(full_detail)
+            logger.info("Este es un proyecto")
+            logger.info(full_detail)
+            logger.info("Propuesta al proyecto")
+            logger.info(proposal)
+            
+
+        break
+
+
+
+async def process_projects_old(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Ejecutamos las evaluaciones de IA en paralelo
+    if not await is_admin(update):
+        return
+    if not update.message:
+        return
+
+    await update.message.reply_text("🧠 Obteniendo proyectos pendientes para evaluación con IA...")
+    
+    projects_repository = get_projects_repository()
+    ai_service = get_intelligence_service()
+
+    # Limitamos a 5 para pruebas y evitar agotar la cuota de la API
+    projects = await projects_repository.get_projects_for_deep_analysis(limit=50)
     if not projects:
         logger.success(f"📭 No hay proyectos pendientes en la base de datos.")
         await update.message.reply_text("📭 No hay proyectos pendientes en la base de datos.")
@@ -153,7 +191,7 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"🤖 Evaluando {len(projects)} proyectos con Gemini. Esto puede tardar un momento...")
 
-    # Ejecutamos las evaluaciones de IA en paralelo
+
     evaluation_tasks = [ai_service.evaluate_project(p) for p in projects]
     evaluations = await asyncio.gather(*evaluation_tasks)
 

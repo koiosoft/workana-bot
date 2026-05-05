@@ -8,3 +8,8 @@ class ScraperPort(ABC):
     @abstractmethod
     async def get_projects(self) -> List[Dict]:
         pass
+
+    @abstractmethod
+    async def fetch_full_detail(self, url: str) -> dict:
+        pass
+

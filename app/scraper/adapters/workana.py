@@ -1,6 +1,6 @@
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urljoin
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from loguru import logger
@@ -219,3 +219,67 @@ class WorkanaScraperAdapter(ScraperPort):
                 await browser.close()
                 
         return all_projects
+
+
+    async def fetch_full_detail(self, url: str) -> dict:
+        """
+        Navega al detalle del proyecto y extrae la información profunda.
+        """
+        async with async_playwright() as p:
+            # Usamos el perfil que ya tienes definido en el __init__
+            context_kwargs = {}
+            if os.path.exists(self.state_file) and os.path.getsize(self.state_file) > 0:
+                context_kwargs["storage_state"] = self.state_file
+                logger.info(f"🔐 Cargando sesión desde {self.state_file}...")
+            else:
+                logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
+
+            browser = await p.chromium.launch(headless=True)
+            context_kwargs.update(self.browser_profile)
+            context = await browser.new_context(**context_kwargs)
+            page = await context.new_page()
+            
+            try:
+                logger.info(f"🔍 Extrayendo detalle profundo de: {url}")
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)                
+                screenshot_path = "debug_detail_screenshot.png"
+                await page.screenshot(path=screenshot_path, full_page=True) 
+
+                # Esperamos a que el artículo principal esté cargado
+                await page.wait_for_selector("article", timeout=10000)
+          
+
+                # 1. Extraer descripción completa (el div .expander)
+                # Nota: El texto puede estar truncado visualmente, pero en el HTML suele estar completo
+                full_description = await page.locator(".expander").inner_text()
+                extra_details_list = await page.locator("article > p.mt20").all_text_contents()
+                if extra_details_list:
+                    filtered_details = [
+                        text.strip() 
+                        for text in extra_details_list 
+                        if text.strip() and "Habilidades necesarias" not in text
+                    ]
+                    
+                    if filtered_details:
+                        full_description += "\n" + "\n".join(filtered_details)
+                
+                # 2. Extraer habilidades (por si acaso faltaron o hay más en el detalle)
+                skills_elements = await page.locator(".skills .skill").all_text_contents()
+                skills = [s.strip() for s in skills_elements if s.strip()]
+
+                # 3. Extraer presupuesto (a veces varía o da más detalle en el interior)
+                budget_text = await page.locator(".budget").inner_text()
+
+                return {
+                    "full_description": full_description.strip(),
+                    "skills": skills,
+                    "budget_detail": budget_text.strip(),
+                    "scraped_at_detail": datetime.now(timezone.utc).isoformat()
+                }
+
+            except Exception as e:
+                logger.error(f"❌ Error al scrapear detalle de {url}: {e}")
+                raise e
+            finally:
+                await context.close()
+                await browser.close()
