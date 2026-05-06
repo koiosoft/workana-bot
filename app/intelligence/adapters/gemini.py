@@ -135,51 +135,86 @@ class GeminiAdapter(IntelligencePort):
         hourly_rate = 20.5
         
         logger.info('is generating a proposal...')
+
+        my_skills = [
+            "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
+            "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
+            "SQL", "MySQL", "PostgreSQL", "MongoDB", "GIT", "Swift", "C#", "Docker",
+            "UML Diagram", "DB Design (E-R)", "REST & GraphQL APIs"
+        ]
+
+
         # Preparamos el contexto para la IA
         proposal_context = {
             "title": project.get("title", "Proyecto sin título"),
             "description": project.get("full_description", project.get("description", "N/A")),
             "skills_required": project.get("skills", []),
             "budget_range": project.get("budget_detail", "N/A"),
+            "my_profile_skills": my_skills,
             "hourly_rate": hourly_rate
         }
 
         proposal_instructions = f"""
-            Actúa como un Senior Fullstack Developer. Basándote en el siguiente proyecto de Workana y mi tarifa de ${hourly_rate}/hora, 
-            genera una propuesta técnica y económica detallada.
+            Actúa como un Arquitecto de Software Senior con más de 24 años de experiencia contrastada. 
+            Tu objetivo es generar una propuesta técnico-económica en stricto formato JSON para un proyecto de Workana.
 
-            **REGLAS DE NEGOCIO:**
-            1. Divide el proyecto en 4 hitos lógicos (Milestones).
-            2. Estima las horas reales de desarrollo para cada hito.
-            3. Calcula el costo de cada hito (horas * ${hourly_rate}).
-            4. El tono debe ser profesional, experto y persuasivo.
-            5. Si el proyecto pide tecnologías específicas (como Bolt.new y Supabase), menciona experiencia directa en ellas.
+            **MI PERFIL TÉCNICO (STACK REAL):**
+            {", ".join(my_skills)}
+
+            **INSTRUCCIONES DE ESTIMACIÓN Y NEGOCIO:**
+            1. **Análisis de Match:** Cruza los requerimientos del cliente con mi stack real. Resalta mi capacidad para diseñar arquitecturas escalables y seguras.
+            2. **Cálculo de Tiempos (Lógica de Overhead):** - Estima las horas netas de desarrollo.
+            - Aplica obligatoriamente un **20% de overhead** sobre cada tarea (margen para QA, imprevistos y comunicación).
+            - El valor `hours_with_overhead` debe reflejar este cálculo: (Horas Netas * 1.2).
+            3. **Cálculo de Costos:** Subtotal de hito = (Suma de horas del hito con overhead) * ${hourly_rate}.
+            4. **Estructura de Hitos:** - Genera entre 4 y 8 hitos según la complejidad.
+            - Es obligatorio incluir un hito final dedicado exclusivamente a **UAT (User Acceptance Testing), Refactorización y Despliegue Final**.
+            - Las pruebas unitarias deben estar diluidas dentro de las tareas de desarrollo de cada hito (menciónalas en las descripciones).
+            5. **Tono:** Profesional, extremadamente técnico, persuasivo y orientado a resultados de negocio.
 
             **FORMATO DE SALIDA (JSON ESTRICTO):**
             {{
-                "introduction": "Breve saludo y validación de experiencia",
-                "technical_approach": "Resumen de cómo abordarás el stack (Bolt.new, Supabase, Vercel)",
+                "proposal_header": "Saludo de Arquitecto Senior destacando los 24+ años de experiencia y la idoneidad técnica para este proyecto específico.",
                 "milestones": [
                     {{
-                        "name": "Nombre del hito",
-                        "description": "Qué se entrega",
-                        "estimated_hours": integer,
-                        "cost": float
+                        "step": 1,
+                        "name": "Nombre del hito (ej. Arquitectura de Base de Datos y Auth)",
+                        "tasks": {{
+                            "Nombre de Tarea 1": {{
+                                "description": "Detalle técnico profundo de la implementación incluyendo mención a Unit Testing.",
+                                "hours_with_overhead": float
+                            }},
+                            "Nombre de Tarea 2": {{
+                                "description": "Detalle técnico de la tarea.",
+                                "hours_with_overhead": float
+                            }}
+                        }},
+                        "hours_with_overhead": float,
+                        "subtotal": float
                     }}
                 ],
-                "total_budget": float,
-                "total_estimated_days": integer,
-                "closing": "Llamado a la acción"
+                "summary": {{
+                    "total_hours": float,
+                    "total_budget": float,
+                    "delivery_time_weeks": float,
+                    "hourly_rate_applied": {hourly_rate}
+                }},
+                "technical_pitch": "Argumento de cierre sobre por qué mi experiencia con {", ".join(my_skills[:5])}... garantiza el éxito donde otros fallan."
             }}
         """
 
         prompt = f"{proposal_instructions}\n\n**DATOS DEL PROYECTO:**\n{json.dumps(proposal_context, indent=2)}"
+
+        logger.info('=========== el PROMPT ======================')
+        logger.info(prompt)
 
         try:
             response = self.client.models.generate_content(
                 model=self.model_id,
                 contents=prompt
             )
+
+            logger.info('self.client.models.generate_content IN EXECUTION')
             
             text_response = response.text.strip()
             # Limpieza de markdown para extraer el JSON
