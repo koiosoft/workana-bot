@@ -12,6 +12,7 @@ app/logs
 state.json
 app/debug_screenshot.png
 app/debug_state_check.png
+app/debug_detail_screenshot.png
 bot_check.png
 
 # Archivos de caché de Python
