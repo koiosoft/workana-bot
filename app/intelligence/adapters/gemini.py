@@ -1,7 +1,7 @@
 import os
 import re
 import json
-from typing import cast
+from typing import Any, cast
 from google import genai
 from loguru import logger
 from ..port import IntelligencePort
@@ -128,7 +128,7 @@ class GeminiAdapter(IntelligencePort):
             return [{"link_hash": p.get("link_hash"), "score": 0, "should_propose": False, "reason": "Error en IA"} for p in projects]
         
 
-    async def generate_proposal(self, project: dict) -> dict:
+    async def generate_proposal(self, project: dict) -> list[dict[str, Any]]:
         """
         Genera una propuesta económica detallada con hitos basada en el valor por hora.
         """
@@ -225,7 +225,7 @@ class GeminiAdapter(IntelligencePort):
 
         except Exception as e:
             logger.error(f"Error generando propuesta económica: {e}")
-            return {"error": "No se pudo generar la propuesta"}
+            return [{"error": "No se pudo generar la propuesta"}]
 
     async def evaluate_project(self, project: dict) -> dict:
         prompt = self.prompt_template.format(

@@ -198,3 +198,23 @@ class ProjectsRepository:
     
 
 
+    async def update_project_proposal(self, link_hash: str, proposal: list[dict[str, Any]] ):
+        await self.ensure_indexes()
+        now = datetime.now(timezone.utc).isoformat()
+        
+        result = await self.collection.update_one(
+            {"link_hash": link_hash},
+            {
+                "$set": {
+                    "proposal": proposal,
+                    "proposal_status": "proposal_generated",
+                    "proposal_at": now,
+                    "updated_at": now
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"✅ Propuesta guardada en DB para el proyecto: {link_hash}")
+            return True
+        return False

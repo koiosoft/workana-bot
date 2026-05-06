@@ -155,22 +155,28 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     scraper = ScraperFactory.get_scraper()
 
     for project in projects:
-
+        fail = None
         url = project.get('link', None)
         if url is not None:
             full_detail = await scraper.fetch_full_detail(url)
             proposal  = await ai_service.generate_proposal(full_detail)
-            logger.info("Este es un proyecto")
-            logger.info(full_detail)
-            logger.info("Propuesta al proyecto")
-            logger.info(proposal)
+            if  proposal is not None:
+                link_hash =project.get("link_hash")
+                if link_hash:
+                    await projects_repository.update_project_proposal(  link_hash, proposal)
+                else:
+                    fail = "Fallo porque no tiene link_hash"
+            else:
+                fail = "No existe la propuesta"
+
+            if fail is not None:
+                logger.error(fail)
             
 
         break
 
 
 
-async def process_projects_old(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Ejecutamos las evaluaciones de IA en paralelo
     if not await is_admin(update):
         return
