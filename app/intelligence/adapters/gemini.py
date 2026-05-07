@@ -128,7 +128,7 @@ class GeminiAdapter(IntelligencePort):
             return [{"link_hash": p.get("link_hash"), "score": 0, "should_propose": False, "reason": "Error en IA"} for p in projects]
         
 
-    async def generate_proposal(self, project: dict) -> list[dict[str, Any]]:
+    async def generate_proposal(self, project: dict) -> dict[str, Any]:
         """
         Genera una propuesta económica detallada con hitos basada en el valor por hora.
         """
@@ -163,14 +163,21 @@ class GeminiAdapter(IntelligencePort):
 
             **INSTRUCCIONES DE ESTIMACIÓN Y NEGOCIO:**
             1. **Análisis de Match:** Cruza los requerimientos del cliente con mi stack real. Resalta mi capacidad para diseñar arquitecturas escalables y seguras.
-            2. **Cálculo de Tiempos (Lógica de Overhead):** - Estima las horas netas de desarrollo.
-            - Aplica obligatoriamente un **20% de overhead** sobre cada tarea (margen para QA, imprevistos y comunicación).
-            - El valor `hours_with_overhead` debe reflejar este cálculo: (Horas Netas * 1.2).
+            2. **Cálculo de Tiempos (Lógica de Overhead):** 
+                - Estima las horas netas de desarrollo (aquí se permiten decimales internos para precisión). Sigue las siguientes reglas:
+                    * Aplica obligatoriamente un 20% de overhead sobre la estimación (Horas Netas * 1.2).
+                    * Regla de Formato Final: El valor hours_with_overhead resultante DEBE ser un número entero.
+                    * Redondeo: Aplica la función techo (ceiling) al resultado final: cualquier fracción sube al entero superior (Ej: 3.01h → 4h).
+                    * Mínimo Vital: Ninguna tarea puede durar menos de 1 hora.
             3. **Cálculo de Costos:** Subtotal de hito = (Suma de horas del hito con overhead) * ${hourly_rate}.
             4. **Estructura de Hitos:** - Genera entre 4 y 8 hitos según la complejidad.
             - Es obligatorio incluir un hito final dedicado exclusivamente a **UAT (User Acceptance Testing), Refactorización y Despliegue Final**.
             - Las pruebas unitarias deben estar diluidas dentro de las tareas de desarrollo de cada hito (menciónalas en las descripciones).
             5. **Tono:** Profesional, extremadamente técnico, persuasivo y orientado a resultados de negocio.
+
+            **VERIFICACIONES FINALES:**
+                - Verificación Matemática: La suma de los subtotales de cada hito debe coincidir exactamente con el total_budget final del JSON.
+                - Output check: Verifica que todos los campos de horas en el JSON sean integers.
 
             **FORMATO DE SALIDA (JSON ESTRICTO):**
             {{
@@ -215,6 +222,9 @@ class GeminiAdapter(IntelligencePort):
             )
 
             logger.info('self.client.models.generate_content IN EXECUTION')
+
+            if response.text is None:
+                return {"error": "No se pudo generar la propuesta"}
             
             text_response = response.text.strip()
             # Limpieza de markdown para extraer el JSON
@@ -225,7 +235,7 @@ class GeminiAdapter(IntelligencePort):
 
         except Exception as e:
             logger.error(f"Error generando propuesta económica: {e}")
-            return [{"error": "No se pudo generar la propuesta"}]
+            return {"error": "No se pudo generar la propuesta"}
 
     async def evaluate_project(self, project: dict) -> dict:
         prompt = self.prompt_template.format(

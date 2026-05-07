@@ -198,7 +198,7 @@ class ProjectsRepository:
     
 
 
-    async def update_project_proposal(self, link_hash: str, proposal: list[dict[str, Any]] ):
+    async def update_project_proposal(self, link_hash: str, proposal: dict[str, Any] ):
         await self.ensure_indexes()
         now = datetime.now(timezone.utc).isoformat()
         

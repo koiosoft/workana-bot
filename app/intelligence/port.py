@@ -24,5 +24,5 @@ class IntelligencePort(ABC):
         pass
 
     @abstractmethod
-    async def generate_proposal(self, project: dict) -> list[dict[str, Any]]:
+    async def generate_proposal(self, project: dict) -> dict[str, Any]:
         pass

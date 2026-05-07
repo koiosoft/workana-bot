@@ -154,88 +154,34 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🤖 Evaluando {len(projects)} proyectos con Gemini. Esto puede tardar un momento...")
     scraper = ScraperFactory.get_scraper()
 
+    processed_count = 0
+
     for project in projects:
-        fail = None
-        url = project.get('link', None)
-        if url is not None:
-            full_detail = await scraper.fetch_full_detail(url)
-            proposal  = await ai_service.generate_proposal(full_detail)
-            if  proposal is not None:
-                link_hash =project.get("link_hash")
-                if link_hash:
-                    await projects_repository.update_project_proposal(  link_hash, proposal)
-                else:
-                    fail = "Fallo porque no tiene link_hash"
-            else:
-                fail = "No existe la propuesta"
+        url = project.get('link')
+        link_hash = project.get('link_hash')
+        title = project.get('title', 'Sin título')
 
-            if fail is not None:
-                logger.error(fail)
-            
-
-        break
-
-
-
-    # Ejecutamos las evaluaciones de IA en paralelo
-    if not await is_admin(update):
-        return
-    if not update.message:
-        return
-
-    await update.message.reply_text("🧠 Obteniendo proyectos pendientes para evaluación con IA...")
-    
-    projects_repository = get_projects_repository()
-    ai_service = get_intelligence_service()
-
-    # Limitamos a 5 para pruebas y evitar agotar la cuota de la API
-    projects = await projects_repository.get_projects_for_deep_analysis(limit=50)
-    if not projects:
-        logger.success(f"📭 No hay proyectos pendientes en la base de datos.")
-        await update.message.reply_text("📭 No hay proyectos pendientes en la base de datos.")
-        return
-
-    await update.message.reply_text(f"🤖 Evaluando {len(projects)} proyectos con Gemini. Esto puede tardar un momento...")
-
-
-    evaluation_tasks = [ai_service.evaluate_project(p) for p in projects]
-    evaluations = await asyncio.gather(*evaluation_tasks)
-
-    proposed_hashes: list[str] = []
-    ignored_hashes: list[str] = []
-    ai_summary: list[str] = []
-
-    for project, evaluation in zip(projects, evaluations):
-        link_hash = project.get("link_hash")
-        if not link_hash:
+        if not url or not link_hash:
             continue
 
-        should_propose = evaluation.get("should_propose", False)
-        reason = evaluation.get("reason", "Sin razón especificada.")
-        
-        title = project.get('title', 'N/A')
-        decision_emoji = "✅" if should_propose else "❌"
-        ai_summary.append(f"{decision_emoji} *{title}*: {reason}")
+        try:
+            logger.info(f"Extrayendo detalle para: {title}")
+            full_detail = await scraper.fetch_full_detail(url)
+            proposal  = await ai_service.generate_proposal(full_detail)
+            if proposal is not None and "error" not in proposal:
+                processed_count += 1
+                await projects_repository.update_project_proposal(link_hash, proposal)
 
-        if should_propose:
-            proposed_hashes.append(link_hash)
-            logger.success(f"IA decidió PROPONER para '{title}'. Razón: {reason}")
-        else:
-            ignored_hashes.append(link_hash)
-            logger.warning(f"IA decidió IGNORAR para '{title}'. Razón: {reason}")
+                total_usd = proposal.get("summary", {}).get("total_budget", 0)
+                await update.message.reply_text(
+                    f"✅ **Propuesta Generada**\n"
+                    f"📌 {title}\n"
+                    f"💰 Presupuesto estimado: ${total_usd}\n"
+                    f"⏱️ Horas: {proposal.get('summary', {}).get('total_hours')}h"
+                )
 
-    # Actualizamos el estado en la base de datos
-    proposed_count = await projects_repository.mark_projects_status(proposed_hashes, "proposed_by_ai")
-    ignored_count = await projects_repository.mark_projects_status(ignored_hashes, "ignored_by_ai")
+        except Exception as e:
+            logger.error(f"Error procesando proyecto {title}: {str(e)}")
+            continue
+        break
 
-    # Enviamos el resumen al usuario
-    summary_msg = (
-        "🧠 **Procesamiento con IA completado:**\n\n"
-        f"- Proyectos evaluados: {len(projects)}\n"
-        f"- Propuestas recomendadas: {proposed_count}\n"
-        f"- Ignorados: {ignored_count}\n\n"
-        "**Resumen de decisiones:**\n"
-    )
-    summary_msg += "\n\n".join(ai_summary)
-
-    await send_long_message(update, summary_msg )
