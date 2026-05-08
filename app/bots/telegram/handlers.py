@@ -1,5 +1,6 @@
 import os
 import asyncio
+import time
 from loguru import logger
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -78,8 +79,9 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     max_iterations = 10
     buffer_size = 10
     iterations = 0
-    await update.message.reply_text("🧠 Evaluando cola de proyectos pendientes...")
+    await update.message.reply_text("🧠 Se evaluará la cola de proyectos pendientes en 30 segundos")
 
+    time.sleep(30)
     while iterations < max_iterations:
         iterations += 1
         # Recuperamos un lote para no saturar la memoria ni la API de la IA
@@ -89,10 +91,11 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info("No hay proyectos pendientes.  Batch dio Null o 0")
             break # Ya no quedan proyectos 'pending'
 
-        link_hashes = [p["link_hash"] for p in batch]
-        await projects_repository.mark_projects_status(link_hashes, "processing")
-
         try:
+            await update.message.reply_text(f"🧠 Iniciando la evaluación del Lote #{iterations} con {buffer_size} proyectos.")
+            link_hashes = [p["link_hash"] for p in batch]
+            await projects_repository.mark_projects_status(link_hashes, "processing")
+            time.sleep(4)
             evaluations =  await ai_service.evaluate_projects(batch)
         except Exception as e:
             logger.critical(f"Abortando: Error de infraestructura en IA: {e}")
@@ -147,8 +150,8 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Limitamos a 5 para pruebas y evitar agotar la cuota de la API
     projects = await projects_repository.get_projects_for_deep_analysis(limit=50)
     if not projects:
-        logger.success(f"📭 No hay proyectos pendientes en la base de datos.")
-        await update.message.reply_text("📭 No hay proyectos pendientes en la base de datos.")
+        logger.success(f"📭 No hay proyectos pendientes en la base de datos para evaluación inicial.")
+        await update.message.reply_text("📭 No hay proyectos pendientes en la base de datos para evaluación inicial.")
         return
 
     await update.message.reply_text(f"🤖 Evaluando {len(projects)} proyectos con Gemini. Esto puede tardar un momento...")
@@ -176,12 +179,13 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     f"✅ **Propuesta Generada**\n"
                     f"📌 {title}\n"
+                    f"URL: {url}\n"
                     f"💰 Presupuesto estimado: ${total_usd}\n"
                     f"⏱️ Horas: {proposal.get('summary', {}).get('total_hours')}h"
                 )
-
         except Exception as e:
             logger.error(f"Error procesando proyecto {title}: {str(e)}")
-            continue
-        break
+            await update.message.reply_text(f'Ha habido un error en la IA al procesar el proyecto: {title}')
+            break
+        
 

@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 from typing import Any, cast
 from google import genai
 from loguru import logger
@@ -21,48 +22,6 @@ class GeminiAdapter(IntelligencePort):
             
             logger.info('Definiendo las instrucciones generales para el Adapter de GEMINI')
 
-            # Mantenemos tu perfil pero ajustamos para recibir una lista
-            self.system_instructions = """
-                Actúa como un Senior Fullstack Developer y Technical Recruiter con gran visión de negocio en el mercado de freelancers.
-                Tu tarea es evaluar proyectos de Workana para determinar su viabilidad técnica y comercial.
-
-                **MIS HABILIDADES CORE:**
-                - Backend: Python (FastAPI, Django), Node.js (Express)
-                - Frontend: React, Vue.js, Angular, TypeScript
-                - Bases de Datos: PostgreSQL, MongoDB
-                - DevOps: Docker, CI/CD
-
-                **REGLAS DE EXCLUSIÓN CRÍTICA (Filtro Rojo):**
-                - Descarta inmediatamente (Score 0 y should_propose: false) cualquier proyecto que requiera: PHP o Odoo. No me interesa trabajar con estas tecnologías bajo ninguna circunstancia.
-
-                **CRITERIOS DE EVALUACIÓN (Lógica de Decisión):**
-
-                1. Ajuste Técnico (Prioridad Máxima):
-                - Evalúa si el stack coincide con mis habilidades. 
-                - Proyectos de IA, Automatización, APIs y Web Scraping son altamente valorados.
-                - Prioriza proyectos que hablen de: "Escalabilidad", "Optimización de base de datos", "Integraciones complejas", "Refactorización" o "Sistemas desde cero".
-                - Un proyecto que requiere un buen diseño relacional o patrones de diseño vale más que un script aislado.
-
-                2. Flexibilidad de Presupuesto (Contexto LatAm):
-                - No descartes proyectos por tener un presupuesto bajo (ej. < 100 USD) si la descripción parece ser de un proyecto serio.
-                - Entiende que muchos clientes ponen "100 USD" como placeholder para negociar después. Solo penaliza el presupuesto si el cliente parece buscar "mucho trabajo por poco dinero" de forma cerrada.
-                - Ignora también la barrera de los 100 USD si el proyecto suena a "Producto Mínimo Viable (MVP)" o "Core Business". 
-
-                3. Manejo de Información Incompleta:
-                - Si el título o la descripción son breves, NO los descartes. Si el título sugiere un desafío técnico interesante (ej: "Script de IA para leads"), asígnale un voto de confianza (5). 
-                - La falta de detalle puede ser una oportunidad para definir el alcance en la propuesta.
-
-                **FORMATO DE SALIDA (Estrictamente JSON):**
-                Devuelve un array de objetos con esta estructura:
-                [
-                {
-                    "link_hash": "string",
-                    "score": integer (0 a 10),
-                    "should_propose": boolean,
-                    "reason": "Explicación concisa justificando el score basado en el stack o el potencial de negociación."
-                }
-                ]
-            """
 
             try:
                 logger.info("Listando modelos disponibles para esta API KEY...")
@@ -77,7 +36,7 @@ class GeminiAdapter(IntelligencePort):
             logger.critical(f"❌ Error inicializando Google GenAI:: {e}")
             raise RuntimeError(f"Error inicializando Google GenAI: {e}")
 
-    async def evaluate_projects(self, projects: list[dict]) -> list[dict]:
+    async def evaluate_projects(self, projects: list[dict]) -> list[dict[str, Any]]:
         """Evalúa un lote de proyectos en una sola llamada."""
         if not projects:
             return []
@@ -92,12 +51,14 @@ class GeminiAdapter(IntelligencePort):
                 "description": p.get("description", p.get("short_description", "N/A")),
                 "skills": p.get("skills", [])
             })
-
+        self.set_system_instructions()
         prompt = f"{self.system_instructions}\n\n**Proyectos a evaluar:**\n{json.dumps(projects_payload, indent=2)}"
 
         # logger.info(f"Actual prompt para la IA {prompt} .")
-
+        #. Trabajamso con GEMMA por las quotas establecidas
         try:
+            self.model_id = "models/gemma-4-31b-it"
+            logger.info(f"🤖 Modelo de IA seleccionado : '{self.model_id}'")
             response = self.client.models.generate_content(
                 model=self.model_id,
                 contents=prompt
@@ -115,10 +76,11 @@ class GeminiAdapter(IntelligencePort):
                 results = json.loads(json_part)
                 logger.info(f"IA evaluó un lote de {len(results)} proyectos.")
                 if results:
-                    return cast( list[dict],results ) 
+                    return cast(  list[dict[str, Any]],results ) 
                 else:
                     logger.warning("La IA devolvió una lista vacía.")
                     return  []
+            return  []
 
         except Exception as e:
             logger.error(f"Error masivo en evaluación de IA: {e}")
@@ -236,6 +198,52 @@ class GeminiAdapter(IntelligencePort):
         except Exception as e:
             logger.error(f"Error generando propuesta económica: {e}")
             return {"error": "No se pudo generar la propuesta"}
+
+    def set_system_instructions(self):
+            # Mantenemos tu perfil pero ajustamos para recibir una lista
+            self.system_instructions = """
+                Actúa como un Senior Fullstack Developer y Technical Recruiter con gran visión de negocio en el mercado de freelancers.
+                Tu tarea es evaluar proyectos de Workana para determinar su viabilidad técnica y comercial.
+
+                **MIS HABILIDADES CORE:**
+                - Backend: Python (FastAPI, Django), Node.js (Express)
+                - Frontend: React, Vue.js, Angular, TypeScript
+                - Bases de Datos: PostgreSQL, MongoDB
+                - DevOps: Docker, CI/CD
+
+                **REGLAS DE EXCLUSIÓN CRÍTICA (Filtro Rojo):**
+                - Descarta inmediatamente (Score 0 y should_propose: false) cualquier proyecto que requiera: PHP o Odoo. No me interesa trabajar con estas tecnologías bajo ninguna circunstancia.
+                - Descarta proyectos que dependan de ecosistemas cerrados o frameworks de gestión empresarial específicos, sobretodo si piden experiencia en los mismos.
+                - Solo evalúa con score alto (5 o superior) proyectos de desarrollo a medida, scripts independientes, automatizaciones generales, APIs, o desarrollo web/móvil que NO esté atado a los softwares mencionados arriba.
+
+                **CRITERIOS DE EVALUACIÓN (Lógica de Decisión):**
+
+                1. Ajuste Técnico (Prioridad Máxima):
+                - Evalúa si el stack coincide con mis habilidades. 
+                - Proyectos de IA, Automatización, APIs y Web Scraping son altamente valorados.
+                - Prioriza proyectos que hablen de: "Escalabilidad", "Optimización de base de datos", "Integraciones complejas", "Refactorización" o "Sistemas desde cero".
+                - Un proyecto que requiere un buen diseño relacional o patrones de diseño vale más que un script aislado.
+
+                2. Flexibilidad de Presupuesto (Contexto LatAm):
+                - No descartes proyectos por tener un presupuesto bajo (ej. < 100 USD) si la descripción parece ser de un proyecto serio.
+                - Entiende que muchos clientes ponen "100 USD" como placeholder para negociar después. Solo penaliza el presupuesto si el cliente parece buscar "mucho trabajo por poco dinero" de forma cerrada.
+                - Ignora también la barrera de los 100 USD si el proyecto suena a "Producto Mínimo Viable (MVP)" o "Core Business". 
+
+                3. Manejo de Información Incompleta:
+                - Si el título o la descripción son breves, NO los descartes. Si el título sugiere un desafío técnico interesante (ej: "Script de IA para leads"), asígnale un voto de confianza (5). 
+                - La falta de detalle puede ser una oportunidad para definir el alcance en la propuesta.
+
+                **FORMATO DE SALIDA (Estrictamente JSON):**
+                Devuelve un array de objetos con esta estructura:
+                [
+                {
+                    "link_hash": "string",
+                    "score": integer (0 a 10),
+                    "should_propose": boolean,
+                    "reason": "Explicación concisa justificando el score basado en el stack o el potencial de negociación."
+                }
+                ]
+            """
 
     async def evaluate_project(self, project: dict) -> dict:
         prompt = self.prompt_template.format(
