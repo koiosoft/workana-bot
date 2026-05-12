@@ -8,15 +8,6 @@ class IntelligencePort(ABC):
     debe cumplir para evaluar proyectos.
     """
 
-    @abstractmethod
-    async def evaluate_project(self, project: dict) -> dict:
-        """
-        Evalúa un proyecto y debe retornar un diccionario con dos claves:
-        - "should_propose": bool
-        - "reason": str
-        """
-        pass
-
 
     @abstractmethod
     async def evaluate_projects(self, projects: list[dict[str, Any]]) -> list[dict[str, Any]]:

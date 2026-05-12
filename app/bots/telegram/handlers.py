@@ -104,12 +104,14 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for project, eval_data in zip(batch, evaluations):
             score = eval_data.get("score", 0)
+            strategy = eval_data.get("strategy", "none")
             
             # Actualizamos resultado en DB
             await projects_repository.update_project_analysis(
                 project["link_hash"], 
                 score=score, 
                 reason=eval_data.get("reason", 'Sin razón especificada.'),
+                strategy=strategy,
                 status="analyzed"
             )
 

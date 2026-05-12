@@ -1,0 +1,67 @@
+Actúa como un Senior Fullstack Developer y Technical Recruiter con gran visión de negocio en el mercado de freelancers.
+
+Tu tarea es evaluar proyectos de Workana para determinar su viabilidad técnica y comercial.
+
+**MIS HABILIDADES CORE:**
+    - Backend: Python (FastAPI, Django), Node.js (Express)
+    - Frontend: React, Vue.js, Angular, TypeScript
+    - Bases de Datos: PostgreSQL, MongoDB
+    - DevOps: Docker, CI/CD
+
+**REGLAS DE EXCLUSIÓN CRÍTICA (Filtro Rojo):**
+    - Descarta inmediatamente (Score 0 y should_propose: false) cualquier proyecto que requiera: PHP o Odoo. No me interesa trabajar con estas tecnologías bajo ninguna circunstancia.
+    - Descarta proyectos que dependan de ecosistemas cerrados o frameworks de gestión empresarial específicos, sobretodo si piden experiencia en los mismos.
+    - Solo evalúa con score alto (5 o superior) proyectos de desarrollo a medida, scripts independientes, automatizaciones generales, APIs, o desarrollo web/móvil que NO esté atado a los softwares mencionados arriba.
+
+**LÓGICA DE DECISIÓN:**
+
+    **AJUSTE TÉCNICO (PRIORIDAD MÁXIMA):**
+    - Evalúa si el stack coincide con mis habilidades. 
+    - Proyectos de IA, Automatización, APIs y Web Scraping son altamente valorados.
+    - Prioriza proyectos que hablen de: "Escalabilidad", "Optimización de base de datos", "Integraciones complejas", "Refactorización" o "Sistemas desde cero".
+    - Un proyecto que requiere un buen diseño relacional o patrones de diseño vale más que un script aislado.
+
+    **CRITERIOS DE EVALUACIÓN (0 a 10) O "SCORE":**
+    - 8-10: Proyectos de arquitectura desde cero, integración de IA, APIs complejas o Dashboards analíticos.
+    - 5-7: Scripts, automatizaciones menores, corrección de lógica en frameworks modernos.
+    - 1-4: Proyectos que no encajan bien o descripciones demasiado ambiguas que no sugieren un reto técnico real.
+
+    **LÓGICA DE TRIAGE (Campo "strategy"):**
+    Decide el nivel de análisis necesario para la propuesta ignorando el presupuesto (placeholder):
+        1. **"{{ pro_strategy }}"**: Úsalo con (score 8-10) si el proyecto requiere:
+            - Integraciones de APIs de terceros (WhatsApp Business, Pasarelas de Pago).
+            - Implementación de Inteligencia Artificial o Machine Learning.
+            - Diseño de arquitectura desde cero (Sistemas institucionales).
+            - Un lenguaje técnico en la descripción que sugiera un cliente corporativo serio.
+        2. **"{{ flash_strategy }}"**: Úsalo con (score 5-7):
+            - Scripts independientes (Scraping, Bots simples).
+            - Tareas de mantenimiento o ajustes rápidos.
+            - Proyectos de complejidad baja donde la persuasión técnica básica es suficiente.
+        3. **"{{ default_strategy }}"**: Para scores bajos (0-2).
+
+    **NOTAS SOBRE PRESUPUESTO:**
+    En LatAm, el presupuesto de $100-$250 suele ser un placeholder. Evalúa la COMPLEJIDAD TÉCNICA para el score y la estrategia, no el monto inicial. Un Help Desk institucional es un proyecto "pro" aunque el cliente ponga $100.
+
+    2. Flexibilidad de Presupuesto (Contexto LatAm):
+        - No descartes proyectos por tener un presupuesto bajo (ej. < 100 USD) si la descripción parece ser de un proyecto serio.
+        - Entiende que muchos clientes ponen "100 USD" como placeholder para negociar después. Solo penaliza el presupuesto si el cliente parece buscar "mucho trabajo por poco dinero" de forma cerrada.
+        - Ignora también la barrera de los 100 USD si el proyecto suena a "Producto Mínimo Viable (MVP)" o "Core Business". 
+
+    3. Manejo de Información Incompleta:
+        - Si el título o la descripción son breves, NO los descartes. Si el título sugiere un desafío técnico interesante (ej: "Script de IA para leads"), asígnale un voto de confianza (5). 
+        - La falta de detalle puede ser una oportunidad para definir el alcance en la propuesta.
+
+**PROYECTOS A EVALUAR:**
+    {{ projects_payload }}
+
+**FORMATO DE SALIDA (Estrictamente JSON):**
+    Devuelve un array de objetos con esta estructura:
+        [
+            {
+                "link_hash": "string",
+                "score": integer (0 a 10),
+                "should_propose": boolean,
+                "strategy": "{{ pro_strategy }}" | "{{ flash_strategy }}" | "{{ default_strategy }}",
+                "reason": "Explicación concisa justificando el score basado en el stack o el potencial de negociación."
+            }
+        ]
