@@ -160,11 +160,13 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     scraper = ScraperFactory.get_scraper()
 
     processed_count = 0
+    failed_count = 0
 
     for project in projects:
         url = project.get('link')
         link_hash = project.get('link_hash')
         title = project.get('title', 'Sin título')
+        total_usd = 0
 
         if not url or not link_hash:
             continue
@@ -174,20 +176,24 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             full_detail = await scraper.fetch_full_detail(url)
             proposal  = await ai_service.generate_proposal(full_detail)
             if proposal is not None and "error" not in proposal:
-                processed_count += 1
-                await projects_repository.update_project_proposal(link_hash, proposal)
 
+                await projects_repository.update_project_proposal(link_hash, proposal)
+                processed_count += 1
                 total_usd = proposal.get("summary", {}).get("total_budget", 0)
                 await update.message.reply_text(
-                    f"✅ **Propuesta Generada**\n"
-                    f"📌 {title}\n"
-                    f"URL: {url}\n"
-                    f"💰 Presupuesto estimado: ${total_usd}\n"
-                    f"⏱️ Horas: {proposal.get('summary', {}).get('total_hours')}h"
-                )
+                        f"✅ **Propuesta Generada**\n"
+                        f"📌 {title}\n"
+                        f"URL: {url}\n"
+                        f"💰 Presupuesto estimado: ${total_usd}\n"
+                        f"⏱️ Horas: {proposal.get('summary', {}).get('total_hours')}h"
+                    )
         except Exception as e:
+            failed_count += 1
             logger.error(f"Error procesando proyecto {title}: {str(e)}")
             await update.message.reply_text(f'Ha habido un error en la IA al procesar el proyecto: {title}')
             break
-        
 
+        
+    end_message = f"Fin procesamiento de proyectos. Proyectos procesados: {processed_count}.  Proyectos fallidos: {failed_count}"
+    logger.info(end_message)
+    await update.message.reply_text(end_message)
