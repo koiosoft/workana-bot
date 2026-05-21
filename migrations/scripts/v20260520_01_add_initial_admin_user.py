@@ -2,8 +2,7 @@ from datetime import datetime
 from bson import ObjectId
 from pymongo.database import Database
 
-from migrations.core.base import MigrationBase
-from migrations.core.writer import ResilientBulkWriter
+from migrations.core.base import IMigrationContext, MigrationBase
 
 TARGET_COLLECTION = "users"
 
@@ -23,7 +22,7 @@ class Migration(MigrationBase):
     Utiliza una operación de 'upsert' para ser idempotente.
     """
 
-    def up(self, writer: ResilientBulkWriter) -> None:
+    def up(self, writer: IMigrationContext) -> None:
         """
         Inserta o actualiza (upsert) el usuario administrador.
         Si el usuario con esa _id ya existe, se sobreescribirá.

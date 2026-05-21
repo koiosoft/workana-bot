@@ -1,8 +1,7 @@
 from bson import ObjectId
 from pymongo.database import Database
 
-from migrations.core.base import MigrationBase
-from migrations.core.writer import ResilientBulkWriter
+from migrations.core.base import IMigrationContext, MigrationBase
 
 TARGET_COLLECTION = "users"
 USER_ROGER_ID = ObjectId("6a0c91a3ac86bbd7a3507040")
@@ -14,7 +13,7 @@ class Migration(MigrationBase):
     Actualiza el nombre del usuario administrador en la colección 'users'.
     """
 
-    def up(self, writer: ResilientBulkWriter) -> None:
+    def up(self, writer: IMigrationContext) -> None:
         """
         Encola una operación de actualización para el nombre del usuario.
         """

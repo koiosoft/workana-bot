@@ -21,6 +21,12 @@ class IMigrationContext(Protocol):
         """
         ...
 
+    def add_update_one(self, collection_name: str, query_filter: Dict[str, Any], update_mutation: Dict[str, Any], upsert: bool = False) -> None:
+        """
+        Encola una operación de actualización de un único documento.
+        """
+        ...
+
     def add_delete(self, collection_name: str, filter_query: Dict[str, Any]) -> None:
         """
         Encola una operación de eliminación para una colección específica.
