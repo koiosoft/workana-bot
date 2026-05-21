@@ -71,7 +71,23 @@ Sigue estas instrucciones para poner en marcha el proyecto en tu entorno local.
     ```
     **Nota:** El archivo `.env` puede existir para valores por defecto, pero `.env.local` siempre tendrá prioridad.
 
-### Obtención de Credenciales (API Keys)
+3.  **Configura el entorno virtual de Python (para desarrollo local)**:
+    Para ejecutar scripts de mantenimiento, migraciones o pruebas localmente, necesitas un entorno virtual con las dependencias del proyecto.
+
+    ```bash
+    # 1. Crea el entorno virtual
+    python3 -m venv .venv
+
+    # 2. Actívalo (en macOS/Linux)
+    source .venv/bin/activate
+    # En Windows usa: .venv\Scripts\activate
+
+    # 3. Instala todas las dependencias (app + desarrollo)
+    pip install -r requirements.txt
+    ```
+    Este entorno te permitirá que herramientas como VSCode (Pylance) reconozcan las librerías instaladas.
+
+### 4. Obtención de Credenciales (API Keys)
 
 Para que la aplicación funcione, necesitas obtener credenciales para los servicios de Telegram y Google Gemini.
 

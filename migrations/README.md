@@ -86,7 +86,9 @@ Para crear una nueva migración, puedes usar el CLI del sistema de migraciones.
 
 ## ▶️ Ejecución y Rollback (Manual)
 
-La ejecución de las migraciones se realiza manualmente a través de la línea de comandos. Esto te da control total sobre cuándo y cómo se aplican los cambios en la base de datos.
+La ejecución de las migraciones se realiza manually a través de la línea de comandos. Esto te da control total sobre cuándo y cómo se aplican los cambios en la base de datos.
+
+**Nota importante**: Antes de ejecutar estos comandos, asegúrate de haber configurado tu entorno de desarrollo local como se indica en el `README.md` principal del proyecto. Esto implica tener el entorno virtual activado (`source .venv/bin/activate`) y las dependencias instaladas (`pip install -r requirements.txt`).
 
 Asegúrate de que tu archivo `.env.local` esté configurado correctamente, ya que el script de migraciones lo necesita para conectarse a la base de datos.
 

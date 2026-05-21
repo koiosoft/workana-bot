@@ -1,0 +1,5 @@
+# Instala las dependencias de la aplicación principal
+-r app/requirements.txt
+
+# --- Adicionales para Desarrollo, Pruebas y Scripts ---
+playwright-stealth
