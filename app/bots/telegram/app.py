@@ -17,6 +17,8 @@ def build_telegram_application(token: str):
     application = (
         ApplicationBuilder()
         .token(token)
+        .connect_timeout(30)
+        .read_timeout(30)
         .post_init(setup_bot_commands)
         .post_init(connect_to_mongo)
         .post_shutdown(close_mongo_connection)

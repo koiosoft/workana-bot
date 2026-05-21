@@ -22,6 +22,7 @@ __pycache__/
 
 # Variables de entorno y secretos (¡MUY IMPORTANTE!)
 .env
+.env.local
 
 # Archivos del sistema operativo
 .DS_Store

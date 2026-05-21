@@ -9,6 +9,7 @@ services:
       - ./browser_data:/usr/src/app/browser_data
     env_file:
       - .env
+      - .env.local
     depends_on:
       - mongodb
     # Mantiene el contenedor activo para desarrollo

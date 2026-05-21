@@ -2,6 +2,9 @@ import os
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from loguru import logger
 
+from config.database import get_mongo_config
+
+
 _client: AsyncIOMotorClient | None = None
 _db: AsyncIOMotorDatabase | None = None
 
@@ -13,16 +16,8 @@ async def connect_to_mongo(application):
         logger.info("La conexión a MongoDB ya existe.")
         return
 
-    user = os.getenv("MONGO_USER", "root")
-    password = os.getenv("MONGO_PASS", "example")
-    host = os.getenv("MONGO_HOST", "mongodb")
-    port = os.getenv("MONGO_PORT", "27017")
-    db_name = os.getenv("MONGO_DB_NAME", "workana_bot")
-
-    uri = os.getenv(
-        "MONGO_URI",
-        f"mongodb://{user}:{password}@{host}:{port}/{db_name}?authSource=admin",
-    )
+    uri, db_name = get_mongo_config()
+    
     logger.info("🔌 Conectando a MongoDB...")
     _client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
     
@@ -36,7 +31,6 @@ async def connect_to_mongo(application):
         _client = None
         _db = None
         raise
-
 
 
 def get_database() -> AsyncIOMotorDatabase:

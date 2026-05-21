@@ -16,3 +16,12 @@ class DummyScraperAdapter(ScraperPort):
             "link": "https://test.com",
             "extracted_at": datetime.utcnow()
         }]
+
+    async def fetch_full_detail(self, url: str) -> dict:
+        logger.warning(f"🧪 [DUMMY] Simulando obtención de detalles para la URL: {url}")
+        return {
+            "skills": ["Python", "FastAPI", "Docker"],
+            "proposals": "5 a 10",
+            "published_at": "hace 1 hora",
+            "country": "México"
+        }
