@@ -1,5 +1,6 @@
 import hashlib
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from pymongo import ASCENDING, UpdateOne
 from .mongo import get_database
@@ -21,6 +22,7 @@ class ProjectsRepository:
         await self.collection.create_index([("proposal_status", ASCENDING)])
         await self.collection.create_index([("scraped_at", ASCENDING)])
         await self.collection.create_index([("processing_started_at", ASCENDING)])
+        await self.collection.create_index([("estimated_published_at", ASCENDING)])
         self._indexes_ready = True
 
     @staticmethod
@@ -28,34 +30,86 @@ class ProjectsRepository:
         raw = project.get("link") or f"{project.get('title', '')}|{project.get('budget', '')}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
+    def _calculate_estimated_published_at(self, published_str: str, scraped_at_dt: datetime) -> datetime | None:
+        """
+        Calcula la fecha de publicación estimada a partir de un string de tiempo relativo.
+        """
+        if not published_str or not isinstance(scraped_at_dt, datetime):
+            return None
+
+        time_patterns = {
+            'months': re.compile(r"hace\s+(?P<value>\d+)\s+mes(es)?", re.IGNORECASE),
+            'days': re.compile(r"hace\s+(?P<value>\d+)\s+d[íi]a(s)?", re.IGNORECASE),
+            'hours': re.compile(r"hace\s+(?P<value>\d+)\s+hora(s)?", re.IGNORECASE),
+            'minutes': re.compile(r"hace\s+(?P<value>\d+)\s+minuto(s)?", re.IGNORECASE),
+            'moment': re.compile(r"hace\s+(un\s+momento|menos\s+de\s+un\s+minuto)", re.IGNORECASE)
+        }
+
+        delta = None
+        if 'ayer' in published_str.lower():
+            delta = timedelta(days=1)
+        else:
+            # Itera sobre los patrones para encontrar una coincidencia.
+            for unit, pattern in time_patterns.items():
+                match = pattern.search(published_str)
+                if match:
+                    # Si se encuentra una coincidencia, calcula el delta.
+                    if unit == 'moment':
+                        delta = timedelta(minutes=1)
+                    else:
+                        value = int(match.group('value'))
+                        if unit == 'months':
+                            # NOTA: La duración del mes es una aproximación.
+                            delta = timedelta(days=value * 30)
+                        else:
+                            delta = timedelta(**{unit: value})
+                    
+                    # Rompe el bucle solo después de procesar la primera coincidencia.
+                    break
+        
+        if delta:
+            return scraped_at_dt - delta
+        
+        logger.warning(f"No se pudo parsear el tiempo relativo '{published_str}'.")
+        return None
+
     async def save_scraped_projects(self, projects: list[dict[str, Any]]) -> dict[str, int]:
         await self.ensure_indexes()
         if not projects:
             return {"inserted": 0, "existing": 0}
 
-        now = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
         operations = []
         for project in projects:
             link_hash = self._build_hash(project)
+            published_str = project.get("published", "N/A")
+            
             doc = {
                 "title": project.get("title", "N/A"),
                 "budget": project.get("budget", "N/A"),
                 "link": project.get("link", "N/A"),
-                "published": project.get("published", "N/A"),
+                "published": published_str,
                 "short_description": project.get("short_description", ""),
                 "bids": project.get("bids", "0"),
                 "source": "workana",
                 "proposal_status": "pending",
-                "scraped_at": now,
+                "scraped_at": now_iso,
                 "link_hash": link_hash,
                 "skills": project.get("skills", []),
             }
+
+            # Calcular y añadir la fecha de publicación estimada
+            estimated_date = self._calculate_estimated_published_at(published_str, now_dt)
+            if estimated_date:
+                doc["estimated_published_at"] = estimated_date
+
             operations.append(
                 UpdateOne(
                     {"link_hash": link_hash},
                     {
                         "$setOnInsert": doc,
-                        "$set": {"updated_at": now},
+                        "$set": {"updated_at": now_iso},
                     },
                     upsert=True,
                 )
