@@ -220,22 +220,22 @@ class ResilientBulkWriter:
         else:
             logging.warning(f"UpdateOne en '{collection_name}' con filtro {query_filter} no encontró documento y upsert es False. No se encolará operación.")
 
-    def add_update(self, collection_name: str, query_filter: Dict[str, Any], update_mutation: Dict[str, Any]):
+    def add_update(self, collection_name: str, filter_query: Dict[str, Any], update_query: Dict[str, Any]):
         """
         Encola una operación de actualización masiva.
 
         Args:
             collection_name (str): La colección de destino.
-            query_filter (Dict): El filtro para encontrar documentos a actualizar.
-            update_mutation (Dict): La operación de actualización de pymongo.
+            filter_query (Dict): El filtro para encontrar documentos a actualizar.
+            update_query (Dict): La operación de actualización de pymongo.
         """
         # Acción de Respaldo Preventiva
         target_collection = self.db[collection_name]
-        docs_to_update = list(target_collection.find(query_filter))
+        docs_to_update = list(target_collection.find(filter_query))
 
         if not docs_to_update:
             logging.warning(
-                f"UPDATE en '{collection_name}' con filtro {query_filter} no encontró "
+                f"UPDATE en '{collection_name}' con filtro {filter_query} no encontró "
                 "documentos. La operación no se encolará."
             )
             return
@@ -245,13 +245,13 @@ class ResilientBulkWriter:
                 "migration_version": self.script_version,
                 "collection": collection_name,
                 "op_type": "update",
-                "op_details": {"filter": query_filter, "mutation": update_mutation},
+                "op_details": {"filter": filter_query, "mutation": update_query},
                 "original_document": doc,
             }
             self._backup_ops.append(InsertOne(backup_doc))
 
         # Acción de Negocio
-        self._business_ops[collection_name].append(UpdateMany(query_filter, update_mutation))
+        self._business_ops[collection_name].append(UpdateMany(filter_query, update_query))
         logging.debug(f"Encolada operación UPDATE para {len(docs_to_update)} documentos en '{collection_name}'.")
 
     def add_delete(self, collection_name: str, query_filter: Dict[str, Any]):
