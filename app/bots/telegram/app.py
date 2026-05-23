@@ -1,5 +1,5 @@
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
-from database.mongo import connect_to_mongo, close_mongo_connection
+from app.database.mongo import connect_to_mongo, close_mongo_connection
 from .handlers import start, status, fetch_projects, process_projects
 
 

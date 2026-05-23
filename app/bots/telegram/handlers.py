@@ -5,7 +5,7 @@ from loguru import logger
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from scraper.factory import ScraperFactory
-from database import get_projects_repository
+from app.database import get_projects_repository
 from intelligence.factory import get_intelligence_service
 from .messages import send_long_message
 
@@ -174,6 +174,10 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             logger.info(f"Extrayendo detalle para: {title}")
             full_detail = await scraper.fetch_full_detail(url)
+            
+            # Guardamos los detalles completos en la base de datos.
+            await projects_repository.update_full_details(link_hash, full_detail)
+            
             proposal  = await ai_service.generate_proposal(full_detail)
             if proposal is not None and "error" not in proposal:
 

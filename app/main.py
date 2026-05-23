@@ -1,5 +1,15 @@
 import os
 import sys
+from pathlib import Path
+
+# --- Inicio de la corrección de rutas ---
+# Añade la raíz del proyecto a sys.path para permitir importaciones absolutas consistentes
+# (ej. 'from app.database import ...') tanto en local como en Docker.
+# La raíz del proyecto es el directorio padre del directorio 'app' donde está main.py.
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
+# --- Fin de la corrección de rutas ---
+
 import time
 from loguru import logger
 from dotenv import load_dotenv
