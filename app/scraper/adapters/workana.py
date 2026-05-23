@@ -2,7 +2,7 @@ import re
 import os
 from datetime import datetime, timezone
 from urllib.parse import urljoin
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import Page, async_playwright, TimeoutError as PlaywrightTimeoutError
 from loguru import logger
 from ..base import ScraperPort
 
@@ -220,13 +220,26 @@ class WorkanaScraperAdapter(ScraperPort):
                 
         return all_projects
 
+    async def _is_project_not_found(self, page: Page) -> bool:
+        """
+        Verifica si la página actual es una de 'Proyecto no encontrado' usando Locators de Playwright.
+        Esta función asume que el elemento ya es visible y no espera.
+        """
+        error_locator = page.locator("section.error-section h2.error-title")
+        # Usamos count() que es inmediato y no espera.
+        if await error_locator.count() > 0:
+            text = await error_locator.inner_text()
+            if text.strip() == "Proyecto no encontrado":
+                logger.warning(f"🚫 Detectada página 'Proyecto no encontrado' en: {page.url}")
+                return True
+        return False
 
-    async def fetch_full_detail(self, url: str) -> dict:
+    async def fetch_full_detail(self, url: str) -> dict | None:
         """
         Navega al detalle del proyecto y extrae la información profunda.
+        Devuelve None si el proyecto no fue encontrado (Early-Exit).
         """
         async with async_playwright() as p:
-            # Usamos el perfil que ya tienes definido en el __init__
             context_kwargs = {}
             if os.path.exists(self.state_file) and os.path.getsize(self.state_file) > 0:
                 context_kwargs["storage_state"] = self.state_file
@@ -241,16 +254,28 @@ class WorkanaScraperAdapter(ScraperPort):
             
             try:
                 logger.info(f"🔍 Extrayendo detalle profundo de: {url}")
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)                
-                screenshot_path = "debug_detail_screenshot.png"
-                await page.screenshot(path=screenshot_path, full_page=True) 
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
-                # Esperamos a que el artículo principal esté cargado
-                await page.wait_for_selector("article", timeout=10000)
-          
+                # --- INICIO: Lógica de espera robusta ---
+                combined_selector = "article, section.error-section"
+                try:
+                    # Esperamos a que CUALQUIERA de los dos selectores principales esté presente
+                    await page.wait_for_selector(combined_selector, timeout=15000)
+                except PlaywrightTimeoutError:
+                    # Si ninguno aparece, es un error irrecuperable para este scraper.
+                    await page.screenshot(path="debug_timeout_page.png", full_page=True)
+                    logger.error(
+                        f"Timeout esperando el contenido principal ('article') o una sección de error "
+                        f"en {url}. Screenshot guardado en 'debug_timeout_page.png'."
+                    )
+                    raise # Relanzamos la excepción para que la maneje el bucle de reintentos
 
-                # 1. Extraer descripción completa (el div .expander)
-                # Nota: El texto puede estar truncado visualmente, pero en el HTML suele estar completo
+                # Ahora que sabemos que uno de los dos elementos existe, verificamos si es la página de error.
+                if await self._is_project_not_found(page):
+                    return None
+                # --- FIN: Lógica de espera robusta ---
+
+                # Si no es una página de error, podemos proceder a la extracción de forma segura.
                 full_description = await page.locator(".expander").inner_text()
                 extra_details_list = await page.locator("article > p.mt20").all_text_contents()
                 if extra_details_list:
@@ -259,15 +284,12 @@ class WorkanaScraperAdapter(ScraperPort):
                         for text in extra_details_list 
                         if text.strip() and "Habilidades necesarias" not in text
                     ]
-                    
                     if filtered_details:
                         full_description += "\n" + "\n".join(filtered_details)
                 
-                # 2. Extraer habilidades (por si acaso faltaron o hay más en el detalle)
                 skills_elements = await page.locator(".skills .skill").all_text_contents()
                 skills = [s.strip() for s in skills_elements if s.strip()]
 
-                # 3. Extraer presupuesto (a veces varía o da más detalle en el interior)
                 budget_text = await page.locator(".budget").inner_text()
 
                 return {

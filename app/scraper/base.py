@@ -10,6 +10,5 @@ class ScraperPort(ABC):
         pass
 
     @abstractmethod
-    async def fetch_full_detail(self, url: str) -> dict:
+    async def fetch_full_detail(self, url: str) -> dict | None:
         pass
-
