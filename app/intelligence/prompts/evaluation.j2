@@ -55,13 +55,16 @@ Tu tarea es evaluar proyectos de Workana para determinar su viabilidad técnica 
     {{ projects_payload }}
 
 **FORMATO DE SALIDA (Estrictamente JSON):**
-    Devuelve un array de objetos con esta estructura:
+    Devuelve un array de objetos con esta estructura. Diferencia claramente entre 'summary' y 'reason':
+    - `summary`: Un resumen objetivo y conciso de lo que el cliente necesita.
+    - `reason`: Tu justificación experta sobre por qué el proyecto recibe un score específico, alineado a mis habilidades y estrategia.
         [
             {
                 "link_hash": "string",
                 "score": integer (0 a 10),
                 "should_propose": boolean,
                 "strategy": "{{ pro_strategy }}" | "{{ flash_strategy }}" | "{{ default_strategy }}",
+                "summary": "Resumen objetivo de los requerimientos del proyecto.",
                 "reason": "Explicación concisa justificando el score basado en el stack o el potencial de negociación."
             }
         ]

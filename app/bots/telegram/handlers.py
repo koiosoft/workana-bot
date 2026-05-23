@@ -106,14 +106,16 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for project, eval_data in zip(batch, evaluations):
             score = eval_data.get("score", 0)
             strategy = eval_data.get("strategy", "none")
+            summary = eval_data.get("summary", "No summary available.")
             
             # Actualizamos resultado en DB
             await projects_repository.update_project_analysis(
-                project["link_hash"], 
+                link_hash=project["link_hash"], 
                 score=score, 
                 reason=eval_data.get("reason", 'Sin razón especificada.'),
                 strategy=strategy,
-                status="analyzed"
+                status="analyzed",
+                ai_summary=summary
             )
 
             if score > 4:
@@ -132,6 +134,7 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⭐ **Score: {p['score']}/10**\n"
             f"📌 {p['title']}\n"
             f"💰 {p['budget']}\n"
+            f"📝 {p.get('summary', 'No summary')}\n"
             f"💡 {p['reason']}\n"
             f"🔗 [Ver Proyecto]({p['link']})\n\n"
         )
@@ -159,80 +162,79 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
 
-    await update.message.reply_text("🧠 Obteniendo proyectos pendientes para evaluación con IA...")
+    await update.message.reply_text("🧠 Obteniendo proyectos con alto score para análisis profundo...")
     
     projects_repository = get_projects_repository()
     ai_service = get_intelligence_service()
 
     projects = await projects_repository.get_projects_for_deep_analysis(limit=50)
     if not projects:
-        logger.success(f"📭 No hay proyectos pendientes en la base de datos para evaluación inicial.")
-        await update.message.reply_text("📭 No hay proyectos pendientes en la base de datos para evaluación inicial.")
+        logger.success("📭 No hay proyectos listos para la fase de propuesta.")
+        await update.message.reply_text("📭 No hay proyectos que requieran generación de propuesta.")
         return
 
-    await update.message.reply_text(f"🤖 Evaluando {len(projects)} proyectos con Gemini. Esto puede tardar un momento...")
+    await update.message.reply_text(f"🤖 Iniciando generación de propuestas para {len(projects)} proyectos...")
     scraper = ScraperFactory.get_scraper()
 
     processed_count = 0
     failed_count = 0
+    not_found_count = 0
     
-    # Circuit Breaker: Contador de fallas consecutivas en memoria
     consecutive_failures = 0
     CIRCUIT_BREAKER_THRESHOLD = 5
     MAX_RETRY_ATTEMPTS = 3
 
-    for project in projects:
+    for i, project in enumerate(projects):
         url = project.get('link')
         link_hash = project.get('link_hash')
         title = project.get('title', 'Sin título')
-        total_usd = 0
-
+        
         if not url or not link_hash:
             continue
+
+        if update.message:
+            await update.message.reply_text(f"⚙️ ({i+1}/{len(projects)}) Procesando: {title}")
 
         retry_count = 0
         project_succeeded = False
         critical_failure = False
 
-        # Exponential Backoff Retry Logic
         while retry_count < MAX_RETRY_ATTEMPTS and not critical_failure:
             try:
                 logger.info(f"Extrayendo detalle para: {title} (Intento {retry_count + 1}/{MAX_RETRY_ATTEMPTS})")
                 full_detail = await scraper.fetch_full_detail(url)
 
-                # --- INICIO: Cortocircuito para proyectos no encontrados ---
                 if full_detail is None:
                     logger.info(f"Proyecto '{title}' no encontrado en la plataforma. Marcando como 'not_found'.")
                     await projects_repository.mark_projects_status([link_hash], "not_found")
                     if update.message:
-                        await update.message.reply_text(
-                            f"🚫 Proyecto descartado (no encontrado):\n"
-                            f"📄 {title}"
-                        )
-                    # Rompemos el bucle de reintentos y marcamos como "exitoso" para que el `continue` de abajo se active
+                        await update.message.reply_text(f"🚫 ({i+1}/{len(projects)}) Descartado (no encontrado): {title}")
+                    not_found_count += 1
                     project_succeeded = True
                     break
-                # --- FIN: Cortocircuito ---
                 
-                # Guardamos los detalles completos en la base de datos.
                 await projects_repository.update_full_details(link_hash, full_detail)
                 
-                proposal = await ai_service.generate_proposal(full_detail)
-                if proposal is not None and "error" not in proposal:
+                if update.message:
+                    await update.message.reply_text(f"🧠 ({i+1}/{len(projects)}) Generando propuesta IA para: {title}")
 
+                proposal = await ai_service.generate_proposal(full_detail)
+                if proposal and "error" not in proposal:
                     await projects_repository.update_project_proposal(link_hash, proposal)
                     processed_count += 1
                     total_usd = proposal.get("summary", {}).get("total_budget", 0)
                     if update.message:
                         await update.message.reply_text(
-                            f"✅ **Propuesta Generada**\n"
-                            f"📌 {title}\n"
-                            f"URL: {url}\n"
-                            f"💰 Presupuesto estimado: ${total_usd}\n"
-                            f"⏱️ Horas: {proposal.get('summary', {}).get('total_hours')}h"
+                            f"✅ ({i+1}/{len(projects)}) Propuesta Generada: {title}\n"
+                            f"💰 Presupuesto: ${total_usd} | ⏱️ Horas: {proposal.get('summary', {}).get('total_hours')}h"
                         )
-                
-                # Proyecto completado exitosamente - resetear contador del circuit breaker
+                else:
+                    # Si la IA devuelve un error, lo contamos como fallo
+                    failed_count += 1
+                    logger.error(f"Error de la IA al generar propuesta para {title}: {proposal.get('error', 'Unknown') if proposal else 'None'}")
+                    if update.message:
+                        await update.message.reply_text(f"❌ ({i+1}/{len(projects)}) Error IA en: {title}")
+
                 consecutive_failures = 0
                 project_succeeded = True
                 break
@@ -244,52 +246,41 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.warning(f"Error de red en proyecto {title} (Intento {retry_count}/{MAX_RETRY_ATTEMPTS}): {str(e)}")
                     
                     if retry_count < MAX_RETRY_ATTEMPTS:
-                        # Exponential backoff: 2s, 4s, 8s
                         backoff_time = 2 ** retry_count
                         logger.info(f"Esperando {backoff_time}s antes de reintentar...")
                         await asyncio.sleep(backoff_time)
                     else:
-                        # Se agotaron los reintentos por error de red
                         consecutive_failures += 1
                         failed_count += 1
-                        logger.error(f"Proyecto {title} omitido tras {MAX_RETRY_ATTEMPTS} intentos fallidos por error de red: {str(e)}")
-                        
-                        # Notificación silenciosa a Telegram
+                        logger.error(f"Proyecto {title} omitido tras {MAX_RETRY_ATTEMPTS} intentos por error de red.")
                         if update.message:
-                            await update.message.reply_text(
-                                f"⚠️ **Proyecto omitido por error de red**\n"
-                                f"📌 {title}\n"
-                                f"🔗 {url}\n"
-                                f"El proyecto conservará su estado original para reintentos futuros."
-                            )
+                            await update.message.reply_text(f"⚠️ ({i+1}/{len(projects)}) Omitido por red: {title}")
                         
-                        # Circuit Breaker Check
                         if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD:
-                            logger.critical(f"Circuit Breaker Activado: {CIRCUIT_BREAKER_THRESHOLD} fallas consecutivas de red detectadas.")
+                            logger.critical(f"Circuit Breaker Activado: {consecutive_failures} fallas consecutivas.")
                             if update.message:
-                                await update.message.reply_text(
-                                    f"🚨 **CIRCUIT BREAKER ACTIVADO**\n"
-                                    f"Red caída detectada tras {CIRCUIT_BREAKER_THRESHOLD} fallas consecutivas.\n"
-                                    f"Ejecución abortada automáticamente para proteger el sistema."
-                                )
+                                await update.message.reply_text("🚨 **CIRCUIT BREAKER ACTIVADO** 🚨\nFallas de red consecutivas. Proceso abortado.")
                             return
                 else:
-                    # Error no relacionado con red (ej: error de IA, parsing, etc.)
                     failed_count += 1
                     critical_failure = True
-                    logger.error(f"Error no recuperable procesando proyecto {title}: {str(e)}")
+                    logger.error(f"Error no recuperable procesando proyecto {title}: {str(e)}", exc_info=True)
                     if update.message:
-                        await update.message.reply_text(f'❌ Error crítico en el proyecto {title}: {str(e)}')
+                        await update.message.reply_text(f'❌ ({i+1}/{len(projects)}) Error crítico en: {title}')
 
-        # Si el proyecto se procesó (o se descartó correctamente), continuamos al siguiente
         if project_succeeded:
             continue
-
-        # Si hubo una falla crítica (no relacionada con red), detener el procesamiento
         if critical_failure:
             break
 
-    end_message = f"Fin procesamiento de proyectos. Proyectos procesados: {processed_count}. Proyectos fallidos: {failed_count}"
+    end_message = (
+        f"🏁 **Proceso Finalizado** 🏁\n\n"
+        f"✅ Propuestas generadas: {processed_count}\n"
+        f"🚫 No encontrados: {not_found_count}\n"
+        f"❌ Fallidos: {failed_count}\n"
+        f"--------------------\n"
+        f"Total: {len(projects)}"
+    )
     logger.info(end_message)
     if update.message:
-        await update.message.reply_text(end_message)
+        await update.message.reply_text(end_message, parse_mode="Markdown")

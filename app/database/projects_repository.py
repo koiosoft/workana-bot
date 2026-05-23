@@ -194,7 +194,7 @@ class ProjectsRepository:
         )
         return int(result.modified_count or 0)
 
-    async def update_project_analysis(self, link_hash: str, score: int, reason: str, strategy: str = "none", status: str = "analyzed") -> bool:
+    async def update_project_analysis(self, link_hash: str, score: int, reason: str, strategy: str = "none", status: str = "analyzed", ai_summary: str = "No summary available") -> bool:
         """
         Actualiza un proyecto con los resultados del análisis de la IA.
         """
@@ -208,6 +208,7 @@ class ProjectsRepository:
                     "strategy": strategy,
                     "ai_score": score,
                     "ai_reason": reason,
+                    "ai_summary": ai_summary,
                     "proposal_status": status,
                     "updated_at": now,
                     "analyzed_at": now
