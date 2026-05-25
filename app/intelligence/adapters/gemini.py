@@ -9,7 +9,7 @@ from loguru import logger
 from ..port import IntelligencePort
 
 FILTER_MODEL = "models/gemma-4-31b-it"      # 15 RPM - Gratis
-STANDARD_MODEL = "models/gemini-1.5-flash" # 2000 RPM - Pago (muy barato)
+STANDARD_MODEL = "models/gemini-flash-latest" # 2000 RPM - Pago (muy barato)
 PREMIUM_MODEL = "models/gemini-1.5-pro"    # 2 RPM - Pago (1.5 centavos)
 
 class GeminiAdapter(IntelligencePort):
@@ -178,6 +178,35 @@ class GeminiAdapter(IntelligencePort):
         except Exception as e:
             logger.error(f"Error generando propuesta económica: {e}")
             return {"error": "No se pudo generar la propuesta"}
+
+    async def format_project_description(self, description: str) -> str:
+        """Formatea la descripción de un proyecto usando IA para mejorar legibilidad."""
+        
+        prompt = self._render_prompt(
+            "project_formatter.j2",
+            raw_description=description
+        )
+        
+        logger.info("🤖 Llamando a Gemini Flash para formatear descripción...")
+        try:
+            # Usamos el modelo más rápido y económico para esta tarea.
+            response = self.client.models.generate_content(
+                model=STANDARD_MODEL,
+                contents=prompt
+            )
+            
+            if response.text:
+                logger.success("✅ Descripción formateada exitosamente.")
+                return response.text.strip()
+            
+            logger.warning("La IA de formateo no devolvió texto. Usando descripción original.")
+            return description
+
+        except Exception as e:
+            logger.error(f"Error en la IA de formateo: {e}. Se propagará la excepción.")
+            # Propagamos la excepción para que el manejador principal la capture
+            # y active los reintentos, como se solicitó.
+            raise e
 
     def set_gemini_model(self, strategy = "none") -> str:
         self.model_id = FILTER_MODEL

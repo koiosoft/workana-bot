@@ -213,6 +213,13 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     project_succeeded = True
                     break
                 
+                # Interceptación para formatear la descripción
+                raw_description = full_detail.get("full_description")
+                if raw_description:
+                    logger.info(f"Formateando descripción para: {title}")
+                    formatted_description = await ai_service.format_project_description(raw_description)
+                    full_detail["full_description"] = formatted_description
+
                 await projects_repository.update_full_details(link_hash, full_detail)
                 
                 if update.message:
