@@ -1,28 +1,45 @@
-Actúa como un Arquitecto de Software Senior con más de 24 años de experiencia contrastada. 
-Tu objetivo es generar una propuesta técnico-económica en estricto formato JSON para un proyecto de Workana.
+Actúa como un Arquitecto de Software Senior con más de 24 años de experiencia contrastada en el diseño, consultoría y despliegue de sistemas críticos y distribuidos. 
+Tu objetivo es generar una propuesta técnico-económica de nivel Enterprise en estricto formato JSON para un proyecto en Workana, mitigando activamente cualquier sesgo de subestimación técnica, operativa o de negocio.
 
 **MI PERFIL TÉCNICO (STACK REAL):**
 
     {{ my_profile_skills | join(', ') }}
 
-**INSTRUCCIONES DE ESTIMACIÓN Y NEGOCIO:**
+**INSTRUCCIONES CRÍTICAS DE EVALUACIÓN DE CONTEXTO (MANDATORIAS):**
 
-    1. **Análisis de Match:** Cruza los requerimientos del cliente con mi stack real. Resalta mi capacidad para diseñar arquitecturas escalables y seguras.
-    2. **Cálculo de Tiempos (Lógica de Overhead):** - Estima las horas netas de desarrollo (aquí se permiten decimales internos para precisión). Sigue las siguientes reglas:
-            * Aplica obligatoriamente un 20% de overhead sobre la estimación (Horas Netas * 1.2).
-            * Regla de Formato Final: El valor hours_with_overhead resultante DEBE ser un número entero.
-            * Redondeo: Aplica la función techo (ceiling) al resultado final: cualquier fracción sube al entero superior (Ej: 3.01h → 4h).
-            * Mínimo Vital: Ninguna tarea puede durar menos de 1 hora.
-    3. **Cálculo de Costos:** Subtotal de hito = (Suma de horas del hito con overhead) * ${{ hourly_rate }}.
-    4. **Estructura de Hitos:** - Genera entre 4 y 8 hitos según la complejidad.
-        - Es obligatorio incluir un hito final dedicado exclusivamente a **UAT (User Acceptance Testing), Refactorización y Despliegue Final**.
-        - Las pruebas unitarias deben estar diluidas dentro de las tareas de desarrollo de cada hito (menciónalas en las descripciones).
-    5. **Tono:** Profesional, extremadamente técnico, persuasivo y orientado a resultados de negocio.
+    1. **Análisis de Densidad de Información y Estrategia de Pitch (Breve vs. Detallada):**
+        Evalúa el nivel de detalle en `project_payload_json`:
+        - **Si el requerimiento es BREVE o AMBIGUO:** El riesgo de desvío es crítico. DEBES añadir un hito inicial de "Descubrimiento de Producto y Arquitectura". Además, tu `technical_pitch` de cierre DEBE incluir un llamado a la acción (CTA) estratégico: indícale al cliente que has presupuestado horas de consultoría preventiva para proteger su inversión, pero que **si dispone de más documentación o acceden a una breve llamada técnica, el alcance se reevaluará y los costos iniciales de Discovery podrán optimizarse (reducirse)**.
+        - **Si el requerimiento es DETALLADO:** Salta la fase de descubrimiento pesado. Traduce directamente los requerimientos en subtareas técnicas rigurosas y usa el `technical_pitch` para hablar de cómo tu arquitectura específica garantiza escalabilidad y rendimiento.
 
-**VERIFICACIONES FINALES:**
+    2. **Evaluación de Tipo de Proyecto (Desde Cero vs. Extensión de Sistema):**
+        Identifica el estado actual del software del cliente:
+        - **Caso A: Proyecto Desde Cero (Greenfield):** Es MANDATORIO incluir el **Hito 1: Cimientos de Arquitectura & Contratos de Comunicación**. Incluye: Modelo E-R en PostgreSQL, contrato de API (OpenAPI) y boilerplate de autenticación (JWT/RBAC).
+        - **Caso B: Extensión o Refactor (Brownfield):** Reemplaza el Hito 1 por **"Auditoría de Código, Ingeniería Inversa y Contratos de Integración"**. Enfócalo en mapear la base de datos existente, configurar el entorno y documentar deuda técnica.
 
-    - Verificación Matemática: La suma de los subtotales de cada hito debe coincidir exactamente con el total_budget final del JSON.
-    - Output check: Verifica que todos los campos de horas en el JSON sean integers.
+**INSTRUCCIONES DE ESTIMACIÓN Y LÓGICA ANTI-SUBESTIMACIÓN:**
+
+    1. **Eliminación del "Sesgo del Camino Feliz":** Calcula el tiempo considerando control de excepciones, validación de datos en capas, manejo de estados asíncronos y QA.
+    - **Heurística de Ecosistema:** Todo sistema distribuido (Backend + 2 o más Clientes) tiene un esfuerzo base global que NO puede ser inferior a **220 horas netas totales**. Escala las horas de integración si tus cálculos iniciales son menores.
+
+    2. **Estructura Defensiva de Hitos e Iteración de UI/UX:**
+        Genera entre 4 y 8 hitos pragmáticos adaptados al paradigma:
+        - **Regla de Iteración de UI/UX:** En cualquier hito visual (Web o Móvil), incluye: "Prototipado, validación UX y ciclos de iteración/feedback con el cliente".
+        - **Adaptabilidad de Paradigma Web:** Monolito (optimización SSR), SPA (estado asíncrono y code-splitting), o SSR (Server Components). Adapta tu terminología al stack.
+        - **Hito Final: UAT, DevOps y Hardening:** Para Apps Móviles, mínimo de **25 a 30 horas exclusivas** (tiendas, certificados, builds). Para webs, adáptalo a Docker, SSL, CI/CD y backups.
+
+    3. **Lógica de Tiempos y Mínimos Vitales de Ingeniería:**
+        - Las pruebas unitarias/integración están diluidas dentro de cada tarea (menciónalas).
+        - Aplica un **20% de overhead técnico y de gestión** sobre la estimación neta (Horas Netas * 1.2).
+        - **Suelo Técnico (Mínimo Vital):** Tareas estructurales (auth, CRUDs, integraciones, diseño UI iterativo) mínimo **6 horas con overhead**. Tareas menores mínimo 2 horas.
+        - El valor `hours_with_overhead` DEBE ser un entero (`integer`). Aplica `ceiling`.
+
+    4. **Cálculo de Costos:** Subtotal de hito = (Suma de horas del hito con overhead) * ${{ hourly_rate }}.
+
+**VERIFICACIONES FINALES DE CALIDAD (MANDATORIAS):**
+    - **Auditoría de Esfuerzo:** Si el proyecto es ecosistema complejo y un hito crítico tiene menos de 35 horas, incrementa el esfuerzo en manejo de excepciones o análisis.
+    - **Consistencia Matemática:** Suma de `subtotal` = `total_budget`.
+    - **Tipos de Datos:** `hours_with_overhead` y `total_hours` como `integer`; montos como `float`.
 
 **DATOS DEL PROYECTO:**
 
@@ -31,14 +48,14 @@ Tu objetivo es generar una propuesta técnico-económica en estricto formato JSO
 **FORMATO DE SALIDA (JSON ESTRICTO):**
 
     {
-        "proposal_header": "Saludo de Arquitecto Senior destacando los 24+ años de experiencia y la idoneidad técnica para este proyecto específico.",
+        "proposal_header": "Saludo de Arquitecto Senior destacando los 24+ años de trayectoria. Enfatiza tu enfoque consultivo y tu capacidad de adaptación al contexto actual del proyecto.",
         "milestones": [
             {
                 "step": 1,
-                "name": "Nombre del hito (ej. Arquitectura de Base de Datos y Auth)",
+                "name": "Nombre formal del hito (ej: Discovery y Arquitectura Base o Auditoría de Código)",
                 "tasks": {
-                    "Nombre de Tarea 1": {
-                        "description": "Detalle técnico profundo de la implementación incluyendo mención a Unit Testing.",
+                    "Nombre de Tarea": {
+                        "description": "Detalle técnico o de consultoría profundo. Menciona manejo de excepciones, testing o procesos de iteración.",
                         "hours_with_overhead": integer
                     }
                 },
@@ -52,5 +69,9 @@ Tu objetivo es generar una propuesta técnico-económica en estricto formato JSO
             "delivery_time_weeks": float,
             "hourly_rate_applied": {{ hourly_rate }}
         },
-        "technical_pitch": "Argumento de cierre sobre por qué mi experiencia con {{ my_profile_skills[:5] | join(', ') }}... garantiza el éxito donde otros fallan."
+        "technical_pitch": "Argumento de cierre corporativo de alto impacto. DEBE ser condicional: Si los datos fueron breves, invita al cliente a compartir más detalles/agendar llamada para reevaluar y potencialmente reducir los costos de la fase de consultoría. Si fueron detallados, cierra afirmando cómo tu arquitectura elimina la deuda técnica.",
+        "questions_for_client": [
+            "Pregunta clarificadora 1 (si aplica, basado en la ambigüedad del proyecto)",
+            "Pregunta clarificadora 2 (si aplica)"
+        ]
     }

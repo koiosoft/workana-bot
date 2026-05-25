@@ -167,7 +167,13 @@ class GeminiAdapter(IntelligencePort):
             match = re.search(r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL)
             json_part = match.group(1) if match else text_response[text_response.find("{") : text_response.rfind("}") + 1]
             
-            return json.loads(json_part)
+            proposal_data = json.loads(json_part)
+
+            # Normalización: Asegurar que 'questions_for_client' siempre exista
+            if 'questions_for_client' not in proposal_data:
+                proposal_data['questions_for_client'] = []
+            
+            return proposal_data
 
         except Exception as e:
             logger.error(f"Error generando propuesta económica: {e}")
