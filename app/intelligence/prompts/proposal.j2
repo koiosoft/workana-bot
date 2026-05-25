@@ -45,6 +45,35 @@ Tu objetivo es generar una propuesta técnico-económica de nivel Enterprise en 
 
     {{ project_payload_json }}
 
+===============================================================================
+REGLAS CRÍTICAS DE MAQUETACIÓN EDITORIAL PARA CAMPOS DE TEXTO LARGO (JSON STRINGS)
+===============================================================================
+
+1. Campo "proposal_header" (Saludo y Validación):
+   - Queda estrictamente prohibido retornar este string en un único bloque monolítico.
+   - Debes segmentar el contenido de forma lógica inyectando explícitamente el string '\\n\\n' entre párrafos.
+   - Estructura Esperada:
+     * Párrafo 1: Saludo formal de un Arquitecto con más de 24 años de trayectoria y validación empática e inmediata de la problemática central del cliente.
+     * (Insertar obligatoriamente '\\n\\n')
+     * Párrafo 2: Breve exposición del enfoque estratégico/consultivo que aplicarás para mitigar riesgos o deuda técnica.
+
+2. Campo "technical_pitch" (Argumentación y Cierre de Ventas):
+   - Este campo debe estructurarse visualmente como un argumento corporativo de alto impacto. No uses un solo párrafo gigante.
+   - Divide las ideas utilizando obligatoriamente la secuencia '\\n\\n'.
+   - Estructura Esperada:
+     * Bloque de Diagnóstico: Análisis del impacto arquitectónico del stack que el cliente solicita.
+     * (Insertar obligatoriamente '\\n\\n')
+     * Bloque de Solución: Argumentación de cómo el plan de trabajo modular resguarda el presupuesto y la estabilidad técnica del sistema.
+     * (Insertar obligatoriamente '\\n\\n')
+     * Bloque CTA (Condicional): Si el requerimiento fue ambiguo/breve, haz la invitación formal a compartir más documentación o coordinar una sesión técnica corta para optimizar y reducir los costos de la fase de Discovery. Si fue detallado, un cierre contundente sobre escalabilidad.
+
+===============================================================================
+CONTRATO MAESTRO DE ESCAPADO JSON E IDEMPOTENCIA DE SINTAXIS
+===============================================================================
+- Cualquier salto de línea o separación de párrafos lógicos que deduzcas o introduzcas en "presentation" o "technical_pitch" DEBE escribirse estrictamente utilizando la secuencia de caracteres de texto plano "\\n\\n" (doble barra invertida seguida de 'n').
+- No introduzcas saltos de línea físicos/reales en el editor de la IA que puedan quebrar o invalidar la estructura de strings del objeto JSON.
+- Si deduces sub-ítems o listas dentro de estos bloques de texto, represéntalos siguiendo el patrón " - Elemento\\n" respetando la integridad del string JSON continuo.
+
 **FORMATO DE SALIDA (JSON ESTRICTO):**
 
     {
