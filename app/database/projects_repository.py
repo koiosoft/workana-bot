@@ -194,7 +194,7 @@ class ProjectsRepository:
         )
         return int(result.modified_count or 0)
 
-    async def update_project_analysis(self, link_hash: str, score: int, reason: str, strategy: str = "none", status: str = "analyzed", ai_summary: str = "No summary available") -> bool:
+    async def update_project_analysis(self, link_hash: str, score: int, reason: str, strategy: str = "none", status: str = "analyzed", ai_summary: str = "No summary available", contract_type: str = "project_fixed") -> bool:
         """
         Actualiza un proyecto con los resultados del análisis de la IA.
         """
@@ -209,6 +209,7 @@ class ProjectsRepository:
                     "ai_score": score,
                     "ai_reason": reason,
                     "ai_summary": ai_summary,
+                    "contract_type": contract_type,
                     "proposal_status": status,
                     "updated_at": now,
                     "analyzed_at": now
@@ -217,7 +218,7 @@ class ProjectsRepository:
         )
         
         if result.modified_count > 0:
-            logger.info(f"✅ Proyecto {link_hash} actualizado con score {score}.")
+            logger.info(f"✅ Proyecto {link_hash} actualizado con score {score} y tipo {contract_type}.")
             return True
         
         logger.warning(f"⚠️ No se pudo actualizar el análisis para el hash: {link_hash}")
@@ -230,6 +231,16 @@ class ProjectsRepository:
             "proposal_status": "analyzed",
             "ai_score": {"$gte": min_score},
             "full_description": {"$exists": False} # Evitamos re-scrapear
+        }, {
+            "_id": 0,
+            "title": 1,
+            "budget": 1,
+            "link": 1,
+            "link_hash": 1,
+            "strategy": 1,
+            "contract_type": 1,
+            "ai_score": 1,
+            "ai_summary": 1
         }).limit(limit)
         return await cursor.to_list(length=limit)
 

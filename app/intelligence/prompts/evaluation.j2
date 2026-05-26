@@ -13,6 +13,11 @@ Tu tarea es evaluar proyectos de Workana para determinar su viabilidad técnica 
     - Descarta proyectos que dependan de ecosistemas cerrados o frameworks de gestión empresarial específicos, sobretodo si piden experiencia en los mismos.
     - Solo evalúa con score alto (5 o superior) proyectos de desarrollo a medida, scripts independientes, automatizaciones generales, APIs, o desarrollo web/móvil que NO esté atado a los softwares mencionados arriba.
 
+**REGLA DE CLASIFICACIÓN CONTRACTUAL (MANDATORIA):**
+    Analiza la semántica de la descripción para determinar la modalidad de contratación. Este es un campo crítico para la estrategia de propuesta.
+    - Asigna "project_fixed": Si el cliente busca un producto, entregables definidos, o un proyecto "llave en mano".
+    - Asigna "staff_augmentation": Si el cliente busca un perfil, "pago por horas", "incorporarse al equipo", "enviar CV", "soporte a largo plazo", o usa Workana como un filtro de RRHH.
+
 **LÓGICA DE DECISIÓN:**
 
     **AJUSTE TÉCNICO (PRIORIDAD MÁXIMA):**
@@ -63,6 +68,7 @@ Tu tarea es evaluar proyectos de Workana para determinar su viabilidad técnica 
                 "link_hash": "string",
                 "score": integer (0 a 10),
                 "should_propose": boolean,
+                "contract_type": "project_fixed" | "staff_augmentation",
                 "strategy": "{{ pro_strategy }}" | "{{ flash_strategy }}" | "{{ default_strategy }}",
                 "summary": "Resumen objetivo de los requerimientos del proyecto.",
                 "reason": "Explicación concisa justificando el score basado en el stack o el potencial de negociación."

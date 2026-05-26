@@ -80,7 +80,12 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     max_iterations = 10
     buffer_size = 10
     iterations = 0
-    await update.message.reply_text("🧠 Se evaluará la cola de proyectos pendientes en 30 segundos")
+    
+    # Obtenemos la cantidad total de proyectos pendientes ANTES de procesarlos
+    # usamos count_documents que es más eficiente y directo
+    pending_count = await projects_repository.collection.count_documents({"proposal_status": "pending"})
+    
+    await update.message.reply_text(f"🧠 Hay {pending_count} proyectos pendientes en DB.\nSe evaluarán en lotes en 30 segundos.")
 
     time.sleep(30)
     while iterations < max_iterations:
@@ -107,6 +112,7 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             score = eval_data.get("score", 0)
             strategy = eval_data.get("strategy", "none")
             summary = eval_data.get("summary", "No summary available.")
+            contract_type = eval_data.get("contract_type", "project_fixed")
             
             # Actualizamos resultado en DB
             await projects_repository.update_project_analysis(
@@ -115,7 +121,8 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reason=eval_data.get("reason", 'Sin razón especificada.'),
                 strategy=strategy,
                 status="analyzed",
-                ai_summary=summary
+                ai_summary=summary,
+                contract_type=contract_type
             )
 
             if score > 4:
@@ -130,8 +137,10 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = f"🚀 **{len(all_relevant)} Oportunidades encontradas (de {total_processed} analizados):**\n\n"
     for p in all_relevant:
+        contract_emoji = "🔧" if p.get('contract_type') == "staff_augmentation" else "📦"
+        contract_label = "Staff Aug." if p.get('contract_type') == "staff_augmentation" else "Proyecto"
         msg += (
-            f"⭐ **Score: {p['score']}/10**\n"
+            f"⭐ **Score: {p['score']}/10** | {contract_emoji} {contract_label}\n"
             f"📌 {p['title']}\n"
             f"💰 {p['budget']}\n"
             f"📝 {p.get('summary', 'No summary')}\n"
@@ -188,12 +197,14 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         url = project.get('link')
         link_hash = project.get('link_hash')
         title = project.get('title', 'Sin título')
+        contract_type = project.get('contract_type', 'project_fixed')
+        contract_emoji = "🔧" if contract_type == "staff_augmentation" else "📦"
         
         if not url or not link_hash:
             continue
 
         if update.message:
-            await update.message.reply_text(f"⚙️ ({i+1}/{len(projects)}) Procesando: {title}")
+            await update.message.reply_text(f"⚙️ ({i+1}/{len(projects)}) Procesando {contract_emoji}: {title}")
 
         retry_count = 0
         project_succeeded = False
@@ -225,16 +236,34 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if update.message:
                     await update.message.reply_text(f"🧠 ({i+1}/{len(projects)}) Generando propuesta IA para: {title}")
 
+                # Agregamos el contract_type al full_detail antes de generar la propuesta
+                full_detail["contract_type"] = project.get("contract_type", "project_fixed")
+                full_detail["strategy"] = project.get("strategy", "none")
+                
                 proposal = await ai_service.generate_proposal(full_detail)
                 if proposal and "error" not in proposal:
                     await projects_repository.update_project_proposal(link_hash, proposal)
                     processed_count += 1
-                    total_usd = proposal.get("summary", {}).get("total_budget", 0)
-                    if update.message:
-                        await update.message.reply_text(
-                            f"✅ ({i+1}/{len(projects)}) Propuesta Generada: {title}\n"
-                            f"💰 Presupuesto: ${total_usd} | ⏱️ Horas: {proposal.get('summary', {}).get('total_hours')}h"
-                        )
+                    
+                    # Mostramos información diferente según el tipo de contrato
+                    contract_type = full_detail.get("contract_type", "project_fixed")
+                    if contract_type == "staff_augmentation":
+                        budget_info = proposal.get("budget_summary", {})
+                        hourly = budget_info.get("hourly_rate", 0)
+                        monthly = budget_info.get("estimated_monthly_budget", 0)
+                        if update.message:
+                            await update.message.reply_text(
+                                f"✅ ({i+1}/{len(projects)}) Propuesta Generada (🔧 Staff): {title}\n"
+                                f"💰 ${hourly}/hora | 📅 ~${monthly}/mes"
+                            )
+                    else:
+                        total_usd = proposal.get("summary", {}).get("total_budget", 0)
+                        total_hours = proposal.get("summary", {}).get("total_hours", 0)
+                        if update.message:
+                            await update.message.reply_text(
+                                f"✅ ({i+1}/{len(projects)}) Propuesta Generada (📦 Proyecto): {title}\n"
+                                f"💰 Presupuesto: ${total_usd} | ⏱️ Horas: {total_hours}h"
+                            )
                 else:
                     # Si la IA devuelve un error, lo contamos como fallo
                     failed_count += 1

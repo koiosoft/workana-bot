@@ -112,10 +112,12 @@ class GeminiAdapter(IntelligencePort):
     async def generate_proposal(self, project: dict) -> dict[str, Any]:
         """
         Genera una propuesta económica detallada con hitos basada en el valor por hora.
+        Usa diferentes templates según el tipo de contrato detectado.
         """
         hourly_rate = 25
+        contract_type = project.get("contract_type", "project_fixed")
         
-        logger.info('is generating a proposal...')
+        logger.info(f'Generando propuesta para tipo de contrato: {contract_type}')
 
         my_skills = [
             "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
@@ -123,7 +125,6 @@ class GeminiAdapter(IntelligencePort):
             "SQL", "MySQL", "PostgreSQL", "MongoDB", "GIT", "Swift", "C#", "Docker",
             "UML Diagram", "DB Design (E-R)", "REST & GraphQL APIs"
         ]
-
 
         # Preparamos el contexto para la IA
         project_payload = {
@@ -133,8 +134,11 @@ class GeminiAdapter(IntelligencePort):
             "budget_range": project.get("budget_detail", "N/A")
         }
 
+        # Seleccionamos el template según el tipo de contrato
+        template_name = "proposal_staffing.j2" if contract_type == "staff_augmentation" else "proposal.j2"
+        
         prompt = self._render_prompt(
-            "proposal.j2",
+            template_name,
             my_profile_skills=my_skills,
             hourly_rate=hourly_rate,
             project_payload_json=json.dumps(project_payload, indent=2)

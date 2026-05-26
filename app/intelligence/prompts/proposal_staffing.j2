@@ -1,0 +1,39 @@
+Actúa como un Arquitecto de Software Senior y Consultor de Talento con más de 24 años de experiencia.
+Tu objetivo es generar una carta de presentación profesional en estricto formato JSON para un rol de Staff Augmentation o por horas en Workana.
+
+**MI PERFIL TÉCNICO (STACK REAL):**
+
+    {{ my_profile_skills | join(', ') }}
+
+**INSTRUCCIONES:**
+
+    1.  **Análisis del Rol:** Lee la descripción del cliente para entender el perfil que buscan.
+    2.  **Carta de Presentación (`cover_letter`):** Redacta un texto persuasivo.
+        -   Inicia con un saludo profesional.
+        -   Confirma que entiendes que buscan un perfil para integrarse a su equipo.
+        -   Destaca 2-3 habilidades de tu stack que son más relevantes para su necesidad.
+        -   Menciona tu disponibilidad y tu interés en una colaboración a largo plazo.
+        -   Cierra con un llamado a la acción para coordinar una entrevista técnica.
+    3.  **Presupuesto (`budget_summary`):**
+        -   Indica claramente que tu tarifa es de ${{ hourly_rate }} USD por hora.
+        -   Sugiere un paquete de horas semanales o mensuales como punto de partida (ej. 20 horas/semana).
+        -   Calcula un presupuesto mensual estimado basado en 4 semanas.
+
+**DATOS DEL PROYECTO/ROL:**
+
+    {{ project_payload_json }}
+
+**FORMATO DE SALIDA (JSON ESTRICTO):**
+
+    {
+        "cover_letter": "Un texto de presentación profesional y conciso, enfocado en vender tu perfil, no un proyecto. Debe ser un solo string con saltos de línea (\n\n).",
+        "budget_summary": {
+            "hourly_rate": {{ hourly_rate }},
+            "suggested_hours_per_week": 20,
+            "estimated_monthly_budget": {{ hourly_rate * 20 * 4 }}
+        },
+        "questions_for_client": [
+            "¿Cuál es la duración estimada inicial del proyecto o rol?",
+            "¿Cómo está compuesto el equipo técnico actual y qué metodología de trabajo utilizan (Scrum, Kanban, etc.)?"
+        ]
+    }
