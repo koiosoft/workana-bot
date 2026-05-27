@@ -229,6 +229,7 @@ class ProjectsRepository:
         """
         Resetea todos los proyectos huérfanos en estado 'ready_for_proposal' de vuelta a 'analyzed'.
         Esto limpia proyectos que quedaron atascados por interrupciones del proceso.
+        Elimina TODA la data de scraping profundo para que vuelvan a ser procesados desde cero.
         """
         await self.ensure_indexes()
         now = datetime.now(timezone.utc).isoformat()
@@ -242,6 +243,9 @@ class ProjectsRepository:
                     "reset_at": now
                 },
                 "$unset": {
+                    # Limpieza TOTAL: eliminamos TODO lo relacionado con el scraping profundo
+                    "full_description": "",
+                    "budget_detail": "",
                     "proposal": "",
                     "proposal_at": "",
                     "temp_proposal_data": "",
@@ -256,11 +260,11 @@ class ProjectsRepository:
         return result.modified_count
 
     async def get_projects_for_deep_analysis(self, min_score: int = 5, limit: int = 10) -> list[dict[str, Any]]:
-        """Obtiene proyectos analizados con buen score que no tienen descripción completa."""
+        """Obtiene proyectos analizados con buen score que NO tienen descripción completa."""
         cursor = self.collection.find({
             "proposal_status": "analyzed",
             "ai_score": {"$gte": min_score},
-            "full_description": {"$exists": False} # Evitamos re-scrapear
+            "full_description": {"$exists": False}  # Solo proyectos sin scraping profundo
         }, {
             "_id": 0,
             "title": 1,

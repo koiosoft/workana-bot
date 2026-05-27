@@ -9,8 +9,8 @@ from loguru import logger
 from ..port import IntelligencePort
 
 FILTER_MODEL = "models/gemma-4-31b-it"      # 15 RPM - Gratis
-STANDARD_MODEL = "models/gemini-flash-latest" # 2000 RPM - Pago (muy barato)
-PREMIUM_MODEL = "models/gemini-1.5-pro"    # 2 RPM - Pago (1.5 centavos)
+STANDARD_MODEL = "models/gemini-2.5-flash" # 2000 RPM - Pago (muy barato)
+PREMIUM_MODEL = "models/gemini-2.5-pro"    # 2 RPM - Pago (1.5 centavos)
 
 class GeminiAdapter(IntelligencePort):
     def __init__(self):
