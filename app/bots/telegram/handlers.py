@@ -6,7 +6,7 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from scraper.factory import ScraperFactory
-from app.database import get_projects_repository
+from app.database import get_projects_repository, get_process_semaphore
 from intelligence.factory import get_intelligence_service
 from .messages import send_long_message
 
@@ -26,7 +26,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⛔ Acceso denegado.")
         return
 
-    keyboard = [["/status", "/lista" ],["/procesar"]]
+    keyboard = [["/status", "/lista" ],["/desbloquear", "/procesar"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
     logger.info(f"Admin {os.getenv('MY_TELEGRAM_ID')} ha iniciado el bot." )
@@ -171,18 +171,49 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
 
-    await update.message.reply_text("🧠 Obteniendo proyectos con alto score para análisis profundo...")
-    
     projects_repository = get_projects_repository()
+    semaphore = get_process_semaphore()
     ai_service = get_intelligence_service()
 
+    # FASE 1: VERIFICACIÓN DEL SEMÁFORO GLOBAL
+    if await semaphore.is_locked():
+        status = await semaphore.get_status()
+        if status:
+            telemetry_message = semaphore.format_telemetry_message(status)
+            await update.message.reply_text(telemetry_message, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(
+                "🔒 El proceso de generación de propuestas ya está en ejecución."
+            )
+        return
+
+    # FASE 2: RESET DE PROYECTOS HUÉRFANOS
+    await update.message.reply_text("🔄 Limpiando proyectos huérfanos...")
+    reset_count = await projects_repository.reset_orphaned_proposals()
+    if reset_count > 0:
+        await update.message.reply_text(f"✅ {reset_count} proyectos resetados de 'ready_for_proposal' a 'analyzed'")
+
+    # FASE 3: OBTENER PROYECTOS Y ADQUIRIR SEMÁFORO
+    await update.message.reply_text("🧠 Obteniendo proyectos con alto score para análisis profundo...")
     projects = await projects_repository.get_projects_for_deep_analysis(limit=50)
+    
     if not projects:
         logger.success("📭 No hay proyectos listos para la fase de propuesta.")
         await update.message.reply_text("📭 No hay proyectos que requieran generación de propuesta.")
         return
 
-    await update.message.reply_text(f"🤖 Iniciando generación de propuestas para {len(projects)} proyectos...")
+    # Adquirir semáforo
+    if not await semaphore.acquire(total_projects=len(projects)):
+        await update.message.reply_text(
+            "⛔ No se pudo adquirir el semáforo. Otro proceso se inició simultáneamente."
+        )
+        return
+
+    # FASE 4: PROCESAMIENTO CON SEMÁFORO ACTIVO
+    await update.message.reply_text(
+        f"🤖 Iniciando generación de propuestas para {len(projects)} proyectos...\n"
+        f"🔒 Semáforo global activado."
+    )
     scraper = ScraperFactory.get_scraper()
 
     processed_count = 0
@@ -309,6 +340,10 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if critical_failure:
             break
 
+    # FASE 5: LIBERACIÓN DEL SEMÁFORO
+    await semaphore.release()
+    logger.success("🔓 Semáforo global liberado automáticamente")
+
     end_message = (
         f"🏁 **Proceso Finalizado** 🏁\n\n"
         f"✅ Propuestas generadas: {processed_count}\n"
@@ -320,3 +355,38 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(end_message)
     if update.message:
         await update.message.reply_text(end_message, parse_mode="Markdown")
+
+
+async def unlock_semaphore(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Comando administrativo de escape para liberar el semáforo global manualmente.
+    Útil en casos de fallas críticas de infraestructura o procesos congelados.
+    """
+    if not await is_admin(update):
+        return
+    if not update.message:
+        return
+
+    semaphore = get_process_semaphore()
+    
+    # Obtener estado antes de liberar
+    status = await semaphore.get_status()
+    was_locked = status.get("is_locked", False) if status else False
+    
+    # Liberación forzada (idempotente)
+    await semaphore.force_release()
+    
+    if was_locked:
+        await update.message.reply_text(
+            "🔓 **Semáforo Global liberado manualmente**\n\n"
+            "El comando /procesar vuelve a estar disponible.\n\n"
+            "⚠️ NOTA: Si había un proceso en ejecución, puede quedar en estado inconsistente.",
+            parse_mode="Markdown"
+        )
+        logger.warning("⚠️ Semáforo liberado manualmente por comando administrativo")
+    else:
+        await update.message.reply_text(
+            "ℹ️ El semáforo ya estaba liberado.\n"
+            "Operación completada (idempotente)."
+        )
+        logger.info("ℹ️ Comando /desbloquear ejecutado con semáforo ya liberado")

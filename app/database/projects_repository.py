@@ -225,6 +225,36 @@ class ProjectsRepository:
         return False
     
 
+    async def reset_orphaned_proposals(self) -> int:
+        """
+        Resetea todos los proyectos huérfanos en estado 'ready_for_proposal' de vuelta a 'analyzed'.
+        Esto limpia proyectos que quedaron atascados por interrupciones del proceso.
+        """
+        await self.ensure_indexes()
+        now = datetime.now(timezone.utc).isoformat()
+        
+        result = await self.collection.update_many(
+            {"proposal_status": "ready_for_proposal"},
+            {
+                "$set": {
+                    "proposal_status": "analyzed",
+                    "updated_at": now,
+                    "reset_at": now
+                },
+                "$unset": {
+                    "proposal": "",
+                    "proposal_at": "",
+                    "temp_proposal_data": "",
+                    "proposal_draft": ""
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            logger.warning(f"🔄 Reset automático: {result.modified_count} proyectos huérfanos revertidos de 'ready_for_proposal' a 'analyzed'")
+        
+        return result.modified_count
+
     async def get_projects_for_deep_analysis(self, min_score: int = 5, limit: int = 10) -> list[dict[str, Any]]:
         """Obtiene proyectos analizados con buen score que no tienen descripción completa."""
         cursor = self.collection.find({
