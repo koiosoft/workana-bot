@@ -14,7 +14,7 @@ app/debug_screenshot.png
 app/debug_state_check.png
 app/debug_detail_screenshot.png
 bot_check.png
-
+logs/bot.log
 # Archivos de caché de Python
 __pycache__/
 *.py[cod]
