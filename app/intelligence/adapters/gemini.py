@@ -4,6 +4,7 @@ import json
 import time
 from typing import Any, cast
 from google import genai
+import google.genai.errors
 from jinja2 import Environment, FileSystemLoader
 from loguru import logger
 from ..port import IntelligencePort
@@ -179,8 +180,11 @@ class GeminiAdapter(IntelligencePort):
             
             return proposal_data
 
+        except google.genai.errors.ServerError as e:
+            logger.warning(f"Error de servidor de IA (retriable) generando propuesta: {e}")
+            raise e
         except Exception as e:
-            logger.error(f"Error generando propuesta económica: {e}")
+            logger.error(f"Error no retriable generando propuesta económica: {e}")
             return {"error": "No se pudo generar la propuesta"}
 
     async def format_project_description(self, description: str) -> str:

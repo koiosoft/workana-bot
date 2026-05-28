@@ -5,9 +5,10 @@ from loguru import logger
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-from scraper.factory import ScraperFactory
+from google.genai.errors import APIError as GeminiAPIError
+from app.scraper.factory import ScraperFactory
 from app.database import get_projects_repository, get_process_semaphore
-from intelligence.factory import get_intelligence_service
+from app.intelligence.factory import get_intelligence_service
 from .messages import send_long_message
 
 
@@ -151,18 +152,19 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_long_message(update, msg)
 
 
-def is_network_error(error: Exception) -> bool:
+def is_retriable_error(error: Exception) -> bool:
     """
-    Determina si una excepción está relacionada con problemas de conectividad de red.
-    Incluye errores de conexión, timeout, y errores específicos de Playwright.
+    Determina si una excepción es retriable.
+    Incluye errores de red, timeouts, y errores 5xx de la API de Google.
     """
-    network_error_types = (
+    retriable_error_types = (
         ConnectionError,
         TimeoutError,
         OSError,
         PlaywrightTimeoutError,
+        GeminiAPIError,
     )
-    return isinstance(error, network_error_types)
+    return isinstance(error, retriable_error_types)
 
 
 async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -309,8 +311,8 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 retry_count += 1
                 
-                if is_network_error(e):
-                    logger.warning(f"Error de red en proyecto {title} (Intento {retry_count}/{MAX_RETRY_ATTEMPTS}): {str(e)}")
+                if is_retriable_error(e):
+                    logger.warning(f"Error retriable en proyecto {title} (Intento {retry_count}/{MAX_RETRY_ATTEMPTS}): {str(e)}")
                     
                     if retry_count < MAX_RETRY_ATTEMPTS:
                         backoff_time = 2 ** retry_count
@@ -319,21 +321,22 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         consecutive_failures += 1
                         failed_count += 1
-                        logger.error(f"Proyecto {title} omitido tras {MAX_RETRY_ATTEMPTS} intentos por error de red.")
+                        logger.error(f"Proyecto {title} omitido tras {MAX_RETRY_ATTEMPTS} intentos por error retriable.")
                         if update.message:
-                            await update.message.reply_text(f"⚠️ ({i+1}/{len(projects)}) Omitido por red: {title}")
+                            await update.message.reply_text(f"⚠️ ({i+1}/{len(projects)}) Omitido por error persistente: {title}")
                         
                         if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD:
                             logger.critical(f"Circuit Breaker Activado: {consecutive_failures} fallas consecutivas.")
                             if update.message:
-                                await update.message.reply_text("🚨 **CIRCUIT BREAKER ACTIVADO** 🚨\nFallas de red consecutivas. Proceso abortado.")
+                                await update.message.reply_text("🚨 **CIRCUIT BREAKER ACTIVADO** 🚨\nFallas consecutivas. Proceso abortado.")
+                            # No liberamos semáforo aquí para revisión manual
                             return
                 else:
                     failed_count += 1
                     critical_failure = True
                     logger.error(f"Error no recuperable procesando proyecto {title}: {str(e)}", exc_info=True)
                     if update.message:
-                        await update.message.reply_text(f'❌ ({i+1}/{len(projects)}) Error crítico en: {title}')
+                        await update.message.reply_text(f'❌ ({i+1}/{len(projects)}) Error crítico en: {title}. Proceso detenido.')
 
         if project_succeeded:
             continue

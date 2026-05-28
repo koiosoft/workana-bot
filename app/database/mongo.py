@@ -2,7 +2,7 @@ import os
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from loguru import logger
 
-from config.database import get_mongo_config
+from app.config.database import get_mongo_config
 
 
 _client: AsyncIOMotorClient | None = None
