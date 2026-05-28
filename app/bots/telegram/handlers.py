@@ -60,22 +60,31 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     projects_repository = get_projects_repository()
-    await update.message.reply_text("🔍 Consultando nuevos proyectos...")
+    try:
+        await update.message.reply_text("🔍 Consultando nuevos proyectos...")
+    except Exception as e:
+        logger.warning(f"No se pudo enviar notificación inicial a Telegram: {e}")
     
     scraper = ScraperFactory.get_scraper()
     projects = await scraper.get_projects()
     logger.info(f"Se obtuvieron {len(projects)} proyectos del scraping.")
 
     if not projects:
-        await update.message.reply_text("📭 No se encontraron proyectos nuevos.")
+        try:
+            await update.message.reply_text("📭 No se encontraron proyectos nuevos.")
+        except Exception as e:
+            logger.warning(f"No se pudo enviar notificación a Telegram: {e}")
         return
 
     save_stats = await projects_repository.save_scraped_projects(projects)
-    await update.message.reply_text(
-        f"💾 **Sincronización DB:**\n"
-        f"- Nuevos: {save_stats['inserted']}\n"
-        f"- Actualizados/Existentes: {save_stats['existing']}"
-    )
+    try:
+        await update.message.reply_text(
+            f"💾 **Sincronización DB:**\n"
+            f"- Nuevos: {save_stats['inserted']}\n"
+            f"- Actualizados/Existentes: {save_stats['existing']}"
+        )
+    except Exception as e:
+        logger.warning(f"No se pudo enviar notificación de sincronización a Telegram: {e}")
 
     ai_service = get_intelligence_service()
     total_processed = 0
@@ -88,9 +97,12 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # usamos count_documents que es más eficiente y directo
     pending_count = await projects_repository.collection.count_documents({"proposal_status": "pending"})
     
-    await update.message.reply_text(f"🧠 Hay {pending_count} proyectos pendientes en DB.\nSe evaluarán en lotes en 30 segundos.")
+    try:
+        await update.message.reply_text(f"🧠 Hay {pending_count} proyectos pendientes en DB.\nSe evaluarán en lotes en 30 segundos.")
+    except Exception as e:
+        logger.warning(f"No se pudo enviar notificación de proyectos pendientes a Telegram: {e}")
 
-    time.sleep(30)
+    await asyncio.sleep(30)
     while iterations < max_iterations:
         iterations += 1
         # Recuperamos un lote para no saturar la memoria ni la API de la IA
@@ -101,14 +113,20 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break # Ya no quedan proyectos 'pending'
 
         try:
-            await update.message.reply_text(f"🧠 Iniciando la evaluación del Lote #{iterations} con {buffer_size} proyectos.")
+            try:
+                await update.message.reply_text(f"🧠 Iniciando la evaluación del Lote #{iterations} con {buffer_size} proyectos.")
+            except Exception as e:
+                logger.warning(f"No se pudo enviar notificación de inicio de lote a Telegram: {e}")
             link_hashes = [p["link_hash"] for p in batch]
             await projects_repository.mark_projects_status(link_hashes, "processing")
-            time.sleep(4)
+            await asyncio.sleep(4)
             evaluations =  await ai_service.evaluate_projects(batch)
         except Exception as e:
             logger.critical(f"Abortando: Error de infraestructura en IA: {e}")
-            await update.message.reply_text(f"❌ Error crítico: {e}. El proceso se ha detenido para proteger los datos.")
+            try:
+                await update.message.reply_text(f"❌ Error crítico: {e}. El proceso se ha detenido para proteger los datos.")
+            except Exception as ne:
+                logger.warning(f"No se pudo enviar notificación de error crítico a Telegram: {ne}")
             break
 
         for project, eval_data in zip(batch, evaluations):
@@ -134,8 +152,17 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_processed += len(batch)
         logger.info(f"Lote de {len(batch)} procesado. Total acumulado: {total_processed}")
 
+    # Notificar finalización del análisis
     if not all_relevant:
-        await update.message.reply_text(f"✅ Se analizaron {total_processed} proyectos. Ninguno superó el Score 6.")
+        try:
+            await update.message.reply_text(
+                f"✅ **Análisis Completado**\n\n"
+                f"📊 Proyectos analizados: {total_processed}\n"
+                f"⭐ Con score > 6: 0\n\n"
+                f"No se encontraron oportunidades destacadas en este lote."
+            )
+        except Exception as e:
+            logger.warning(f"No se pudo enviar notificación final a Telegram: {e}")
         return
 
     msg = f"🚀 **{len(all_relevant)} Oportunidades encontradas (de {total_processed} analizados):**\n\n"
@@ -143,15 +170,20 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contract_emoji = "🔧" if p.get('contract_type') == "staff_augmentation" else "📦"
         contract_label = "Staff Aug." if p.get('contract_type') == "staff_augmentation" else "Proyecto"
         msg += (
-            f"⭐ **Score: {p['score']}/10** | {contract_emoji} {contract_label}\n"
-            f"📌 {p['title']}\n"
-            f"💰 {p['budget']}\n"
+            f"⭐ **Score: {p.get('score', 0)}/10** | {contract_emoji} {contract_label}\n"
+            f"📌 {p.get('title', 'Sin título')}\n"
+            f"💰 {p.get('budget', 'Presupuesto no especificado')}\n"
             f"📝 {p.get('summary', 'No summary')}\n"
-            f"💡 {p['reason']}\n"
-            f"🔗 [Ver Proyecto]({p['link']})\n\n"
+            f"💡 {p.get('reason', 'Sin razón')}\n"
+            f"🔗 [Ver Proyecto]({p.get('link', '')})\n\n"
         )
     
-    await send_long_message(update, msg)
+    msg += f"🏁 **Fin de la lista: {len(all_relevant)} oportunidades encontradas.**"
+
+    try:
+        await send_long_message(update, msg)
+    except Exception as e:
+        logger.warning(f"Error al intentar enviar el reporte de oportunidades a Telegram: {e}")
 
 
 def is_retriable_error(error: Exception) -> bool:
