@@ -4,8 +4,10 @@ import time
 from loguru import logger
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.error import NetworkError as TelegramNetworkError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from google.genai.errors import APIError as GeminiAPIError
+import httpx
 from app.scraper.factory import ScraperFactory
 from app.database import get_projects_repository, get_process_semaphore
 from app.intelligence.factory import get_intelligence_service
@@ -163,6 +165,10 @@ def is_retriable_error(error: Exception) -> bool:
         OSError,
         PlaywrightTimeoutError,
         GeminiAPIError,
+        TelegramNetworkError,
+        httpx.RemoteProtocolError,
+        httpx.ConnectError,
+        httpx.ReadTimeout,
     )
     return isinstance(error, retriable_error_types)
 
@@ -236,8 +242,12 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not url or not link_hash:
             continue
 
-        if update.message:
-            await update.message.reply_text(f"⚙️ ({i+1}/{len(projects)}) Procesando {contract_emoji}: {title}")
+        # Notificar inicio de procesamiento (con protección contra errores de red)
+        try:
+            if update.message:
+                await update.message.reply_text(f"⚙️ ({i+1}/{len(projects)}) Procesando {contract_emoji}: {title}")
+        except Exception as notification_error:
+            logger.warning(f"No se pudo enviar notificación de inicio a Telegram: {notification_error}")
 
         retry_count = 0
         project_succeeded = False
@@ -251,8 +261,11 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if full_detail is None:
                     logger.info(f"Proyecto '{title}' no encontrado en la plataforma. Marcando como 'not_found'.")
                     await projects_repository.mark_projects_status([link_hash], "not_found")
-                    if update.message:
-                        await update.message.reply_text(f"🚫 ({i+1}/{len(projects)}) Descartado (no encontrado): {title}")
+                    try:
+                        if update.message:
+                            await update.message.reply_text(f"🚫 ({i+1}/{len(projects)}) Descartado (no encontrado): {title}")
+                    except Exception as notification_error:
+                        logger.warning(f"No se pudo enviar notificación de proyecto no encontrado: {notification_error}")
                     not_found_count += 1
                     project_succeeded = True
                     break
@@ -266,8 +279,11 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await projects_repository.update_full_details(link_hash, full_detail)
                 
-                if update.message:
-                    await update.message.reply_text(f"🧠 ({i+1}/{len(projects)}) Generando propuesta IA para: {title}")
+                try:
+                    if update.message:
+                        await update.message.reply_text(f"🧠 ({i+1}/{len(projects)}) Generando propuesta IA para: {title}")
+                except Exception as notification_error:
+                    logger.warning(f"No se pudo enviar notificación de generación a Telegram: {notification_error}")
 
                 # Agregamos el contract_type al full_detail antes de generar la propuesta
                 full_detail["contract_type"] = project.get("contract_type", "project_fixed")
@@ -284,25 +300,34 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         budget_info = proposal.get("budget_summary", {})
                         hourly = budget_info.get("hourly_rate", 0)
                         monthly = budget_info.get("estimated_monthly_budget", 0)
-                        if update.message:
-                            await update.message.reply_text(
-                                f"✅ ({i+1}/{len(projects)}) Propuesta Generada (🔧 Staff): {title}\n"
-                                f"💰 ${hourly}/hora | 📅 ~${monthly}/mes"
-                            )
+                        try:
+                            if update.message:
+                                await update.message.reply_text(
+                                    f"✅ ({i+1}/{len(projects)}) Propuesta Generada (🔧 Staff): {title}\n"
+                                    f"💰 ${hourly}/hora | 📅 ~${monthly}/mes"
+                                )
+                        except Exception as notification_error:
+                            logger.warning(f"No se pudo enviar notificación de éxito (Staff) a Telegram: {notification_error}")
                     else:
                         total_usd = proposal.get("summary", {}).get("total_budget", 0)
                         total_hours = proposal.get("summary", {}).get("total_hours", 0)
-                        if update.message:
-                            await update.message.reply_text(
-                                f"✅ ({i+1}/{len(projects)}) Propuesta Generada (📦 Proyecto): {title}\n"
-                                f"💰 Presupuesto: ${total_usd} | ⏱️ Horas: {total_hours}h"
-                            )
+                        try:
+                            if update.message:
+                                await update.message.reply_text(
+                                    f"✅ ({i+1}/{len(projects)}) Propuesta Generada (📦 Proyecto): {title}\n"
+                                    f"💰 Presupuesto: ${total_usd} | ⏱️ Horas: {total_hours}h"
+                                )
+                        except Exception as notification_error:
+                            logger.warning(f"No se pudo enviar notificación de éxito (Proyecto) a Telegram: {notification_error}")
                 else:
                     # Si la IA devuelve un error, lo contamos como fallo
                     failed_count += 1
                     logger.error(f"Error de la IA al generar propuesta para {title}: {proposal.get('error', 'Unknown') if proposal else 'None'}")
-                    if update.message:
-                        await update.message.reply_text(f"❌ ({i+1}/{len(projects)}) Error IA en: {title}")
+                    try:
+                        if update.message:
+                            await update.message.reply_text(f"❌ ({i+1}/{len(projects)}) Error IA en: {title}")
+                    except Exception as notification_error:
+                        logger.warning(f"No se pudo enviar notificación de error IA a Telegram: {notification_error}")
 
                 consecutive_failures = 0
                 project_succeeded = True
@@ -322,21 +347,30 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         consecutive_failures += 1
                         failed_count += 1
                         logger.error(f"Proyecto {title} omitido tras {MAX_RETRY_ATTEMPTS} intentos por error retriable.")
-                        if update.message:
-                            await update.message.reply_text(f"⚠️ ({i+1}/{len(projects)}) Omitido por error persistente: {title}")
+                        try:
+                            if update.message:
+                                await update.message.reply_text(f"⚠️ ({i+1}/{len(projects)}) Omitido por error persistente: {title}")
+                        except Exception as notification_error:
+                            logger.warning(f"No se pudo enviar notificación de omisión a Telegram: {notification_error}")
                         
                         if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD:
                             logger.critical(f"Circuit Breaker Activado: {consecutive_failures} fallas consecutivas.")
-                            if update.message:
-                                await update.message.reply_text("🚨 **CIRCUIT BREAKER ACTIVADO** 🚨\nFallas consecutivas. Proceso abortado.")
+                            try:
+                                if update.message:
+                                    await update.message.reply_text("🚨 **CIRCUIT BREAKER ACTIVADO** 🚨\nFallas consecutivas. Proceso abortado.")
+                            except Exception as notification_error:
+                                logger.critical(f"No se pudo enviar notificación de circuit breaker: {notification_error}")
                             # No liberamos semáforo aquí para revisión manual
                             return
                 else:
                     failed_count += 1
                     critical_failure = True
                     logger.error(f"Error no recuperable procesando proyecto {title}: {str(e)}", exc_info=True)
-                    if update.message:
-                        await update.message.reply_text(f'❌ ({i+1}/{len(projects)}) Error crítico en: {title}. Proceso detenido.')
+                    try:
+                        if update.message:
+                            await update.message.reply_text(f'❌ ({i+1}/{len(projects)}) Error crítico en: {title}. Proceso detenido.')
+                    except Exception as notification_error:
+                        logger.critical(f"No se pudo enviar notificación de error crítico: {notification_error}")
 
         if project_succeeded:
             continue
@@ -356,8 +390,11 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Total: {len(projects)}"
     )
     logger.info(end_message)
-    if update.message:
-        await update.message.reply_text(end_message, parse_mode="Markdown")
+    try:
+        if update.message:
+            await update.message.reply_text(end_message, parse_mode="Markdown")
+    except Exception as notification_error:
+        logger.error(f"No se pudo enviar resumen final a Telegram: {notification_error}")
 
 
 async def unlock_semaphore(update: Update, context: ContextTypes.DEFAULT_TYPE):
