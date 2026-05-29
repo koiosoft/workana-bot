@@ -45,11 +45,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return
-    if update.message:
+    if not update.message:
+        return
+
+    try:
+        semaphore = get_process_semaphore()
+        if await semaphore.is_locked():
+            status_data = await semaphore.get_status()
+            if not status_data:
+                raise ValueError("El estado del semáforo es nulo o corrupto.")
+
+            remaining_projects = semaphore.calculate_remaining_projects(status_data)
+            locked_at_dt = status_data.get("locked_at")
+            last_activity_dt = status_data.get("last_activity_at")
+
+            locked_at_str = locked_at_dt.strftime("%Y-%m-%d %H:%M:%S UTC") if locked_at_dt else "N/A"
+            last_activity_str = last_activity_dt.strftime("%Y-%m-%d %H:%M:%S UTC") if last_activity_dt else "N/A"
+
+            message = (
+                f"🚫 **Acción Denegada: Sistema Ocupado**\n"
+                f"El comando `/status` no puede ejecutarse porque el Semáforo Global está activo.\n"
+                f"📅 **Bloqueado el:** {locked_at_str}\n"
+                f"🔄 **Última Actividad:** {last_activity_str}\n"
+                f"📦 **Proyectos Restantes en la Cola:** {remaining_projects}\n\n"
+                f"*Espere a que finalice el proceso actual o utilice `/desbloquear` si sospecha de una caída crítica del sistema.*"
+            )
+            await update.message.reply_text(message, parse_mode="Markdown")
+            return
+
+    except Exception as e:
+        logger.error(f"Fallo al verificar el estado del semáforo: {e}")
         await update.message.reply_text(
-            "📊 **Resumen actual:**\n- Propuestas activas: 0\n- En negociación: 0\n- Connects: 50",
-            parse_mode="Markdown",
+            "⚠️ No se pudo verificar el estado del sistema. Por seguridad, la operación ha sido cancelada."
         )
+        return
+    
+    await update.message.reply_text(
+        "📊 **Resumen actual:**\n- Propuestas activas: 0\n- En negociación: 0\n- Connects: 50",
+        parse_mode="Markdown",
+    )
 
 
 async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,6 +91,38 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not update.message:
+        return
+
+    try:
+        semaphore = get_process_semaphore()
+        if await semaphore.is_locked():
+            status = await semaphore.get_status()
+            if not status:
+                raise ValueError("El estado del semáforo es nulo o corrupto.")
+
+            remaining_projects = semaphore.calculate_remaining_projects(status)
+            locked_at_dt = status.get("locked_at")
+            last_activity_dt = status.get("last_activity_at")
+
+            locked_at_str = locked_at_dt.strftime("%Y-%m-%d %H:%M:%S UTC") if locked_at_dt else "N/A"
+            last_activity_str = last_activity_dt.strftime("%Y-%m-%d %H:%M:%S UTC") if last_activity_dt else "N/A"
+
+            message = (
+                f"🚫 **Acción Denegada: Sistema Ocupado**\n"
+                f"El comando `/listar` no puede ejecutarse porque el Semáforo Global está activo.\n"
+                f"📅 **Bloqueado el:** {locked_at_str}\n"
+                f"🔄 **Última Actividad:** {last_activity_str}\n"
+                f"📦 **Proyectos Restantes en la Cola:** {remaining_projects}\n\n"
+                f"*Espere a que finalice el proceso actual o utilice `/desbloquear` si sospecha de una caída crítica del sistema.*"
+            )
+            await update.message.reply_text(message, parse_mode="Markdown")
+            return
+            
+    except Exception as e:
+        logger.error(f"Fallo al verificar el estado del semáforo: {e}")
+        await update.message.reply_text(
+            "⚠️ No se pudo verificar el estado del sistema. Por seguridad, la operación ha sido cancelada."
+        )
         return
 
     projects_repository = get_projects_repository()
