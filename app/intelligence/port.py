@@ -1,5 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
+# Se usa TYPE_CHECKING para evitar importaciones circulares en runtime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.bots.telegram.circuit_breaker import CircuitBreaker
 
 
 class IntelligencePort(ABC):
@@ -10,15 +15,21 @@ class IntelligencePort(ABC):
 
 
     @abstractmethod
-    async def evaluate_projects(self, projects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def evaluate_projects(
+        self, projects: list[dict[str, Any]], circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> list[dict[str, Any]]:
         """Evalúa una lista de proyectos y devuelve decisiones individuales."""
         pass
 
     @abstractmethod
-    async def generate_proposal(self, project: dict) -> dict[str, Any]:
+    async def generate_proposal(
+        self, project: dict, circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> dict[str, Any]:
         pass
 
     @abstractmethod
-    async def format_project_description(self, description: str) -> str:
+    async def format_project_description(
+        self, description: str, circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> str:
         """Formatea la descripción de un proyecto para mejorar su legibilidad."""
         pass

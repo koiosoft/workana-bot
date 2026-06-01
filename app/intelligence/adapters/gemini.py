@@ -2,12 +2,17 @@ import os
 import re
 import json
 import time
-from typing import Any, cast
+from typing import Any, cast, Optional
 from google import genai
 import google.genai.errors
 from jinja2 import Environment, FileSystemLoader
 from loguru import logger
 from ..port import IntelligencePort
+from app.exceptions import AIConnectionError
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.bots.telegram.circuit_breaker import CircuitBreaker
 
 FILTER_MODEL = "models/gemma-4-31b-it"      # 15 RPM - Gratis
 STANDARD_MODEL = "models/gemini-2.5-flash" # 2000 RPM - Pago (muy barato)
@@ -45,7 +50,9 @@ class GeminiAdapter(IntelligencePort):
             template = self.jinja_env.get_template(template_name)
             return template.render(**kwargs)
 
-    async def evaluate_projects(self, projects: list[dict]) -> list[dict[str, Any]]:
+    async def evaluate_projects(
+        self, projects: list[dict], circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> list[dict[str, Any]]:
         """Evalúa un lote de proyectos en una sola llamada."""
         if not projects:
             return []
@@ -68,25 +75,21 @@ class GeminiAdapter(IntelligencePort):
             default_strategy=self.default_strategy,
             projects_payload=json.dumps(projects_payload, indent=2)
         )
-
-        # logger.info(f"Actual prompt para la IA {prompt} .")
-        #. Trabajamso con GEMMA por las quotas establecidas
+        
         try:
             self.set_gemini_model()
-            logger.info(f"🤖 Modelo de IA seleccionado : '{self.model_id}'")
-
-            logger.info('=========== PROMPT EVALUACION (INICIO)  ======================')
-            logger.info(prompt)
-            logger.info('=========== PROMPT EVALUACION  (FIN) ======================')
+            logger.info(f"🤖 Modelo de IA seleccionado para evaluación: '{self.model_id}'")
 
             response = self.client.models.generate_content(
                 model=self.model_id,
                 contents=prompt
             )
+
+            if circuit_breaker:
+                circuit_breaker.record_success()
+
             if response.text:
                 text_response = response.text.strip()
-                #logger.info(f"IA respondio con {response} .")
-                # Tu lógica original de limpieza de JSON mejorada para arrays
                 match = re.search(r"```json\s*(\[.*?\])\s*```", text_response, re.DOTALL)
                 if match:
                     json_part = match.group(1)
@@ -95,22 +98,25 @@ class GeminiAdapter(IntelligencePort):
 
                 results = json.loads(json_part)
                 logger.info(f"IA evaluó un lote de {len(results)} proyectos.")
-                if results:
-                    return cast(  list[dict[str, Any]],results ) 
-                else:
-                    logger.warning("La IA devolvió una lista vacía.")
-                    return  []
-            return  []
+                return cast(list[dict[str, Any]], results) if results else []
+            
+            logger.warning("La IA de evaluación no devolvió texto.")
+            return []
 
+        except google.genai.errors.APIError as e:
+            logger.error(f"Error en API de IA durante la evaluación: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("La API de IA falló durante la evaluación de proyectos.") from e
         except Exception as e:
-            logger.error(f"Error masivo en evaluación de IA: {e}")
-            if "API key not valid" in str(e) or "400" in str(e):
-                    raise e
-            # Fallback: devolver todo como 'no proponer' para no romper el flujo
-            return [{"link_hash": p.get("link_hash"), "score": 0, "should_propose": False, "reason": "Error en IA"} for p in projects]
+            logger.error(f"Error inesperado en evaluación de IA: {e}")
+            # No registramos esto como una falla de API necesariamente, podría ser un error de parsing, etc.
+            raise e
         
 
-    async def generate_proposal(self, project: dict) -> dict[str, Any]:
+    async def generate_proposal(
+        self, project: dict, circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> dict[str, Any]:
         """
         Genera una propuesta económica detallada con hitos basada en el valor por hora.
         Usa diferentes templates según el tipo de contrato detectado.
@@ -135,7 +141,6 @@ class GeminiAdapter(IntelligencePort):
             "budget_range": project.get("budget_detail", "N/A")
         }
 
-        # Seleccionamos el template según el tipo de contrato
         template_name = "proposal_staffing.j2" if contract_type == "staff_augmentation" else "proposal.j2"
         
         prompt = self._render_prompt(
@@ -144,12 +149,7 @@ class GeminiAdapter(IntelligencePort):
             hourly_rate=hourly_rate,
             project_payload_json=json.dumps(project_payload, indent=2)
         )
-
-        logger.info('Definiendo el PROMPT para el Adapter de GEMINI') 
         
-        logger.info('=========== PROMPT PROPOSAL (INICIO)  ======================')
-        logger.info(prompt)
-        logger.info('=========== PROMPT PROPOSAL (FIN) ======================')
         try:
             strategy = project.get("strategy", self.default_strategy)
             self.set_gemini_model(strategy)
@@ -162,32 +162,38 @@ class GeminiAdapter(IntelligencePort):
                 contents=prompt
             )
 
-            logger.info('self.client.models.generate_content IN EXECUTION')
+            if circuit_breaker:
+                circuit_breaker.record_success()
 
             if response.text is None:
-                return {"error": "No se pudo generar la propuesta"}
+                logger.warning("La IA no devolvió texto en la generación de propuesta.")
+                return {"error": "No se pudo generar la propuesta, la IA no devolvió contenido."}
             
             text_response = response.text.strip()
-            # Limpieza de markdown para extraer el JSON
             match = re.search(r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL)
             json_part = match.group(1) if match else text_response[text_response.find("{") : text_response.rfind("}") + 1]
             
             proposal_data = json.loads(json_part)
 
-            # Normalización: Asegurar que 'questions_for_client' siempre exista
             if 'questions_for_client' not in proposal_data:
                 proposal_data['questions_for_client'] = []
             
             return proposal_data
 
-        except google.genai.errors.ServerError as e:
-            logger.warning(f"Error de servidor de IA (retriable) generando propuesta: {e}")
-            raise e
+        except google.genai.errors.APIError as e:
+            logger.error(f"Error en API de IA durante la generación de propuesta: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("La API de IA falló durante la generación de propuesta.") from e
         except Exception as e:
-            logger.error(f"Error no retriable generando propuesta económica: {e}")
-            return {"error": "No se pudo generar la propuesta"}
+            logger.error(f"Error inesperado generando propuesta: {e}")
+            # No es una falla de API, podría ser JSON mal formado, etc.
+            # Devolvemos un error para que el handler sepa que este proyecto falló.
+            return {"error": f"Error inesperado: {e}"}
 
-    async def format_project_description(self, description: str) -> str:
+    async def format_project_description(
+        self, description: str, circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> str:
         """Formatea la descripción de un proyecto usando IA para mejorar legibilidad."""
         
         prompt = self._render_prompt(
@@ -202,6 +208,9 @@ class GeminiAdapter(IntelligencePort):
                 model=STANDARD_MODEL,
                 contents=prompt
             )
+
+            if circuit_breaker:
+                circuit_breaker.record_success()
             
             if response.text:
                 logger.success("✅ Descripción formateada exitosamente.")
@@ -210,10 +219,13 @@ class GeminiAdapter(IntelligencePort):
             logger.warning("La IA de formateo no devolvió texto. Usando descripción original.")
             return description
 
+        except google.genai.errors.APIError as e:
+            logger.error(f"Error en API de IA durante el formateo de descripción: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("La API de IA falló durante el formateo de descripción.") from e
         except Exception as e:
-            logger.error(f"Error en la IA de formateo: {e}. Se propagará la excepción.")
-            # Propagamos la excepción para que el manejador principal la capture
-            # y active los reintentos, como se solicitó.
+            logger.error(f"Error inesperado en formateo de descripción: {e}")
             raise e
 
     def set_gemini_model(self, strategy = "none") -> str:

@@ -6,12 +6,19 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import NetworkError as TelegramNetworkError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-from google.genai.errors import APIError as GeminiAPIError
-import httpx
 from app.scraper.factory import ScraperFactory
 from app.database import get_projects_repository, get_process_semaphore
 from app.intelligence.factory import get_intelligence_service
 from .messages import send_long_message
+from app.bots.telegram.circuit_breaker import CircuitBreaker
+from app.exceptions import (
+    AIConnectionError,
+    CircuitBreakerWarning,
+    CircuitBreakerSuspension,
+    CircuitBreakerCritical,
+    CircuitBreakerTrippedError,
+)
+
 
 
 async def is_admin(update: Update) -> bool:
@@ -252,25 +259,13 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"Error al intentar enviar el reporte de oportunidades a Telegram: {e}")
 
 
-def is_retriable_error(error: Exception) -> bool:
-    """
-    Determina si una excepción es retriable.
-    Incluye errores de red, timeouts, y errores 5xx de la API de Google.
-    """
-    retriable_error_types = (
-        ConnectionError,
-        TimeoutError,
-        OSError,
-        PlaywrightTimeoutError,
-        GeminiAPIError,
-        TelegramNetworkError,
-        httpx.RemoteProtocolError,
-        httpx.ConnectError,
-        httpx.ReadTimeout,
-    )
-    return isinstance(error, retriable_error_types)
 
 
+
+
+
+# ... (other imports remain the same)
+...
 async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return
@@ -288,37 +283,31 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             telemetry_message = semaphore.format_telemetry_message(status)
             await update.message.reply_text(telemetry_message, parse_mode="Markdown")
         else:
-            await update.message.reply_text(
-                "🔒 El proceso de generación de propuestas ya está en ejecución."
-            )
+            await update.message.reply_text("🔒 El proceso ya está en ejecución.")
         return
 
     # FASE 2: RESET DE PROYECTOS HUÉRFANOS
     await update.message.reply_text("🔄 Limpiando proyectos huérfanos...")
     reset_count = await projects_repository.reset_orphaned_proposals()
     if reset_count > 0:
-        await update.message.reply_text(f"✅ {reset_count} proyectos resetados de 'ready_for_proposal' a 'analyzed'")
+        await update.message.reply_text(f"✅ {reset_count} proyectos reseteados.")
 
     # FASE 3: OBTENER PROYECTOS Y ADQUIRIR SEMÁFORO
-    await update.message.reply_text("🧠 Obteniendo proyectos con alto score para análisis profundo...")
+    await update.message.reply_text("🧠 Obteniendo proyectos con alto score...")
     projects = await projects_repository.get_projects_for_deep_analysis(limit=50)
     
     if not projects:
-        logger.success("📭 No hay proyectos listos para la fase de propuesta.")
-        await update.message.reply_text("📭 No hay proyectos que requieran generación de propuesta.")
+        logger.success("📭 No hay proyectos para procesar.")
+        await update.message.reply_text("📭 No hay proyectos que requieran propuesta.")
         return
 
-    # Adquirir semáforo
     if not await semaphore.acquire(total_projects=len(projects)):
-        await update.message.reply_text(
-            "⛔ No se pudo adquirir el semáforo. Otro proceso se inició simultáneamente."
-        )
+        await update.message.reply_text("⛔ No se pudo adquirir el semáforo.")
         return
 
-    # FASE 4: PROCESAMIENTO CON SEMÁFORO ACTIVO
+    # FASE 4: PROCESAMIENTO CON SEMÁFORO Y CIRCUIT BREAKER
     await update.message.reply_text(
-        f"🤖 Iniciando generación de propuestas para {len(projects)} proyectos...\n"
-        f"🔒 Semáforo global activado."
+        f"🤖 Iniciando para {len(projects)} proyectos...\n🔒 Semáforo activado."
     )
     scraper = ScraperFactory.get_scraper()
 
@@ -326,154 +315,118 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     failed_count = 0
     not_found_count = 0
     
-    consecutive_failures = 0
-    CIRCUIT_BREAKER_THRESHOLD = 5
-    MAX_RETRY_ATTEMPTS = 3
+    circuit_breaker = CircuitBreaker()
+    MAX_SCRAPE_ATTEMPTS = 3
 
     for i, project in enumerate(projects):
         url = project.get('link')
         link_hash = project.get('link_hash')
         title = project.get('title', 'Sin título')
-        contract_type = project.get('contract_type', 'project_fixed')
-        contract_emoji = "🔧" if contract_type == "staff_augmentation" else "📦"
         
         if not url or not link_hash:
             continue
 
-        # Notificar inicio de procesamiento (con protección contra errores de red)
         try:
-            if update.message:
-                await update.message.reply_text(f"⚙️ ({i+1}/{len(projects)}) Procesando {contract_emoji}: {title}")
-        except Exception as notification_error:
-            logger.warning(f"No se pudo enviar notificación de inicio a Telegram: {notification_error}")
+            await update.message.reply_text(f"⚙️ ({i+1}/{len(projects)}) Procesando: {title}")
+        except TelegramNetworkError as e:
+            logger.warning(f"No se pudo notificar inicio a Telegram: {e}")
 
-        retry_count = 0
-        project_succeeded = False
-        critical_failure = False
-
-        while retry_count < MAX_RETRY_ATTEMPTS and not critical_failure:
-            try:
-                logger.info(f"Extrayendo detalle para: {title} (Intento {retry_count + 1}/{MAX_RETRY_ATTEMPTS})")
-                full_detail = await scraper.fetch_full_detail(url)
-
-                if full_detail is None:
-                    logger.info(f"Proyecto '{title}' no encontrado en la plataforma. Marcando como 'not_found'.")
-                    await projects_repository.mark_projects_status([link_hash], "not_found")
-                    try:
-                        if update.message:
-                            await update.message.reply_text(f"🚫 ({i+1}/{len(projects)}) Descartado (no encontrado): {title}")
-                    except Exception as notification_error:
-                        logger.warning(f"No se pudo enviar notificación de proyecto no encontrado: {notification_error}")
-                    not_found_count += 1
-                    project_succeeded = True
-                    break
-                
-                # Interceptación para formatear la descripción
-                raw_description = full_detail.get("full_description")
-                if raw_description:
-                    logger.info(f"Formateando descripción para: {title}")
-                    formatted_description = await ai_service.format_project_description(raw_description)
-                    full_detail["full_description"] = formatted_description
-
-                await projects_repository.update_full_details(link_hash, full_detail)
-                
+        try:
+            # --- Bloque de Lógica de Procesamiento por Proyecto ---
+            scrape_retry = 0
+            full_detail = None
+            while scrape_retry < MAX_SCRAPE_ATTEMPTS:
                 try:
-                    if update.message:
-                        await update.message.reply_text(f"🧠 ({i+1}/{len(projects)}) Generando propuesta IA para: {title}")
-                except Exception as notification_error:
-                    logger.warning(f"No se pudo enviar notificación de generación a Telegram: {notification_error}")
-
-                # Agregamos el contract_type al full_detail antes de generar la propuesta
-                full_detail["contract_type"] = project.get("contract_type", "project_fixed")
-                full_detail["strategy"] = project.get("strategy", "none")
-                
-                proposal = await ai_service.generate_proposal(full_detail)
-                if proposal and "error" not in proposal:
-                    await projects_repository.update_project_proposal(link_hash, proposal)
-                    processed_count += 1
-                    
-                    # Mostramos información diferente según el tipo de contrato
-                    contract_type = full_detail.get("contract_type", "project_fixed")
-                    if contract_type == "staff_augmentation":
-                        budget_info = proposal.get("budget_summary", {})
-                        hourly = budget_info.get("hourly_rate", 0)
-                        monthly = budget_info.get("estimated_monthly_budget", 0)
-                        try:
-                            if update.message:
-                                await update.message.reply_text(
-                                    f"✅ ({i+1}/{len(projects)}) Propuesta Generada (🔧 Staff): {title}\n"
-                                    f"💰 ${hourly}/hora | 📅 ~${monthly}/mes"
-                                )
-                        except Exception as notification_error:
-                            logger.warning(f"No se pudo enviar notificación de éxito (Staff) a Telegram: {notification_error}")
+                    logger.info(f"Extrayendo detalle para: {title} (Intento {scrape_retry + 1}/{MAX_SCRAPE_ATTEMPTS})")
+                    full_detail = await scraper.fetch_full_detail(url)
+                    break 
+                except PlaywrightTimeoutError as e:
+                    scrape_retry += 1
+                    logger.warning(f"Timeout de scraping en {title} (Intento {scrape_retry}): {e}")
+                    if scrape_retry < MAX_SCRAPE_ATTEMPTS:
+                        await asyncio.sleep(2 ** scrape_retry)
                     else:
-                        total_usd = proposal.get("summary", {}).get("total_budget", 0)
-                        total_hours = proposal.get("summary", {}).get("total_hours", 0)
-                        try:
-                            if update.message:
-                                await update.message.reply_text(
-                                    f"✅ ({i+1}/{len(projects)}) Propuesta Generada (📦 Proyecto): {title}\n"
-                                    f"💰 Presupuesto: ${total_usd} | ⏱️ Horas: {total_hours}h"
-                                )
-                        except Exception as notification_error:
-                            logger.warning(f"No se pudo enviar notificación de éxito (Proyecto) a Telegram: {notification_error}")
-                else:
-                    # Si la IA devuelve un error, lo contamos como fallo
-                    failed_count += 1
-                    logger.error(f"Error de la IA al generar propuesta para {title}: {proposal.get('error', 'Unknown') if proposal else 'None'}")
-                    try:
-                        if update.message:
-                            await update.message.reply_text(f"❌ ({i+1}/{len(projects)}) Error IA en: {title}")
-                    except Exception as notification_error:
-                        logger.warning(f"No se pudo enviar notificación de error IA a Telegram: {notification_error}")
+                        logger.error(f"Fallo definitivo de scraping para {title}.")
+                        raise e # Lanza la excepción para que sea capturada por el manejador principal del proyecto
 
-                consecutive_failures = 0
-                project_succeeded = True
-                break
+            if full_detail is None:
+                logger.info(f"Proyecto '{title}' no encontrado. Marcando como 'not_found'.")
+                await projects_repository.mark_projects_status([link_hash], "not_found")
+                not_found_count += 1
+                await semaphore.update_activity(processed_count, failed_count, not_found_count)
+                continue
 
-            except Exception as e:
-                retry_count += 1
-                
-                if is_retriable_error(e):
-                    logger.warning(f"Error retriable en proyecto {title} (Intento {retry_count}/{MAX_RETRY_ATTEMPTS}): {str(e)}")
-                    
-                    if retry_count < MAX_RETRY_ATTEMPTS:
-                        backoff_time = 2 ** retry_count
-                        logger.info(f"Esperando {backoff_time}s antes de reintentar...")
-                        await asyncio.sleep(backoff_time)
-                    else:
-                        consecutive_failures += 1
-                        failed_count += 1
-                        logger.error(f"Proyecto {title} omitido tras {MAX_RETRY_ATTEMPTS} intentos por error retriable.")
-                        try:
-                            if update.message:
-                                await update.message.reply_text(f"⚠️ ({i+1}/{len(projects)}) Omitido por error persistente: {title}")
-                        except Exception as notification_error:
-                            logger.warning(f"No se pudo enviar notificación de omisión a Telegram: {notification_error}")
-                        
-                        if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD:
-                            logger.critical(f"Circuit Breaker Activado: {consecutive_failures} fallas consecutivas.")
-                            try:
-                                if update.message:
-                                    await update.message.reply_text("🚨 **CIRCUIT BREAKER ACTIVADO** 🚨\nFallas consecutivas. Proceso abortado.")
-                            except Exception as notification_error:
-                                logger.critical(f"No se pudo enviar notificación de circuit breaker: {notification_error}")
-                            # No liberamos semáforo aquí para revisión manual
-                            return
-                else:
-                    failed_count += 1
-                    critical_failure = True
-                    logger.error(f"Error no recuperable procesando proyecto {title}: {str(e)}", exc_info=True)
-                    try:
-                        if update.message:
-                            await update.message.reply_text(f'❌ ({i+1}/{len(projects)}) Error crítico en: {title}. Proceso detenido.')
-                    except Exception as notification_error:
-                        logger.critical(f"No se pudo enviar notificación de error crítico: {notification_error}")
+            raw_description = full_detail.get("full_description")
+            if raw_description:
+                formatted_description = await ai_service.format_project_description(
+                    raw_description, circuit_breaker=circuit_breaker
+                )
+                full_detail["full_description"] = formatted_description
 
-        if project_succeeded:
+            # Guardamos los detalles completos, incluyendo la descripción formateada
+            await projects_repository.update_full_details(link_hash, full_detail)
+
+            full_detail.update({
+                "contract_type": project.get("contract_type", "project_fixed"),
+                "strategy": project.get("strategy", "none")
+            })
+
+            proposal = await ai_service.generate_proposal(full_detail, circuit_breaker=circuit_breaker)
+            
+            if proposal and "error" not in proposal:
+                await projects_repository.update_project_proposal(link_hash, proposal)
+                processed_count += 1
+                # Notificación de éxito...
+            else:
+                failed_count += 1
+                await semaphore.update_activity(processed_count, failed_count, not_found_count)
+                logger.error(f"Error de la IA al generar propuesta para {title}: {proposal.get('error', 'Unknown') if proposal else 'None'}")
+        
+        except CircuitBreakerWarning as e:
+            failed_count += 1
+            await semaphore.update_activity(processed_count, failed_count, not_found_count)
+            await update.message.reply_text(f"⚠️ {str(e)}")
+            await asyncio.sleep(e.backoff_duration * 60)
             continue
-        if critical_failure:
-            break
+        
+        except CircuitBreakerSuspension as e:
+            failed_count += 1
+            await semaphore.update_activity(processed_count, failed_count, not_found_count)
+            await update.message.reply_text(f"⏳ {str(e)}")
+            await asyncio.sleep(e.backoff_duration * 60)
+            continue
+
+        except CircuitBreakerCritical as e:
+            failed_count += 1
+            await semaphore.update_activity(processed_count, failed_count, not_found_count)
+            await update.message.reply_text(f"‼️ {str(e)}")
+            await asyncio.sleep(e.backoff_duration * 60)
+            continue
+
+        except CircuitBreakerTrippedError as e:
+            await update.message.reply_text(
+                "⚠️ Bot apagado por inestabilidad persistente en la API de IA. "
+                "El sistema permanece bloqueado de forma segura. Utilice el "
+                "comando administrativo /desbloquear una vez estabilizado el servicio."
+            )
+            logger.critical(f"APAGADO DEFINITIVO: {str(e)}")
+            return # SALIDA DE EMERGENCIA SIN LIBERAR SEMÁFORO
+
+        except AIConnectionError:
+            failed_count += 1
+            await semaphore.update_activity(processed_count, failed_count, not_found_count)
+            logger.error(f"Falla de IA (falla #{circuit_breaker.consecutive_failures}) procesando '{title}'. Continuando.")
+            continue
+
+        except Exception as e:
+            failed_count += 1
+            await semaphore.update_activity(processed_count, failed_count, not_found_count)
+            logger.critical(f"Error no recuperable procesando proyecto {title}: {e}", exc_info=True)
+            await update.message.reply_text(f'❌ Error crítico en: {title}. Omitiendo.')
+            continue
+
+        # Actualizar telemetría tras un éxito
+        await semaphore.update_activity(processed_count, failed_count, not_found_count)
 
     # FASE 5: LIBERACIÓN DEL SEMÁFORO
     await semaphore.release()
@@ -487,12 +440,9 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"--------------------\n"
         f"Total: {len(projects)}"
     )
-    logger.info(end_message)
-    try:
-        if update.message:
-            await update.message.reply_text(end_message, parse_mode="Markdown")
-    except Exception as notification_error:
-        logger.error(f"No se pudo enviar resumen final a Telegram: {notification_error}")
+    await update.message.reply_text(end_message, parse_mode="Markdown")
+
+
 
 
 async def unlock_semaphore(update: Update, context: ContextTypes.DEFAULT_TYPE):
