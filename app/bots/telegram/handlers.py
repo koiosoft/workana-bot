@@ -195,7 +195,9 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(4)
             evaluations =  await ai_service.evaluate_projects(batch)
         except Exception as e:
-            logger.critical(f"Abortando: Error de infraestructura en IA: {e}")
+            logger.critical(f"Abortando: Error de infraestructura en IA: {e}", exc_info=True)
+            # Revertir el lote actual a pending para que no queden atascados en processing
+            await projects_repository.mark_projects_status(link_hashes, "pending")
             try:
                 await update.message.reply_text(f"❌ Error crítico: {e}. El proceso se ha detenido para proteger los datos.")
             except Exception as ne:
@@ -203,6 +205,15 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
         for project, eval_data in zip(batch, evaluations):
+            reason = eval_data.get("reason", 'Sin razón especificada.')
+            error_msg = eval_data.get("error")
+
+            # Si la IA reporta un error, lo registramos y devolvemos el proyecto a pending
+            if error_msg or "error" in reason.lower():
+                logger.error(f"Error en evaluación de IA para proyecto {project.get('link_hash')}: {error_msg or reason}")
+                await projects_repository.mark_projects_status([project["link_hash"]], "pending")
+                continue
+
             score = eval_data.get("score", 0)
             strategy = eval_data.get("strategy", "none")
             summary = eval_data.get("summary", "No summary available.")
@@ -212,7 +223,7 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await projects_repository.update_project_analysis(
                 link_hash=project["link_hash"], 
                 score=score, 
-                reason=eval_data.get("reason", 'Sin razón especificada.'),
+                reason=reason,
                 strategy=strategy,
                 status="analyzed",
                 ai_summary=summary,

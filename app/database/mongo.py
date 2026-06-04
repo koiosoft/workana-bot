@@ -1,37 +1,8 @@
-import os
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from loguru import logger
+from typing import Optional
+import os
 
-from app.config.database import get_mongo_config
-
-
-_client: AsyncIOMotorClient | None = None
-_db: AsyncIOMotorDatabase | None = None
-
-
-async def connect_to_mongo(application):
-    """Inicializa la conexión a MongoDB y la asigna a una variable global."""
-    global _client, _db
-    if _db is not None:
-        logger.info("La conexión a MongoDB ya existe.")
-        return
-
-    uri, db_name = get_mongo_config()
-    
-    logger.info("🔌 Conectando a MongoDB...")
-    _client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
-    
-    try:
-        # Validar la conexión
-        await _client.server_info()
-        _db = _client[db_name]
-        logger.success("✅ Conexión a MongoDB establecida con éxito.")
-    except Exception as e:
-        logger.error(f"❌ No se pudo conectar a MongoDB: {e}")
-        _client = None
-        _db = None
-        raise
-
+_db: Optional[AsyncIOMotorDatabase] = None
 
 def get_database() -> AsyncIOMotorDatabase:
     """
@@ -42,12 +13,16 @@ def get_database() -> AsyncIOMotorDatabase:
         raise RuntimeError("La base de datos no ha sido inicializada. Llama a 'connect_to_mongo' primero.")
     return _db
 
+async def connect_to_mongo(*args, **kwargs) -> AsyncIOMotorDatabase:
+    global _db
+    mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+    db_name = os.getenv("MONGO_DB_NAME", "workana_bot")
+    client = AsyncIOMotorClient(mongo_uri)
+    _db = client[db_name]
+    return _db
 
-async def close_mongo_connection(application):
-    """Cierra la conexión a MongoDB."""
-    global _client, _db
-    if _client:
-        _client.close()
-        _client = None
+async def close_mongo_connection(*args, **kwargs):
+    global _db
+    if _db is not None:
+        _db.client.close()
         _db = None
-        logger.info("🔌 Conexión a MongoDB cerrada.")

@@ -23,3 +23,4 @@ dirty-commits: false
 
 # Reduce la verbosidad general
 verbose: false
+test-cmd: "pytest tests/unit --tb=short"

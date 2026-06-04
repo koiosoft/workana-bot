@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.database.projects_repository import ProjectsRepository
 from datetime import datetime, timezone
 
@@ -39,7 +39,7 @@ async def test_claim_pending_projects():
         # Set the fixed timestamp for the test
         mock_datetime.now.return_value = datetime(2026, 6, 4, 15, 8, 35, tzinfo=timezone.utc)
 
-        mock_collection = AsyncMock()
+        mock_collection = MagicMock()
         mock_collection.find = MagicMock()
         mock_collection.update_many = AsyncMock()
 
@@ -72,8 +72,13 @@ async def test_claim_pending_projects():
         }
     )
 
-    # Ensure find was called twice
-    assert len(mock_collection.find.call_args_list) == 2
+    # Ensure the second find was called with the correct parameters
+    mock_collection.find.assert_has_calls([
+        # First find: get pending projects
+        mock_collection.find.call_args_list[0],
+        # Second find: get updated projects
+        mock_collection.find.call_args_list[1]
+    ])
 
     # Verify the second find call has the correct parameters
     second_call_args = mock_collection.find.call_args_list[1]

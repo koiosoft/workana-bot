@@ -107,7 +107,7 @@ class GeminiAdapter(IntelligencePort):
             logger.error(f"Error en API de IA durante la evaluación: {e}")
             if circuit_breaker:
                 circuit_breaker.record_failure()
-            raise AIConnectionError("La API de IA falló durante la evaluación de proyectos.") from e
+            raise AIConnectionError(f"La API de IA falló durante la evaluación de proyectos: {e}") from e
         except Exception as e:
             logger.error(f"Error inesperado en evaluación de IA: {e}")
             # No registramos esto como una falla de API necesariamente, podría ser un error de parsing, etc.
@@ -184,7 +184,7 @@ class GeminiAdapter(IntelligencePort):
             logger.error(f"Error en API de IA durante la generación de propuesta: {e}")
             if circuit_breaker:
                 circuit_breaker.record_failure()
-            raise AIConnectionError("La API de IA falló durante la generación de propuesta.") from e
+            raise AIConnectionError(f"La API de IA falló durante la generación de propuesta: {e}") from e
         except Exception as e:
             logger.error(f"Error inesperado generando propuesta: {e}")
             # No es una falla de API, podría ser JSON mal formado, etc.
@@ -223,7 +223,7 @@ class GeminiAdapter(IntelligencePort):
             logger.error(f"Error en API de IA durante el formateo de descripción: {e}")
             if circuit_breaker:
                 circuit_breaker.record_failure()
-            raise AIConnectionError("La API de IA falló durante el formateo de descripción.") from e
+            raise AIConnectionError(f"La API de IA falló durante el formateo de descripción: {e}") from e
         except Exception as e:
             logger.error(f"Error inesperado en formateo de descripción: {e}")
             raise e

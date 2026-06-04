@@ -49,27 +49,22 @@ class ProjectsRepository:
         if 'ayer' in published_str.lower():
             delta = timedelta(days=1)
         else:
-            # Itera sobre los patrones para encontrar una coincidencia.
             for unit, pattern in time_patterns.items():
                 match = pattern.search(published_str)
                 if match:
-                    # Si se encuentra una coincidencia, calcula el delta.
                     if unit == 'moment':
                         delta = timedelta(minutes=1)
                     else:
                         value = int(match.group('value'))
                         if unit == 'months':
-                            # NOTA: La duración del mes es una aproximación.
                             delta = timedelta(days=value * 30)
                         else:
                             delta = timedelta(**{unit: value})
-                    
-                    # Rompe el bucle solo después de procesar la primera coincidencia.
                     break
-        
+
         if delta:
             return scraped_at_dt - delta
-        
+
         logger.warning(f"No se pudo parsear el tiempo relativo '{published_str}'.")
         return None
 
@@ -84,7 +79,7 @@ class ProjectsRepository:
         for project in projects:
             link_hash = self._build_hash(project)
             published_str = project.get("published", "N/A")
-            
+
             doc = {
                 "title": project.get("title", "N/A"),
                 "budget": project.get("budget", "N/A"),
@@ -99,7 +94,6 @@ class ProjectsRepository:
                 "skills": project.get("skills", []),
             }
 
-            # Calcular y añadir la fecha de publicación estimada
             estimated_date = self._calculate_estimated_published_at(published_str, now_dt)
             if estimated_date:
                 doc["estimated_published_at"] = estimated_date
@@ -130,15 +124,12 @@ class ProjectsRepository:
 
     async def claim_pending_projects(self, limit: int = 20) -> list[dict[str, Any]]:
         await self.ensure_indexes()
-        
-        # 1. Obtenemos primero los IDs que vamos a bloquear
-        # Solo traemos el campo _id y link_hash para que sea ultra rápido
-        cursor = await self.collection.find(
+
+        cursor = self.collection.find(
             {"proposal_status": "pending", "deleted_at": {"$exists": False}},
             {"link_hash": 1},
             limit=limit
         )
-        
         pending_items = await cursor.to_list(length=limit)
         if not pending_items:
             return []
@@ -146,13 +137,10 @@ class ProjectsRepository:
         link_hashes = [p["link_hash"] for p in pending_items if p.get("link_hash")]
         now = datetime.now(timezone.utc).isoformat()
 
-        # 2. INTENTO ATÓMICO DE BLOQUEO
-        # Usamos update_many con el filtro de "pending" para asegurar que 
-        # si otro proceso nos ganó de mano, no "re-bloqueamos" nada.
         result = await self.collection.update_many(
             {
                 "link_hash": {"$in": link_hashes}, 
-                "proposal_status": "pending" # <-- CRÍTICO: Doble verificación
+                "proposal_status": "pending"
             },
             {
                 "$set": {
@@ -163,17 +151,14 @@ class ProjectsRepository:
             },
         )
 
-        # Si no logramos marcar ninguno (modified_count == 0), significa que otro proceso los tomó
         if result.modified_count == 0:
             return []
 
-        # 3. RECUPERACIÓN FINAL
-        # Solo traemos los que ESTE proceso logró marcar con éxito
-        cursor = await self.collection.find(
+        cursor = self.collection.find(
             {
                 "link_hash": {"$in": link_hashes}, 
                 "proposal_status": "processing",
-                "processing_started_at": now # Filtramos por nuestra marca de tiempo
+                "processing_started_at": now
             },
             {
                 "_id": 0, "title": 1, "budget": 1, "link": 1, 
@@ -182,7 +167,7 @@ class ProjectsRepository:
             },
             sort=[("scraped_at", ASCENDING)]
         )
-        
+
         return await cursor.to_list(length=limit)
 
     async def mark_projects_status(self, link_hashes: list[str], status: str) -> int:
@@ -202,7 +187,7 @@ class ProjectsRepository:
         """
         await self.ensure_indexes()
         now = datetime.now(timezone.utc).isoformat()
-        
+
         result = await self.collection.update_one(
             {"link_hash": link_hash},
             {
@@ -218,11 +203,11 @@ class ProjectsRepository:
                 }
             }
         )
-        
+
         if result.modified_count > 0:
             logger.info(f"✅ Proyecto {link_hash} actualizado con score {score} y tipo {contract_type}.")
             return True
-        
+
         logger.warning(f"⚠️ No se pudo actualizar el análisis para el hash: {link_hash}")
         return False
 
@@ -234,7 +219,7 @@ class ProjectsRepository:
         """
         await self.ensure_indexes()
         now = datetime.now(timezone.utc).isoformat()
-        
+
         result = await self.collection.update_many(
             {
                 "proposal_status": "ready_for_proposal",
@@ -247,7 +232,6 @@ class ProjectsRepository:
                     "reset_at": now
                 },
                 "$unset": {
-                    # Limpieza TOTAL: eliminamos TODO lo relacionado con el scraping profundo
                     "full_description": "",
                     "budget_detail": "",
                     "proposal": "",
@@ -257,10 +241,10 @@ class ProjectsRepository:
                 }
             }
         )
-        
+
         if result.modified_count > 0:
             logger.warning(f"🔄 Reset automático: {result.modified_count} proyectos huérfanos revertidos de 'ready_for_proposal' a 'analyzed'")
-        
+
         return result.modified_count
 
     async def get_projects_for_deep_analysis(self, min_score: int = 5, limit: int = 10) -> list[dict[str, Any]]:
@@ -268,7 +252,7 @@ class ProjectsRepository:
         cursor = self.collection.find({
             "proposal_status": "analyzed",
             "ai_score": {"$gte": min_score},
-            "full_description": {"$exists": False}  # Solo proyectos sin scraping profundo
+            "full_description": {"$exists": False}
         }, {
             "_id": 0,
             "title": 1,
@@ -286,25 +270,25 @@ class ProjectsRepository:
         """Actualiza el proyecto con la data profunda y cambia el estado."""
         await self.ensure_indexes()
         now = datetime.now(timezone.utc).isoformat()
-        
+
         result = await self.collection.update_one(
             {"link_hash": link_hash},
             {
                 "$set": {
                     "full_description": details.get("full_description"),
-                    "skills": details.get("skills"), # Actualizamos por si hay nuevos
+                    "skills": details.get("skills"),
                     "budget_detail": details.get("budget_detail"),
-                    "proposal_status": "ready_for_proposal", # Nuevo estado para la siguiente fase
+                    "proposal_status": "ready_for_proposal",
                     "updated_at": now
                 }
             }
         )
         return result.modified_count > 0
 
-    async def update_project_proposal(self, link_hash: str, proposal: dict[str, Any] ):
+    async def update_project_proposal(self, link_hash: str, proposal: dict[str, Any]):
         await self.ensure_indexes()
         now = datetime.now(timezone.utc).isoformat()
-        
+
         result = await self.collection.update_one(
             {"link_hash": link_hash},
             {
@@ -316,7 +300,7 @@ class ProjectsRepository:
                 }
             }
         )
-        
+
         if result.modified_count > 0:
             logger.info(f"✅ Propuesta guardada en DB para el proyecto: {link_hash}")
             return True
