@@ -1,7 +1,7 @@
 import hashlib
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Optional, Dict, List
 from pymongo import ASCENDING, UpdateOne
 from .mongo import get_database
 from loguru import logger
@@ -225,7 +225,6 @@ class ProjectsRepository:
         
         logger.warning(f"⚠️ No se pudo actualizar el análisis para el hash: {link_hash}")
         return False
-    
 
     async def reset_orphaned_proposals(self) -> int:
         """
@@ -301,8 +300,6 @@ class ProjectsRepository:
             }
         )
         return result.modified_count > 0
-    
-
 
     async def update_project_proposal(self, link_hash: str, proposal: dict[str, Any] ):
         await self.ensure_indexes()
@@ -324,3 +321,6 @@ class ProjectsRepository:
             logger.info(f"✅ Propuesta guardada en DB para el proyecto: {link_hash}")
             return True
         return False
+
+    async def get_project_by_hash(self, link_hash: str) -> Optional[Dict[str, Any]]:
+        return await self.collection.find_one({"link_hash": link_hash})
