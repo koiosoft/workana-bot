@@ -236,12 +236,17 @@ class GeminiAdapter(IntelligencePort):
             self.model_id  = STANDARD_MODEL
         return self.model_id 
 
-    def set_delay_model(self, strategy = "none") -> int:
-        self.delay_model = 5
+    def set_delay_model(self, strategy = "none") -> float:
+        self.delay_model = 5.0
         if strategy == self.pro_strategy:
-            self.delay_model  = 35
+            self.delay_model  = 35.0
         elif strategy == self.flash_strategy :
-            self.delay_model  = 1
+            self.delay_model  = 1.0
+            
+        override = os.getenv("GEMINI_DELAY_OVERRIDE")
+        if override is not None:
+            self.delay_model = float(override)
+            
         return self.delay_model 
     
     

@@ -170,12 +170,13 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # usamos count_documents que es más eficiente y directo
     pending_count = await projects_repository.collection.count_documents({"proposal_status": "pending"})
     
+    delay_before_eval = float(os.getenv("DELAY_BEFORE_EVALUATION", "30"))
     try:
-        await update.message.reply_text(f"🧠 Hay {pending_count} proyectos pendientes en DB.\nSe evaluarán en lotes en 30 segundos.")
+        await update.message.reply_text(f"🧠 Hay {pending_count} proyectos pendientes en DB.\nSe evaluarán en lotes en {delay_before_eval} segundos.")
     except Exception as e:
         logger.warning(f"No se pudo enviar notificación de proyectos pendientes a Telegram: {e}")
 
-    await asyncio.sleep(30)
+    await asyncio.sleep(delay_before_eval)
     while iterations < max_iterations:
         iterations += 1
         # Recuperamos un lote para no saturar la memoria ni la API de la IA
@@ -185,14 +186,17 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info("No hay proyectos pendientes.  Batch dio Null o 0")
             break # Ya no quedan proyectos 'pending'
 
+        link_hashes = [p["link_hash"] for p in batch]
+
         try:
             try:
                 await update.message.reply_text(f"🧠 Iniciando la evaluación del Lote #{iterations} con {buffer_size} proyectos.")
             except Exception as e:
                 logger.warning(f"No se pudo enviar notificación de inicio de lote a Telegram: {e}")
-            link_hashes = [p["link_hash"] for p in batch]
+            
             await projects_repository.mark_projects_status(link_hashes, "processing")
-            await asyncio.sleep(4)
+            delay_between_batches = float(os.getenv("DELAY_BETWEEN_BATCHES", "4"))
+            await asyncio.sleep(delay_between_batches)
             evaluations =  await ai_service.evaluate_projects(batch)
         except Exception as e:
             logger.critical(f"Abortando: Error de infraestructura en IA: {e}", exc_info=True)
