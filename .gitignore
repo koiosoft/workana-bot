@@ -30,3 +30,4 @@ Thumbs.db
 context_cache/
 .vscode/
 .aider*
+.env.test
