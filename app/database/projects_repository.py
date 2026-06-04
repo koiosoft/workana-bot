@@ -123,7 +123,7 @@ class ProjectsRepository:
     async def get_pending_projects(self, limit: int = 20) -> list[dict[str, Any]]:
         await self.ensure_indexes()
         cursor = self.collection.find(
-            {"proposal_status": "pending"},
+            {"proposal_status": "pending", "deleted_at": {"$exists": False}},
             {"_id": 0, "title": 1, "budget": 1, "link": 1, "published": 1, "link_hash": 1},
         ).sort("scraped_at", ASCENDING).limit(limit)
         return await cursor.to_list(length=limit)
@@ -133,10 +133,11 @@ class ProjectsRepository:
         
         # 1. Obtenemos primero los IDs que vamos a bloquear
         # Solo traemos el campo _id y link_hash para que sea ultra rápido
-        cursor = self.collection.find(
-            {"proposal_status": "pending"},
-            {"link_hash": 1}
-        ).limit(limit)
+        cursor = await self.collection.find(
+            {"proposal_status": "pending", "deleted_at": {"$exists": False}},
+            {"link_hash": 1},
+            limit=limit
+        )
         
         pending_items = await cursor.to_list(length=limit)
         if not pending_items:
@@ -168,7 +169,7 @@ class ProjectsRepository:
 
         # 3. RECUPERACIÓN FINAL
         # Solo traemos los que ESTE proceso logró marcar con éxito
-        cursor = self.collection.find(
+        cursor = await self.collection.find(
             {
                 "link_hash": {"$in": link_hashes}, 
                 "proposal_status": "processing",
@@ -179,7 +180,8 @@ class ProjectsRepository:
                 "published": 1, "short_description": 1, "link_hash": 1, "bids": 1,
                 "skills": 1
             },
-        ).sort("scraped_at", ASCENDING)
+            sort=[("scraped_at", ASCENDING)]
+        )
         
         return await cursor.to_list(length=limit)
 
@@ -235,7 +237,10 @@ class ProjectsRepository:
         now = datetime.now(timezone.utc).isoformat()
         
         result = await self.collection.update_many(
-            {"proposal_status": "ready_for_proposal"},
+            {
+                "proposal_status": "ready_for_proposal",
+                "deleted_at": {"$exists": False}
+            },
             {
                 "$set": {
                     "proposal_status": "analyzed",
