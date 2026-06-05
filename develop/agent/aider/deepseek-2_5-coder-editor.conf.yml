@@ -1,0 +1,32 @@
+# Modelo usado
+model: deepseek/deepseek-chat
+editor-model:  openrouter/qwen/qwen-2.5-coder-32b-instruct
+architect: true
+editor-edit-format: diff
+
+# FUENTES DE VERDAD (SDD) - Cargados automáticamente como lectura
+read:
+  - SPEC.md
+  - CONVENTIONS.md
+
+# Desactiva commits automáticos
+auto-commits: false
+
+# No muestres diffs al hacer commit (aunque auto-commits=false, no afecta)
+show-diffs: false
+
+# Reduce el mapa del repositorio para ahorrar contexto (ayuda a que el modelo no divague)
+map-tokens: "1024"
+
+# Atributos del commit (para que no aparezca "aider" en el autor)
+attribute-author: false
+attribute-committer: false
+attribute-co-authored-by: false
+attribute-commit-message-author: false
+attribute-commit-message-committer: false
+dirty-commits: false
+
+
+# Reduce la verbosidad general
+verbose: false
+
