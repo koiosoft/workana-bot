@@ -1,6 +1,11 @@
 # Modelo local que estás usando
 model: openrouter/qwen/qwen3-32b
 editor-edit-format: diff
+
+read:
+  - SPEC.md
+  - CONVENTIONS.md
+
 # Desactiva commits automáticos
 auto-commits: false
 
