@@ -1,22 +1,22 @@
-# ESPECIFICACIÓN DE DISEÑO DE SOFTWARE (SDD) - WORKANA BOT
+# SOFTWARE DESIGN DOCUMENT (SDD) - WORKANA BOT
 
-## 1. OBJETIVO DEL SISTEMA
+## 1. SYSTEM OBJECTIVE
 
-### 1.1 Declaración de Propósito
-El objetivo primordial de **Workana Bot** es automatizar de forma integral y resiliente el ciclo de vida de prospección en la plataforma Workana. Esto comprende el descubrimiento ininterrumpido de nuevos proyectos de desarrollo, su evaluación cognitiva mediante Inteligencia Artificial y la generación automatizada de propuestas altamente personalizadas para los administradores del sistema, optimizando tiempos de respuesta y maximizando las oportunidades de adjudicación.
+### 1.1 Purpose Statement
+The primary objective of **Workana Bot** is to comprehensively and resiliently automate the prospecting lifecycle on the Workana platform. This includes the uninterrupted discovery of new development projects, their cognitive evaluation using Artificial Intelligence, and the automated generation of highly customized proposals for system administrators, optimizing response times and maximizing award opportunities.
 
-### 1.2 Objetivos Técnicos de Alto Nivel
-*   **Automatización No Invasiva:** Implementar un pipeline de ingesta automatizada (Scraper) capaz de lidiar con renderizado dinámico e interactividad compleja en plataformas SPA (Single Page Applications).
-*   **Evaluación Cognitiva Desacoplada:** Clasificar y estimar la viabilidad técnica y comercial de cada proyecto recolectado utilizando modelos avanzados de procesamiento de lenguaje natural (LLM) a través de un motor cognitivo aislado.
-*   **Persistencia Segura e Idempotente:** Registrar estructuradamente todos los proyectos, auditorías de evaluación, semáforos de control y propuestas, garantizando la consistencia transaccional y la trazabilidad del estado.
-*   **Notificación y Control en Tiempo Real:** Proveer una consola operativa bidireccional basada en un bot de Telegram, sirviendo como canal único para alertar, interactuar y ejecutar transacciones de negocio.
-*   **Aislamiento de Infraestructura:** Minimizar la dependencia ambiental garantizando una empaquetación lista para producción mediante contenedores Docker, aislados a nivel de red y volumen de datos.
+### 1.2 High-Level Technical Objectives
+*   **Non-Invasive Automation:** Implement an automated ingestion pipeline (Scraper) capable of handling dynamic rendering and complex interactivity on SPA (Single Page Applications) platforms.
+*   **Decoupled Cognitive Evaluation:** Classify and estimate the technical and commercial viability of each collected project using advanced Natural Language Processing (LLM) models through an isolated cognitive engine.
+*   **Secure and Idempotent Persistence:** Structurally record all projects, evaluation audits, control semaphores, and proposals, ensuring transactional consistency and state traceability.
+*   **Real-Time Notification and Control:** Provide a bidirectional operational console based on a Telegram bot, serving as a single channel to alert, interact, and execute business transactions.
+*   **Infrastructure Isolation:** Minimize environmental dependency by ensuring a production-ready packaging through Docker containers, isolated at the network and data volume level.
 
 ---
 
-## 2. REGLAS DE ARQUITECTURA Y DISEÑO
+## 2. ARCHITECTURE AND DESIGN RULES
 
-El sistema está estructurado bajo los principios de **Diseño Guiado por el Dominio (DDD)** y la **Arquitectura Hexagonal (Puertos y Adaptadores)**. Ningún detalle de infraestructura (frameworks, librerías de persistencia, APIs externas) debe permear la lógica de negocio nuclear.
+The system is structured under the principles of **Domain-Driven Design (DDD)** and **Hexagonal Architecture (Ports and Adapters)**. No infrastructure details (frameworks, persistence libraries, external APIs) should permeate the core business logic.
 
 ```
        [External Clients/Triggers]
@@ -50,131 +50,155 @@ El sistema está estructurado bajo los principios de **Diseño Guiado por el Dom
        [External Databases / APIs]
 ```
 
-### 2.1 Principios de Inversión de Dependencias (DIP) y Aislamiento
-1.  **Abstracción en las Fronteras:** Los módulos de mayor nivel (`scraper`, `intelligence`, `database`) deben interactuar únicamente mediante contratos abstractos (Ports). Los adaptadores concretos (e.g., Playwright, Gemini SDK, Motor) se inyectan en tiempo de ejecución.
-2.  **No Fugas de Infraestructura (Zero Leakage):** Los tipos de datos o excepciones específicos de adaptadores externos jamás deben cruzar las fronteras de su módulo sin traducción previa. El scraper debe convertir los elementos DOM o selectores de Playwright a tipos primitivos de Python o modelos Pydantic puramente semánticos antes de enviarlos al núcleo de la aplicación.
-3.  **Aislamiento Horizontal de Módulos:** Está estrictamente prohibido que un adaptador interactúe directamente con otro adaptador (e.g., el scraper no debe realizar escrituras directas en la base de datos). Toda comunicación se coordina mediante la capa de aplicación core.
+### 2.1 Dependency Inversion Principle (DIP) and Isolation
+1.  **Abstraction at the Boundaries:** Higher-level modules (`scraper`, `intelligence`, `database`) must interact solely through abstract contracts (Ports). Concrete adapters (e.g., Playwright, Gemini SDK, Motor) are injected at runtime.
+2.  **Zero Infrastructure Leakage:** Data types or exceptions specific to external adapters must never cross their module boundaries without prior translation. The scraper must convert DOM elements or Playwright selectors into primitive Python types or purely semantic Pydantic models before sending them to the application core.
+3.  **Horizontal Module Isolation:** An adapter is strictly prohibited from interacting directly with another adapter (e.g., the scraper must not perform direct database writes). All communication is coordinated through the core application layer.
 
-### 2.2 Topología del Proyecto y Estructura de Directorios
-La jerarquía de archivos se define estrictamente para soportar la segregación hexagonal de responsabilidades:
+### 2.2 Project Topology and Directory Structure
+The file hierarchy is strictly defined to support the hexagonal segregation of responsibilities:
 
 ```
 .
-├── app/                           # Monolito Principal de la Aplicación
-│   ├── bots/                      # Adaptadores Primarios / Conductores (Ruteo, comandos y estados de Telegram)
-│   ├── config/                    # Motor de Configuración: Validación inmutable de variables de entorno
-│   ├── database/                  # Infraestructura de Datos: Adaptadores secundarios, repositorios y control de semáforos
-│   ├── intelligence/              # Motor Cognitivo: Adaptadores e integraciones LLM
-│   │   └── prompts/               # Plantillas Jinja2 versionadas para ingeniería de prompts
-│   └── scraper/                   # Motor de Ingesta: Adaptadores de raspado web (Playwright, bs4)
-│       └── adaptors/              # Implementaciones concretas (workana, dummy test suites)
-├── migrations/                    # Gestión de Esquemas de Base de Datos y Datos Semilla (Síncronos, PyMongo)
-│   └── scripts/                   # Scripts de migración idempotentes autogestionados
-├── scripts/                       # Mantenimiento, utilidades y scripts operacionales auxiliares
-├── tests/                         # Suites de pruebas automatizadas (unitarias y de integración)
-├── .env.example                   # Definición del esquema declarativo de variables de entorno
-├── docker-compose.yml             # Orquestación de infraestructura local de servicios (App, MongoDB)
-└── requirements.txt               # Registro y fijación de dependencias del ecosistema
+├── app/                           # Main Application Monolith
+│   ├── bots/                      # Primary Adapters / Drivers (Telegram routing, commands, and states)
+│   ├── config/                    # Configuration Engine: Immutable environment variable validation
+│   ├── database/                  # Data Infrastructure: Secondary adapters, repositories, and semaphore control
+│   ├── intelligence/              # Cognitive Engine: LLM adapters and integrations
+│   │   └── prompts/               # Versioned Jinja2 templates for prompt engineering
+│   └── scraper/                   # Ingestion Engine: Web scraping adapters (Playwright, bs4)
+│       └── adaptors/              # Concrete implementations (workana, dummy test suites)
+├── migrations/                    # Database Schema and Seed Data Management (Synchronous, PyMongo)
+│   └── scripts/                   # Self-managed idempotent migration scripts
+├── scripts/                       # Maintenance, utilities, and auxiliary operational scripts
+├── tests/                         # Automated test suites (unit and integration)
+├── .env.example                   # Declarative schema definition of environment variables
+├── docker-compose.yml             # Local service infrastructure orchestration (App, MongoDB)
+└── requirements.txt               # Ecosystem dependency registration and pinning
 ```
 
----
-
-## 3. DISEÑO DE DATOS Y PERSISTENCIA
-
-### 3.1 Motores y Controladores Diferenciados
-El sistema implementa persistencia políglota a nivel de controladores para optimizar los ciclos de ejecución:
-*   **Entorno de Aplicación (Asíncrono):** Utiliza `motor` (basado en `asyncio`) para todas las consultas y escrituras del bot, asegurando que el bucle de eventos no se bloquee durante operaciones de E/S.
-*   **Entorno de Migraciones (Síncrono):** Utiliza `pymongo` para garantizar un control atómico y secuencial, asegurando que las alteraciones de esquema no sufran condiciones de carrera.
-
-### 3.2 Evolución del Esquema: Sistema de Migraciones
-Toda modificación en las colecciones e índices de MongoDB debe ejecutarse a través del framework personalizado de migraciones ubicado en `migrations/`. **Las modificaciones manuales directas están estrictamente prohibidas en cualquier entorno.**
-
-*   **Idempotencia y Versionado:** Cada migración es un script de Python versionado por fecha (`vYYYYMMDD_NN_...`). Su reejecución repetida debe dar como resultado exactamente el mismo estado final en la base de datos sin generar inconsistencias.
-*   **Operaciones Atómicas (`ResilientBulkWriter`):** Se prohíbe el uso de comandos crudos de modificación. Se debe utilizar la API de `ResilientBulkWriter` (`writer`) dentro de los scripts, la cual garantiza la atomicidad de las operaciones de datos mediante una estrategia de Write-Ahead Logging (WAL).
-*   **CLI para Gestión:** La creación, ejecución y reversión de migraciones se gestiona mediante una interfaz de línea de comandos (`python3 migrations/main.py`), permitiendo un control explícito sobre el ciclo de vida de la base de datos:
-    *   `--create "descripcion"`: Genera una nueva plantilla de migración.
-    *   `--migrate`: Aplica todas las migraciones pendientes.
-    *   `--rollback`: Revierte la última migración aplicada.
-*   **Rollback Inteligente:** El método `up()` de una migración define los cambios de datos e infraestructura. La reversión de los **datos** es automática gracias al `ResilientBulkWriter`. El método `down()` se reserva exclusivamente para revertir cambios de **infraestructura** (ej. eliminar un índice).
+### 2.3 Concurrency and Critical Resource Management
+*   **Resource Release Guarantee:** Any resource that manages concurrency or exclusive access (like the processing semaphore) must be encapsulated in an asynchronous context manager (`async with`). This measure is mandatory to ensure that, even in the event of unexpected failures or unhandled exceptions during an operation, the resource is released correctly, preventing deadlocks in the system.
 
 ---
 
-## 4. ESTRATEGIA DE PRUEBAS
+## 3. DATA DESIGN AND PERSISTENCE
 
-El proyecto adopta una estrategia de pruebas multinivel gestionada con `pytest` para garantizar la calidad y estabilidad del código. Las dependencias de desarrollo se gestionan en `requirements-dev.txt`.
+### 3.1 Differentiated Engines and Drivers
+The system implements polyglot persistence at the driver level to optimize execution cycles:
+*   **Application Environment (Asynchronous):** Uses `motor` (based on `asyncio`) for all bot queries and writes, ensuring the event loop is not blocked during I/O operations.
+*   **Migration Environment (Synchronous):** Uses `pymongo` to ensure atomic, step-by-step control, ensuring that schema alterations do not suffer from race conditions.
 
-### 4.1 Pruebas Unitarias (`tests/unit/`)
-*   **Filosofía:** Prueban componentes de lógica de negocio en completo aislamiento, utilizando mocks para simular dependencias externas (bases de datos, APIs de IA, etc.). Son la base de la pirámide de pruebas y se ejecutan rápidamente.
-*   **Alcance:**
-    *   Lógica de clasificación y procesamiento de proyectos.
-    *   Validación de la selección de plantillas de propuestas.
-    *   Formateo y construcción de mensajes para Telegram.
-    *   Comportamiento de los repositorios (con la base de datos mockeada).
-    *   **Manejo de Errores Críticos:** Se valida explícitamente la resiliencia del sistema, incluyendo reintentos automáticos ante fallos de red, la correcta activación del `Circuit Breaker` y la liberación del semáforo de concurrencia en caso de error.
+### 3.2 Schema Evolution: Migration System
+Any modification to MongoDB collections and indexes must be executed through the custom migration framework located in `migrations/`. **Direct manual modifications are strictly prohibited in any environment.**
 
-### 4.2 Pruebas de Integración (`tests/integration/`)
-*   **Filosofía:** Verifican la correcta colaboración entre varios componentes del sistema. Requieren una instancia real de servicios externos, principalmente una base de datos MongoDB.
-*   **Alcance:**
-    *   Correcta creación de índices en la base de datos al iniciar la aplicación.
-    *   Flujos de datos de extremo a extremo (ej. desde la recepción de un proyecto hasta su almacenamiento con un `contract_type` específico).
-    *   Validación de la integridad estructural de los datos guardados en la base de datos.
-*   **Ejecución Condicional:** Estos tests se saltan automáticamente si no se provee una cadena de conexión a la base de datos (`MONGODB_URI`), permitiendo ejecutar el resto de la suite en entornos sin servicios.
-
-### 4.3 Ejecución de la Suite
-La suite de pruebas se puede ejecutar con granularidad desde la raíz del proyecto:
-*   **Todos los tests:** `pytest tests/ -v`
-*   **Solo unitarios:** `pytest tests/unit/ -v`
-*   **Generar reporte de cobertura:** `pytest tests/ --cov=app --cov-report=html`
+*   **Idempotency and Versioning:** Each migration is a Python script versioned by date (`vYYYYMMDD_NN_...`). Its repeated execution must result in the exact same final state in the database without generating inconsistencies.
+*   **Atomic Operations (`ResilientBulkWriter`):** The use of raw modification commands is prohibited. The `ResilientBulkWriter` API (`writer`) must be used within scripts, which guarantees the atomicity of data operations through a Write-Ahead Logging (WAL) strategy.
+*   **CLI for Management:** The creation, execution, and rollback of migrations are managed via a command-line interface (`python3 migrations/main.py`), allowing explicit control over the database lifecycle:
+    *   `--create "description"`: Generates a new migration template.
+    *   `--migrate`: Applies all pending migrations.
+    *   `--rollback`: Reverts the last applied migration.
+*   **Smart Rollback:** A migration's `up()` method defines data and infrastructure changes. The rollback of **data** is automatic thanks to the `ResilientBulkWriter`. The `down()` method is reserved exclusively for reversing **infrastructure** changes (e.g., deleting an index).
 
 ---
 
-## 5. SCRIPTS DE UTILIDAD (`scripts/`)
+## 4. TESTING STRATEGY
 
-El directorio `scripts/` contiene herramientas operacionales y de diagnóstico para facilitar el desarrollo, la configuración y el mantenimiento del sistema.
+The project adopts a multi-level testing strategy managed with `pytest` to ensure code quality and stability. Development dependencies are managed in `requirements-dev.txt`.
 
-*   `check_projects.py`: Script de diagnóstico que se conecta a MongoDB y reporta el estado actual de los proyectos en el pipeline de procesamiento. Permite verificar cuántos proyectos están analizados, cuántos tienen un puntaje de IA suficiente y cuántos están listos para la siguiente etapa.
-*   `extract_session.py`: Herramienta fundamental para el scraper. Lanza un navegador interactivo (no headless) para que el desarrollador inicie sesión manualmente en Workana. Una vez autenticado, el script guarda el estado de la sesión (cookies, etc.) en un archivo `state.json`.
-*   `test_bot_session.py`: Script complementario al anterior. Utiliza el archivo `state.json` para lanzar un navegador (headless) e intentar acceder directamente a una página autenticada de Workana. Sirve para verificar que la sesión extraída es válida y funcional antes de usarla en la aplicación principal.
-*   `get-gemini-images.py`: Utilidad para interactuar con la API de Google Gemini. Lista todos los modelos de IA disponibles para la clave de API configurada, permitiendo al desarrollador verificar la conexión y conocer los nombres de los modelos que puede utilizar.
+### 4.1 Unit Tests (`tests/unit/`)
+*   **Philosophy:** They test business logic components in complete isolation, using mocks to simulate external dependencies (databases, AI APIs, etc.). They form the base of the testing pyramid and execute quickly.
+*   **Scope:**
+    *   Project classification and processing logic.
+    *   Validation of proposal template selection.
+    *   Formatting and construction of messages for Telegram.
+    *   Repository behavior (with a mocked database).
+    *   **Critical Error Handling:** System resilience is explicitly validated, including automatic retries on network failures, correct activation of the `Circuit Breaker`, and release of the concurrency semaphore in case of an error.
 
----
+### 4.2 Integration Tests (`tests/integration/`)
+*   **Philosophy:** They verify the correct collaboration between various system components. They require a real instance of external services, mainly a MongoDB database.
+*   **Scope:**
+    *   Correct creation of database indexes upon application startup.
+    *   End-to-end data flows (e.g., from receiving a project to storing it with a specific `contract_type`).
+    *   Validation of the structural integrity of data saved in the database.
+*   **Conditional Execution:** These tests are automatically skipped if a database connection string (`MONGODB_URI`) is not provided, allowing the rest of the suite to run in environments without services.
 
-## 6. INGESTACIÓN Y COMPONENTES OPERATIVOS
-
-### 6.1 Ingesta Resiliente (Scraper)
-*   **Estrategia de Renderizado:** El adaptador de producción (`workana.py`) utiliza Playwright de forma headless para sortear protecciones y renderizar dinámicamente el contenido Javascript.
-*   **Parser de Alto Rendimiento:** La estructuración del DOM en memoria se delega a BeautifulSoup4 por su eficiencia de CPU.
-*   **Manejo de Sesión:** Las cookies e identificadores de sesión se cargan desde el archivo `state.json` (previamente generado con `scripts/extract_session.py`), evitando re-autenticaciones costosas que gatillen alertas de seguridad.
-
-### 6.2 Arquitectura Cognitiva (Intelligence)
-*   **Integración SDK:** Uso directo del SDK oficial de Google `google-genai` para el procesamiento con Gemini.
-*   **Contención de Prompts:** Los prompts de IA se estructuran fuera del código python en archivos `.j2` (Jinja2) bajo `app/intelligence/prompts/` para permitir una iteración y versionamiento limpios de la ingeniería de prompts.
-
-### 6.3 Canal Operativo (Telegram Bot)
-*   **Asincronía Extrema:** Implementado mediante `python-telegram-bot` en su modo completamente asíncrono para escalar simultáneamente con las llamadas al Scraper y base de datos.
-*   **Resiliencia de Conexión:** Implementación de disyuntores (Circuit Breakers) y reintentos exponenciales en los manejadores de comandos para evitar caídas en cascada si las APIs externas fallan temporalmente.
-
----
-
-## 7. ESTÁNDARES DE CODIFICACIÓN Y CALIDAD
-
-### 7.1 Calidad de Código y Estilo
-*   **Tipado Estricto:** Toda firma de función, método o corutina debe definir completamente el tipo de datos de entrada y salida mediante anotaciones de tipo de Python (`typing`, `Pydantic`).
-*   **Estilo Uniforme:** Alineación absoluta con **PEP 8**, formateado automatizado con `black` y ordenamiento de importaciones con `isort`.
-*   **Comentarios de Valor:** No duplicar la lógica implícita. Los comentarios de código explican el **porqué** de decisiones de optimización o invariants complejas.
-
-### 7.2 Logging Profesional
-*   Toda salida informativa o de rastreo se centraliza mediante `Loguru`.
-*   El uso de llamadas genéricas `print()` está estrictamente vetado.
-*   Los logs deben categorizarse rigurosamente según criticidad: `INFO` para flujo regular del sistema, `WARNING` para eventos atípicos controlados, `ERROR`/`CRITICAL` para fallas que comprometen la integridad de datos o detienen la ejecución.
-
-### 7.3 Ciclo de Documentación
-Cualquier alteración en la API, variables del entorno o arquitectura debe impactar atómicamente a `README.md` y a esta especificación `SPEC.md`.
+### 4.3 Suite Execution
+The test suite can be run with granularity from the project root:
+*   **All tests:** `pytest tests/ -v`
+*   **Unit tests only:** `pytest tests/unit/ -v`
+*   **Generate coverage report:** `pytest tests/ --cov=app --cov-report=html`
 
 ---
 
-## 8. RESTRICCIONES Y SEGURIDAD
+## 5. UTILITY SCRIPTS (`scripts/`)
 
-*   **Aislamiento de Secretos:** La variable de configuración de mayor prioridad se define localmente en un archivo `.env.local` excluido de git. El archivo `.env.example` actúa únicamente como contrato estructural sin credenciales reales expuestas.
-*   **Control de Dependencias:** El archivo `requirements.txt` y `requirements-dev.txt` definen las dependencias fijas. No se deben importar módulos adicionales sin un análisis de seguridad previo y la aprobación correspondiente.
-*   **Seguridad del Sistema:** Dado que la aplicación interactúa con el sistema de archivos local y automatizaciones de navegador, todo comando en producción debe operar de manera restringida o contenedorizada.
+The `scripts/` directory contains operational and diagnostic tools to facilitate system development, configuration, and maintenance.
+
+*   `check_projects.py`: A diagnostic script that connects to MongoDB and reports the current status of projects in the processing pipeline. It allows checking how many projects are analyzed, how many have a sufficient AI score, and how many are ready for the next stage.
+*   `extract_session.py`: Operational utility executed manually by the developer in non-headless mode to handle initial authentication and dump the session cookies into `state.json`. *Note: Excluded from production runtime.*
+*   `test_bot_session.py`: Smoke-test script executed manually to verify that the generated `state.json` successfully authenticates a headless browser instance before deploying the main application.
+*   `get-gemini-images.py`: A utility to interact with the Google Gemini API. It lists all available AI models for the configured API key, allowing the developer to verify the connection and know the names of the models they can use.
+
+---
+
+## 6. INGESTION AND OPERATIONAL COMPONENTS
+
+### 6.1 Resilient Ingestion (Scraper)
+*   **Rendering Strategy:** The production adapter (`workana.py`) uses Playwright in headless mode to bypass protections and dynamically render JavaScript content.
+*   **High-Performance Parser:** In-memory DOM structuring is delegated to BeautifulSoup4 for its CPU efficiency.
+*   **Defensive Selectors and Robust Parsing:** Data extraction must use defensive CSS selectors that do not fail if an attribute changes. The extracted data must be validated and parsed into Pydantic models that use optional types (`Optional[...]`) and default values to prevent minor changes in the source website's DOM from causing fatal errors.
+*   **Session Management & Resilience:** Cookies and session identifiers are loaded from a pre-existing `state.json` file to avoid costly re-authentications that trigger security alerts. If this session state is found to be expired or invalid during runtime, the automation must abort execution gracefully, raising a critical log/notification that instructs the user to manually regenerate the state using `scripts/extract_session.py` and validate it via `scripts/test_bot_session.py`.
+
+### 6.2 Cognitive Architecture (Intelligence)
+*   **SDK Integration:** Direct use of the official Google `google-genai` SDK for processing with Gemini.
+*   **Prompt Containment:** AI prompts are structured outside the Python code in `.j2` (Jinja2) files under `app/intelligence/prompts/` to allow for clean iteration and versioning of prompt engineering.
+*   **Dynamic Path Resolution:** Loading of `.j2` templates must be done using dynamic and robust paths, based on the location of the file that loads them (e.g., `pathlib.Path(__file__).parent`). The use of hardcoded relative or absolute paths is prohibited to avoid execution failures in different contexts.
+
+### 6.3 Operational Channel (Telegram Bot)
+*   **Extreme Asynchrony:** Implemented using `python-telegram-bot` in its fully asynchronous mode to scale simultaneously with calls to the Scraper and database.
+*   **Connection Resilience:** Implementation of Circuit Breakers and exponential backoff in command handlers to prevent cascading failures if external APIs fail temporarily.
+
+---
+
+## 7. CODING AND QUALITY STANDARDS
+
+### 7.1 Code Quality and Style
+*   **Strict Typing:** Every function, method, or coroutine signature must fully define the input and output data types using Python type annotations (`typing`, `Pydantic`).
+*   **Uniform Style:** Absolute compliance with **PEP 8**, automated formatting with `black`, and import sorting with `isort`.
+*   **Value-Driven Comments:** Do not duplicate implicit logic. Code comments explain the **why** behind optimization decisions or complex invariants.
+
+### 7.2 Professional Logging
+*   All informational or tracing output is centralized through `Loguru`.
+*   The use of generic `print()` calls is strictly forbidden.
+*   Logs must be rigorously categorized by criticality: `INFO` for regular system flow, `WARNING` for controlled atypical events, `ERROR`/`CRITICAL` for failures that compromise data integrity or halt execution.
+
+### 7.3 Documentation Cycle and Definition of Done (DoD)
+*   **Documentation Cycle:** Any alteration to the API, environment variables, or architecture must atomically impact `README.md` and this `SPEC.md` specification.
+*   **Definition of Done (DoD):** No functionality will be considered complete until its unit tests in `tests/unit/` achieve acceptable coverage and pass successfully.
+
+---
+
+## 8. RESTRICTIONS AND SECURITY
+
+*   **Secret Isolation:** The highest priority configuration variable is defined locally in a `.env.local` file excluded from git. The `.env.example` file acts solely as a structural contract with no real credentials exposed.
+*   **Dependency Control:** The `requirements.txt` and `requirements-dev.txt` files define the fixed dependencies. No additional modules should be imported without a prior security analysis and corresponding approval.
+*   **System Security:** Since the application interacts with the local file system and browser automations, every command in production must operate in a restricted or containerized manner.
+
+---
+
+## 9. IMPLEMENTATION CHECKLIST (SDD)
+
+### Milestone 1: Infrastructure and Database
+- [x] Configure immutable environment with `app/config/` and `.env.example`.
+- [x] Implement the synchronous migration CLI and `ResilientBulkWriter`.
+- [x] Initialize the asynchronous connection with `motor` in `app/database/`.
+
+### Milestone 2: Ingestion Engine (Scraper)
+- [x] Implement the `workana.py` adapter with Playwright + BS4.
+- [x] Map scraping output to pure Pydantic models.
+- [x] **Session Lifecycle Handling:** Implement defensive error handling such that if authentication fails or the session expires, the pipeline halts gracefully with a clear instruction prompting the user to manually execute `extract_session.py` and validate it via `test_bot_session.py` before restarting.test_bot_session.py` before restarting.
+
+### Milestone 3: Cognitive Engine and Operational Channel
+- [x] Integrate `google-genai` and prompt loading from `.j2` templates.
+- [x] Implement the asynchronous Telegram bot with its Circuit Breakers.
