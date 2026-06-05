@@ -1,5 +1,5 @@
 # Modelo usado
-model: deepseek/deepseek-chat
+model: openrouter/deepseek/deepseek-r1-distill-qwen-32b
 editor-model:  openrouter/qwen/qwen-2.5-coder-32b-instruct
 architect: true
 editor-edit-format: diff

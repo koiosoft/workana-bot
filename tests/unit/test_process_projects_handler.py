@@ -180,3 +180,176 @@ async def test_process_projects_shutdown_on_trip(
     # Check for the specific shutdown message
     final_message = mock_update.message.reply_text.call_args.args[0]
     assert "Bot apagado por inestabilidad persistente" in final_message
+
+
+# ========== NEW TESTS ==========
+
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+@patch("app.bots.telegram.handlers.get_projects_repository")
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.ScraperFactory")
+async def test_process_projects_suspension_backoff(
+    mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
+    mock_update, mock_context, mock_repo, mock_semaphore, mock_ai_service, mock_scraper
+):
+    """Should handle CircuitBreakerSuspension with 10-minute backoff."""
+    mock_get_repo.return_value = mock_repo
+    mock_get_semaphore.return_value = mock_semaphore
+    mock_get_ai.return_value = mock_ai_service
+    mock_scraper_factory.get_scraper.return_value = mock_scraper
+    mock_ai_service.generate_proposal.side_effect = [
+        CircuitBreakerSuspension("Suspension", failures=3, backoff=10),
+        {"summary": "A great proposal."}
+    ]
+
+    await process_projects(mock_update, mock_context)
+
+    mock_sleep.assert_called_once_with(600)  # 10 minutes
+    mock_semaphore.release.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+@patch("app.bots.telegram.handlers.get_projects_repository")
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.ScraperFactory")
+async def test_process_projects_critical_backoff(
+    mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
+    mock_update, mock_context, mock_repo, mock_semaphore, mock_ai_service, mock_scraper
+):
+    """Should handle CircuitBreakerCritical with 20-minute backoff."""
+    mock_get_repo.return_value = mock_repo
+    mock_get_semaphore.return_value = mock_semaphore
+    mock_get_ai.return_value = mock_ai_service
+    mock_scraper_factory.get_scraper.return_value = mock_scraper
+    mock_ai_service.generate_proposal.side_effect = [
+        CircuitBreakerCritical("Critical", failures=4, backoff=20),
+        {"summary": "A great proposal."}
+    ]
+
+    await process_projects(mock_update, mock_context)
+
+    mock_sleep.assert_called_once_with(1200)  # 20 minutes
+    mock_semaphore.release.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+@patch("app.bots.telegram.handlers.get_projects_repository")
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.ScraperFactory")
+async def test_process_projects_project_not_found(
+    mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
+    mock_update, mock_context, mock_repo, mock_semaphore, mock_ai_service, mock_scraper
+):
+    """Should mark project as not_found when scraper returns None."""
+    mock_get_repo.return_value = mock_repo
+    mock_get_semaphore.return_value = mock_semaphore
+    mock_get_ai.return_value = mock_ai_service
+    mock_scraper_factory.get_scraper.return_value = mock_scraper
+    # First project not found, second succeeds
+    mock_scraper.fetch_full_detail.side_effect = [None, {"full_description": "details"}]
+
+    await process_projects(mock_update, mock_context)
+
+    # Should have marked first project as not_found
+    mock_repo.mark_projects_status.assert_any_call(["1"], "not_found")
+    # Should have processed second project
+    assert mock_ai_service.generate_proposal.call_count == 1
+    mock_semaphore.release.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+@patch("app.bots.telegram.handlers.get_projects_repository")
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.ScraperFactory")
+async def test_process_projects_semaphore_already_locked(
+    mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
+    mock_update, mock_context, mock_repo, mock_semaphore, mock_ai_service, mock_scraper
+):
+    """Should not process when semaphore is already locked."""
+    mock_get_repo.return_value = mock_repo
+    mock_get_semaphore.return_value = mock_semaphore
+    mock_get_ai.return_value = mock_ai_service
+    mock_scraper_factory.get_scraper.return_value = mock_scraper
+    mock_semaphore.is_locked.return_value = True
+    mock_semaphore.get_status = AsyncMock(return_value={
+        "is_locked": True,
+        "locked_at": "2026-06-01T10:00:00Z",
+        "last_activity_at": "2026-06-01T10:05:00Z",
+        "total_projects": 10,
+        "processed_count": 5,
+        "failed_count": 1,
+        "not_found_count": 0
+    })
+
+    await process_projects(mock_update, mock_context)
+
+    # Should not have started processing
+    mock_repo.get_projects_for_deep_analysis.assert_not_called()
+    mock_semaphore.acquire.assert_not_called()
+    mock_semaphore.release.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+@patch("app.bots.telegram.handlers.get_projects_repository")
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.ScraperFactory")
+async def test_process_projects_no_projects(
+    mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
+    mock_update, mock_context, mock_repo, mock_semaphore, mock_ai_service, mock_scraper
+):
+    """Should handle empty project list gracefully."""
+    mock_get_repo.return_value = mock_repo
+    mock_get_semaphore.return_value = mock_semaphore
+    mock_get_ai.return_value = mock_ai_service
+    mock_scraper_factory.get_scraper.return_value = mock_scraper
+    mock_repo.get_projects_for_deep_analysis.return_value = []
+
+    await process_projects(mock_update, mock_context)
+
+    # Should not have acquired semaphore
+    mock_semaphore.acquire.assert_not_called()
+    mock_semaphore.release.assert_not_called()
+    # Should have sent "no projects" message
+    assert any("No hay proyectos" in call.args[0] for call in mock_update.message.reply_text.call_args_list)
+
+
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+@patch("app.bots.telegram.handlers.get_projects_repository")
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.ScraperFactory")
+async def test_process_projects_format_description_failure(
+    mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
+    mock_update, mock_context, mock_repo, mock_semaphore, mock_ai_service, mock_scraper
+):
+    """Should handle failure in format_project_description gracefully."""
+    mock_get_repo.return_value = mock_repo
+    mock_get_semaphore.return_value = mock_semaphore
+    mock_get_ai.return_value = mock_ai_service
+    mock_scraper_factory.get_scraper.return_value = mock_scraper
+    mock_ai_service.format_project_description.side_effect = AIConnectionError("Format failed")
+
+    await process_projects(mock_update, mock_context)
+
+    # format_project_description fails for both projects,
+    # so generate_proposal is never called
+    assert mock_ai_service.generate_proposal.call_count == 0
+    # But the process continues and releases the semaphore
+    mock_semaphore.release.assert_called_once()

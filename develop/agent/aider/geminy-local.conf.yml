@@ -3,6 +3,9 @@ model: gemini/gemini-3.1-pro-preview
 editor-model:  ollama/qwen2.5-coder:14b
 architect: true
 editor-edit-format: diff
+read:
+  - SPEC.md
+  - CONVENTIONS.md
 # Desactiva commits automáticos
 auto-commits: false
 

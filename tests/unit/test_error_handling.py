@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.bots.telegram.handlers import process_projects
 from app.exceptions import AIConnectionError
 from app.intelligence.adapters.gemini import GeminiAdapter
@@ -13,4 +13,10 @@ async def test_retries_on_gemini_server_error_and_succeeds():
             {"content": "Proposal"}
         ]
 
-        await process_projects(update=AsyncMock(), context=AsyncMock())
+        # Create proper mock Update and Context objects
+        update = MagicMock()
+        update.effective_user.id = "12345"
+        update.message = AsyncMock()
+        context = MagicMock()
+
+        await process_projects(update=update, context=context)

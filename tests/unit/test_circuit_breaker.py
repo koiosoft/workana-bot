@@ -96,3 +96,62 @@ def test_circuit_breaker_resets_after_warning():
     assert cb.consecutive_failures == 2
     cb.record_success()
     assert cb.consecutive_failures == 0
+
+
+# ========== NEW TESTS ==========
+
+def test_circuit_breaker_resets_after_multiple_failures():
+    """Should reset after multiple failures when success occurs."""
+    cb = CircuitBreaker()
+    for _ in range(3):
+        try:
+            cb.record_failure()
+        except CircuitBreakerError:
+            pass
+    assert cb.consecutive_failures == 3
+    cb.record_success()
+    assert cb.consecutive_failures == 0
+
+def test_circuit_breaker_full_sequence():
+    """Should transition through all states: Warning -> Suspension -> Critical -> Tripped."""
+    cb = CircuitBreaker()
+    # 1st failure: no exception
+    cb.record_failure()
+    assert cb.consecutive_failures == 1
+
+    # 2nd failure: Warning
+    with pytest.raises(CircuitBreakerWarning) as exc:
+        cb.record_failure()
+    assert exc.value.failures == 2
+    assert exc.value.backoff_duration == 5
+
+    # 3rd failure: Suspension
+    with pytest.raises(CircuitBreakerSuspension) as exc:
+        cb.record_failure()
+    assert exc.value.failures == 3
+    assert exc.value.backoff_duration == 10
+
+    # 4th failure: Critical
+    with pytest.raises(CircuitBreakerCritical) as exc:
+        cb.record_failure()
+    assert exc.value.failures == 4
+    assert exc.value.backoff_duration == 20
+
+    # 5th failure: Tripped
+    with pytest.raises(CircuitBreakerTrippedError) as exc:
+        cb.record_failure()
+    assert exc.value.failures == 5
+
+def test_record_success_when_no_failures():
+    """Should do nothing when consecutive_failures is 0."""
+    cb = CircuitBreaker()
+    cb.record_success()
+    assert cb.consecutive_failures == 0
+
+def test_record_success_after_one_failure():
+    """Should reset after a single failure."""
+    cb = CircuitBreaker()
+    cb.record_failure()
+    assert cb.consecutive_failures == 1
+    cb.record_success()
+    assert cb.consecutive_failures == 0

@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 
-from app.bots.telegram.handlers import status, fetch_projects
+from app.bots.telegram.handlers import status, fetch_projects, unlock_semaphore
 
 # Correr con: pytest tests/unit/test_telegram_handlers.py
 
@@ -26,6 +26,7 @@ def mock_semaphore():
     semaphore.is_locked = AsyncMock()
     semaphore.get_status = AsyncMock()
     semaphore.calculate_remaining_projects = MagicMock()
+    semaphore.force_release = AsyncMock()
     return semaphore
 
 @pytest.mark.asyncio
@@ -148,3 +149,53 @@ async def test_fetch_projects_when_semaphore_check_fails(mock_is_admin, mock_get
     mock_update.message.reply_text.assert_called_once_with(
         "⚠️ No se pudo verificar el estado del sistema. Por seguridad, la operación ha sido cancelada."
     )
+
+
+# ========== NEW TESTS ==========
+
+@pytest.mark.asyncio
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+async def test_unlock_semaphore_when_locked(mock_is_admin, mock_get_semaphore, mock_update, mock_context, mock_semaphore):
+    """Should release semaphore and notify when it was locked."""
+    mock_semaphore.get_status.return_value = {"is_locked": True}
+    mock_get_semaphore.return_value = mock_semaphore
+
+    await unlock_semaphore(mock_update, mock_context)
+
+    mock_semaphore.force_release.assert_called_once()
+    mock_update.message.reply_text.assert_called_once()
+    call_args, _ = mock_update.message.reply_text.call_args
+    assert "🔓 **Semáforo Global liberado manualmente**" in call_args[0]
+
+
+@pytest.mark.asyncio
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+async def test_unlock_semaphore_when_already_unlocked(mock_is_admin, mock_get_semaphore, mock_update, mock_context, mock_semaphore):
+    """Should notify that semaphore was already unlocked."""
+    mock_semaphore.get_status.return_value = {"is_locked": False}
+    mock_get_semaphore.return_value = mock_semaphore
+
+    await unlock_semaphore(mock_update, mock_context)
+
+    mock_semaphore.force_release.assert_called_once()
+    mock_update.message.reply_text.assert_called_once()
+    call_args, _ = mock_update.message.reply_text.call_args
+    assert "El semáforo ya estaba liberado" in call_args[0]
+
+
+@pytest.mark.asyncio
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+async def test_unlock_semaphore_when_status_none(mock_is_admin, mock_get_semaphore, mock_update, mock_context, mock_semaphore):
+    """Should handle None status gracefully."""
+    mock_semaphore.get_status.return_value = None
+    mock_get_semaphore.return_value = mock_semaphore
+
+    await unlock_semaphore(mock_update, mock_context)
+
+    mock_semaphore.force_release.assert_called_once()
+    mock_update.message.reply_text.assert_called_once()
+    call_args, _ = mock_update.message.reply_text.call_args
+    assert "El semáforo ya estaba liberado" in call_args[0]
