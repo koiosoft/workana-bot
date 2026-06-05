@@ -25,7 +25,7 @@ async def capture_forced():
         )
         context = await browser.new_context(**browser_profile)
         page = await context.new_page()
-        state_file = "./state.json"
+        state_file = "../state.json"
         session_saved = False
         
         try:

@@ -14,7 +14,7 @@ async def test_bot_session():
         
         # CREAMOS EL CONTEXTO USANDO EL ARCHIVO state.json
         context = await browser.new_context(
-            storage_state="state.json",
+            storage_state="../state.json",
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
         )
         
