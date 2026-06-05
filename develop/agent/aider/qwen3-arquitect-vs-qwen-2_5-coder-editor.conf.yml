@@ -2,7 +2,7 @@
 model: openrouter/qwen/qwen3-32b
 editor-model:  openrouter/qwen/qwen-2.5-coder-32b-instruct
 architect: true
-editor-edit-format: whole
+editor-edit-format: udiff
 # Desactiva commits automáticos
 auto-commits: false
 

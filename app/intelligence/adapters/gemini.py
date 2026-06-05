@@ -1,7 +1,7 @@
 import os
 import re
 import json
-import time
+import asyncio
 from typing import Any, cast, Optional
 from google import genai
 import google.genai.errors
@@ -99,10 +99,16 @@ class GeminiAdapter(IntelligencePort):
                 results = json.loads(json_part)
                 logger.info(f"IA evaluó un lote de {len(results)} proyectos.")
                 return cast(list[dict[str, Any]], results) if results else []
+
             
             logger.warning("La IA de evaluación no devolvió texto.")
             return []
 
+        except RemoteProtocolError as e:
+            logger.error(f"Conexión interrumpida durante evaluación: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("Servidor de IA interrumpido inesperadamente") from e
         except google.genai.errors.APIError as e:
             logger.error(f"Error en API de IA durante la evaluación: {e}")
             if circuit_breaker:
@@ -142,6 +148,7 @@ class GeminiAdapter(IntelligencePort):
         }
 
         template_name = "proposal_staffing.j2" if contract_type == "staff_augmentation" else "proposal.j2"
+
         
         prompt = self._render_prompt(
             template_name,
@@ -149,13 +156,14 @@ class GeminiAdapter(IntelligencePort):
             hourly_rate=hourly_rate,
             project_payload_json=json.dumps(project_payload, indent=2)
         )
+
         
         try:
             strategy = project.get("strategy", self.default_strategy)
             self.set_gemini_model(strategy)
             self.set_delay_model(strategy)
 
-            time.sleep(self.delay_model)
+            await asyncio.sleep(self.delay_model)  # Replace time.sleep with asyncio.sleep
 
             response = self.client.models.generate_content(
                 model=self.model_id,
@@ -168,7 +176,7 @@ class GeminiAdapter(IntelligencePort):
             if response.text is None:
                 logger.warning("La IA no devolvió texto en la generación de propuesta.")
                 return {"error": "No se pudo generar la propuesta, la IA no devolvió contenido."}
-            
+
             text_response = response.text.strip()
             match = re.search(r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL)
             json_part = match.group(1) if match else text_response[text_response.find("{") : text_response.rfind("}") + 1]
@@ -177,9 +185,15 @@ class GeminiAdapter(IntelligencePort):
 
             if 'questions_for_client' not in proposal_data:
                 proposal_data['questions_for_client'] = []
+
             
             return proposal_data
 
+        except RemoteProtocolError as e:
+            logger.error(f"Conexión interrumpida durante generación de propuesta: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("Servidor de IA interrumpido inesperadamente") from e
         except google.genai.errors.APIError as e:
             logger.error(f"Error en API de IA durante la generación de propuesta: {e}")
             if circuit_breaker:
@@ -250,3 +264,5 @@ class GeminiAdapter(IntelligencePort):
         return self.delay_model 
     
     
+from httpx import RemoteProtocolError
+from app.exceptions import AIConnectionError
