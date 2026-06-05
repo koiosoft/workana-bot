@@ -1,8 +1,14 @@
-# Modelo local que estás usando
+# Modelo usado
 model: openrouter/qwen/qwen3-32b
 editor-model:  openrouter/qwen/qwen-2.5-coder-32b-instruct
 architect: true
-editor-edit-format: udiff
+editor-edit-format: diff
+
+# FUENTES DE VERDAD (SDD) - Cargados automáticamente como lectura
+read:
+  - SPEC.md
+  - CONVENTIONS.md
+
 # Desactiva commits automáticos
 auto-commits: false
 
