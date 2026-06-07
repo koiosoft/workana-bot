@@ -14,6 +14,21 @@ services:
     # Mantiene el contenedor activo para desarrollo
     tty: true 
 
+  api:
+    build: ./app
+    container_name: workana_api
+    restart: always
+    working_dir: /usr/src
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/usr/src/app
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+
   mongodb:
     image: mongo:8.0
     container_name: workana_db

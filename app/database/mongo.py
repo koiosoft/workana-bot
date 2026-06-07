@@ -1,6 +1,6 @@
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from typing import Optional
-import os
+from app.config.database import get_mongo_config
 
 _db: Optional[AsyncIOMotorDatabase] = None
 
@@ -15,8 +15,7 @@ def get_database() -> AsyncIOMotorDatabase:
 
 async def connect_to_mongo(*args, **kwargs) -> AsyncIOMotorDatabase:
     global _db
-    mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    db_name = os.getenv("MONGO_DB_NAME", "workana_bot")
+    mongo_uri, db_name = get_mongo_config()
     client = AsyncIOMotorClient(mongo_uri)
     _db = client[db_name]
     return _db

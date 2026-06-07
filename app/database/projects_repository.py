@@ -308,3 +308,66 @@ class ProjectsRepository:
 
     async def get_project_by_hash(self, link_hash: str) -> Optional[Dict[str, Any]]:
         return await self.collection.find_one({"link_hash": link_hash})
+
+    async def get_projects(
+        self,
+        status: str = "all",
+        search_term: Optional[str] = None,
+        staff_augmentation_only: bool = False,
+        page: int = 1,
+        limit: int = 10
+    ) -> Dict[str, Any]:
+        await self.ensure_indexes()
+        
+        # 1. Base Exclusions
+        query: Dict[str, Any] = {
+            "proposal_status": {"$ne": "not_found"},
+            "deleted_at": {"$exists": False}
+        }
+
+        # 2. Status and AI Score Filtering
+        if status == "discarded":
+            query["ai_score"] = {"$lt": 5}
+        elif status == "rejected":
+            query["proposal_status"] = "rejected"
+        else:
+            query["ai_score"] = {"$gte": 5}
+            if status == "all":
+                query["proposal_status"] = {
+                    "$in": ["proposal_generated", "submited_to_workana", "ready_for_proposal"]
+                }
+            else:
+                query["proposal_status"] = status
+
+        # 3. Search Term Filtering
+        if search_term:
+            query["$or"] = [
+                {"title": {"$regex": search_term, "$options": "i"}},
+                {"short_description": {"$regex": search_term, "$options": "i"}},
+                {"full_description": {"$regex": search_term, "$options": "i"}}
+            ]
+
+        # 4. Contract Type Filtering
+        if staff_augmentation_only:
+            query["contract_type"] = "staff_augmentation"
+
+        skip = (page - 1) * limit
+
+        total = await self.collection.count_documents(query)
+        
+        cursor = self.collection.find(query).sort([
+            ("estimated_published_at", -1),
+            ("ai_score", -1),
+            ("updated_at", -1)
+        ]).skip(skip).limit(limit)
+
+        projects = await cursor.to_list(length=limit)
+
+        # Convert ObjectId to string for JSON serialization
+        for p in projects:
+            p["_id"] = str(p["_id"])
+
+        return {
+            "projects": projects,
+            "total": total
+        }
