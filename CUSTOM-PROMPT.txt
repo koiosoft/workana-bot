@@ -1,0 +1,92 @@
+Act as a Senior Software Architect.
+
+Your ONLY task is to generate the content for a file named INSTRUCTIONS.md based on the requirements below.
+
+STRICT RULES:
+1. Output ONLY the Markdown content that will go inside INSTRUCTIONS.md.
+2. DO NOT include any conversational filler, explanations, or introductions before or after the Markdown.
+3. DO NOT include any code snippets, code blocks, actual source code, pseudocode, or references to specific programming language syntax.
+4. All instructions must be detailed, step‑by‑step, and written in plain natural language. Describe what to do, why, and how, but never write the code itself.
+5. Use the following exact structure (no extra sections, no deviations):
+
+## Current Objective
+[A concise statement of the immediate development goal]
+
+## Task List
+- [ ] [Task 1 description – detailed, no code]
+- [ ] [Task 2 description – detailed, no code]
+- [ ] [Task 3 description – detailed, no code]
+
+REQUIREMENTS:
+
+Plan de Migración de Servicios de Next.js a una API de Python
+El objetivo es migrar la lógica de negocio relacionada con los proyectos desde el backend de Next.js hacia una nueva API REST desarrollada en Python, y añadir nueva funcionalidad.
+
+Fase 1: Análisis de la Implementación Actual en Next.js
+Objetivo: Comprender a fondo la lógica existente para asegurar que la nueva implementación en Python sea un reemplazo funcionalmente idéntico, y entender dónde conectar la nueva funcionalidad.
+
+Tarea 1.1: Analizar el servicio de datos de proyectos.
+
+Acción: Estudiar el archivo que contiene la lógica de acceso a la base de datos para los proyectos.
+Archivo: /Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Dashboard/src/services/projects.service.ts
+Puntos clave a identificar:
+¿Cómo se conecta a la base de datos?
+¿Qué funciones exporta? (Ej: getProjects, getProject, updateProject).
+¿Qué estructura de datos (schema) utilizan los proyectos en la base de datos?
+Tarea 1.2: Analizar los manejadores de rutas (API endpoints).
+
+Acción: Revisar los archivos que definen los endpoints de la API de Next.js.
+Archivos:
+/Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Dashboard/src/app/api/projects/route.ts (Maneja GET /api/projects para listar y POST /api/projects para crear).
+/Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Dashboard/src/app/api/projects/[id]/route.ts (Maneja GET, PUT, DELETE para un proyecto específico en /api/projects/:id).
+Puntos clave a identificar:
+¿Cómo validan los datos de entrada?
+¿Cómo utilizan projects.service.ts?
+¿Qué formato y códigos de estado HTTP devuelven en caso de éxito o error?
+Fase 2: Implementación de la Nueva API en Python
+Objetivo: Crear los endpoints en Python (usando un framework como FastAPI) que repliquen y extiendan la funcionalidad analizada.
+
+Tarea 2.1: Replicar el endpoint de listado de proyectos.
+
+Endpoint: GET /projects
+Lógica a implementar:
+Establecer conexión con la misma base de datos MongoDB que usa la aplicación Next.js.
+Replicar la consulta para obtener todos los proyectos, imitando la lógica de la función getProjects del projects.service.ts.
+Asegurarse de que la estructura del JSON devuelto sea idéntica a la del endpoint /api/projects original.
+Tarea 2.2: Replicar el endpoint de detalle de proyecto.
+
+Endpoint: GET /projects/{id}
+Lógica a implementar:
+Recibir un id como parámetro en la ruta.
+Replicar la consulta para encontrar un proyecto por su id, basándose en la lógica de getProject en projects.service.ts.
+Devolver los datos del proyecto con la misma estructura JSON que el endpoint /api/projects/[id] original.
+Tarea 2.3: Implementar el nuevo endpoint para generar propuestas.
+
+Endpoint: POST /projects/{id}/generate-proposal
+Lógica a implementar:
+Recibir un id de proyecto.
+Utilizar el id para obtener los datos completos del proyecto desde la base de datos.
+Pasar los datos del proyecto (especialmente la descripción original) al "bot" o servicio de IA que genera la propuesta.
+Recibir la propuesta generada.
+Opcional: Persistir la propuesta generada en la base de datos, asociándola al proyecto.
+Devolver la propuesta generada en la respuesta de la API.
+Archivos de referencia para la estructura de datos:
+/Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Dashboard/src/types/project.ts
+Fase 3: Adaptación del Frontend (Next.js)
+Objetivo: Modificar la aplicación de Next.js para que deje de usar su propia API interna y en su lugar consuma los nuevos endpoints de la API de Python.
+
+Tarea 3.1: Configurar la URL de la nueva API.
+
+Acción: Añadir una variable de entorno en el proyecto Next.js para almacenar la URL base de la API de Python.
+Ejemplo: NEXT_PUBLIC_PYTHON_API_URL=http://localhost:8000
+Tarea 3.2: Actualizar el componente que muestra el listado de proyectos.
+
+Acción: Identificar el componente responsable de llamar a fetch('/api/projects') y modificar la llamada para que use la nueva URL (process.env.NEXT_PUBLIC_PYTHON_API_URL + '/projects').
+Posible archivo a modificar: /Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Dashboard/src/components/ProjectsDashboard.tsx
+Tarea 3.3: Implementar la funcionalidad de "Generar Propuesta".
+
+Acción: En la interfaz de usuario del detalle del proyecto, añadir un botón o acción que realice una llamada POST al nuevo endpoint de la API de Python.
+Endpoint a llamar: process.env.NEXT_PUBLIC_PYTHON_API_URL + /projects/${id}/generate-proposal
+Posibles archivos a modificar:
+/Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Dashboard/src/components/ProjectActionButton.tsx
+/Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Dashboard/src/app/(protected)/projects/[id]/proposal/edit/page.tsx
