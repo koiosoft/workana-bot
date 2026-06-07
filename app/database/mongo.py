@@ -7,10 +7,13 @@ _db: Optional[AsyncIOMotorDatabase] = None
 def get_database() -> AsyncIOMotorDatabase:
     """
     Retorna la instancia de la base de datos.
-    Lanza una excepción si la conexión no ha sido inicializada.
+    Inicializa la conexión si no ha sido creada previamente.
     """
+    global _db
     if _db is None:
-        raise RuntimeError("La base de datos no ha sido inicializada. Llama a 'connect_to_mongo' primero.")
+        mongo_uri, db_name = get_mongo_config()
+        client = AsyncIOMotorClient(mongo_uri)
+        _db = client[db_name]
     return _db
 
 async def connect_to_mongo(*args, **kwargs) -> AsyncIOMotorDatabase:
