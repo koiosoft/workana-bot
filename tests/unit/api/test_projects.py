@@ -13,6 +13,8 @@ def mock_repo():
     with patch("app.api.routes.projects.ProjectsRepository") as MockRepo:
         mock_instance = MockRepo.return_value
         mock_instance.get_projects = AsyncMock()
+        mock_instance.get_project_by_id = AsyncMock()
+        mock_instance.update_project_by_id = AsyncMock()
         yield mock_instance
 
 def test_list_projects_default_params(mock_repo):
@@ -74,3 +76,72 @@ def test_list_projects_invalid_pagination(mock_repo):
     # Intentar pedir un límite mayor a 100 (inválido, le=100)
     response = client.get("/api/projects", params={"limit": 101})
     assert response.status_code == 422
+
+def test_get_project_found(mock_repo):
+    """Prueba que GET /api/projects/{id} devuelve un proyecto cuando existe."""
+    mock_project = {
+        "_id": "6a034f37d8e430e05690091b",
+        "title": "Test Project",
+        "budget": "$500",
+        "link": "https://workana.com/project/123",
+        "published": "hace 2 horas",
+        "short_description": "A test project",
+        "bids": "5",
+        "source": "workana",
+        "proposal_status": "pending",
+        "scraped_at": "2024-01-01T00:00:00",
+        "link_hash": "abc123",
+        "skills": ["Python", "React"]
+    }
+    mock_repo.get_project_by_id.return_value = mock_project
+
+    response = client.get("/api/projects/6a034f37d8e430e05690091b")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["_id"] == "6a034f37d8e430e05690091b"
+    assert data["title"] == "Test Project"
+    assert data["budget"] == "$500"
+
+def test_get_project_not_found(mock_repo):
+    """Prueba que GET /api/projects/{id} devuelve 404 cuando no existe."""
+    mock_repo.get_project_by_id.return_value = None
+
+    response = client.get("/api/projects/6a034f37d8e430e05690091b")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Project not found"}
+
+def test_update_project_success(mock_repo):
+    """Prueba que PATCH /api/projects/{id} actualiza y devuelve mensaje de éxito."""
+    # Simular que la actualización es exitosa
+    mock_repo.update_project_by_id.return_value = True
+
+    response = client.patch(
+        "/api/projects/6a034f37d8e430e05690091b",
+        json={"title": "New Title"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"message": "Project updated successfully"}
+
+def test_update_project_not_found(mock_repo):
+    """Prueba que PATCH /api/projects/{id} devuelve 404 cuando el proyecto no existe."""
+    # Simular que la actualización falla (proyecto no encontrado)
+    mock_repo.update_project_by_id.return_value = False
+
+    response = client.patch(
+        "/api/projects/6a034f37d8e430e05690091b",
+        json={"title": "New Title"}
+    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Project not found or invalid ID"}
+
+def test_update_project_internal_error(mock_repo):
+    """Prueba que PATCH /api/projects/{id} devuelve 500 cuando falla la actualización."""
+    # Simular que la actualización falla (proyecto no encontrado)
+    mock_repo.update_project_by_id.return_value = False
+
+    response = client.patch(
+        "/api/projects/6a034f37d8e430e05690091b",
+        json={"title": "New Title"}
+    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Project not found or invalid ID"}
