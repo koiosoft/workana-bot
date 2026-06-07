@@ -14,7 +14,7 @@ import time
 from loguru import logger
 from dotenv import load_dotenv
 from telegram.error import TimedOut
-from bots.telegram import build_telegram_application
+from app.bots.telegram.app import build_telegram_application
 
 # Carga de variables
 load_dotenv()
@@ -32,7 +32,8 @@ if __name__ == '__main__':
         try:
             logger.info("Iniciando Bot en modo Polling...")
             application = build_telegram_application(TOKEN)
-            application.run_polling()
+            # Ignorar mensajes viejos que puedan estar bloqueando el inicio
+            application.run_polling(drop_pending_updates=True)
         except TimedOut:
             logger.warning(
                 "Error de Conexión: No se pudo conectar a la API de Telegram (TimedOut). "
