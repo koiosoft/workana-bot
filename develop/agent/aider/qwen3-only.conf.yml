@@ -1,10 +1,15 @@
 # Modelo usado
 model: openrouter/qwen/qwen3-32b
+editor-model:  openrouter/qwen/qwen-2.5-coder-32b-instruct
+architect: false
 editor-edit-format: diff
 
+# FUENTES DE VERDAD (SDD) - Cargados automáticamente como lectura
 read:
   - SPEC.md
   - CONVENTIONS.md
+  - PROTOCOL.md
+  - CUSTOM-PROMPT.txt
 
 # Desactiva commits automáticos
 auto-commits: false
@@ -26,3 +31,5 @@ dirty-commits: false
 
 # Reduce la verbosidad general
 verbose: false
+auto-test: true
+test-cmd: "pytest tests/unit --tb=short"

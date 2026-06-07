@@ -3,6 +3,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Dict, List
 from pymongo import ASCENDING, UpdateOne
+from bson import ObjectId  # <-- added import
 from .mongo import get_database
 from loguru import logger
 
@@ -308,6 +309,30 @@ class ProjectsRepository:
 
     async def get_project_by_hash(self, link_hash: str) -> Optional[Dict[str, Any]]:
         return await self.collection.find_one({"link_hash": link_hash})
+
+    # ---------- NEW METHODS ----------
+    async def get_project_by_id(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a project by its MongoDB _id (as string)."""
+        try:
+            obj_id = ObjectId(project_id)
+        except:
+            return None
+        return await self.collection.find_one({"_id": obj_id})
+
+    async def update_project_by_id(self, project_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update a project by its MongoDB _id. Returns True if modified."""
+        try:
+            obj_id = ObjectId(project_id)
+        except:
+            return False
+        now = datetime.now(timezone.utc).isoformat()
+        update_data["updated_at"] = now
+        result = await self.collection.update_one(
+            {"_id": obj_id},
+            {"$set": update_data}
+        )
+        return result.modified_count > 0
+    # ---------- END NEW METHODS ----------
 
     async def get_projects(
         self,

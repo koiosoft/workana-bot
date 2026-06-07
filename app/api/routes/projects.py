@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query, Path, Body, HTTPException
 from typing import Optional, Dict, Any
 from app.database.projects_repository import ProjectsRepository
 
-router = APIRouter(prefix="/api/projects", tags=["projects"])
+router = APIRouter(tags=["projects"])
 
 @router.get("")
 async def list_projects(
@@ -21,6 +21,18 @@ async def list_projects(
         limit=limit
     )
     return result
+
+@router.get("/{id}")
+async def get_project(
+    id: str = Path(..., description="The MongoDB ObjectId of the project"),
+):
+    repo = ProjectsRepository()
+    project = await repo.get_project_by_id(id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    # Convert ObjectId to string for JSON serialization
+    project["_id"] = str(project["_id"])
+    return project
 
 @router.patch("/{id}")
 async def update_project(
