@@ -8,6 +8,8 @@ editor-edit-format: diff
 read:
   - SPEC.md
   - CONVENTIONS.md
+  - PROTOCOL.md
+  - CUSTOM-PROMPT.txt
 
 # Desactiva commits automáticos
 auto-commits: false

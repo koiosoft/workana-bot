@@ -1,5 +1,5 @@
 # Modelo usado
-model: openrouter/deepseek/deepseek-r1-distill-qwen-32b
+model: openrouter/deepseek/deepseek-chat
 editor-model:  openrouter/qwen/qwen-2.5-coder-32b-instruct
 architect: true
 editor-edit-format: diff
@@ -8,6 +8,8 @@ editor-edit-format: diff
 read:
   - SPEC.md
   - CONVENTIONS.md
+  - PROTOCOL.md
+  - CUSTOM-PROMPT.txt
 
 # Desactiva commits automáticos
 auto-commits: false
@@ -29,4 +31,4 @@ dirty-commits: false
 
 # Reduce la verbosidad general
 verbose: false
-
+auto-test: true
