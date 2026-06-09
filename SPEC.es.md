@@ -121,7 +121,7 @@ El proyecto adopta una estrategia de pruebas multinivel gestionada con `pytest` 
     *   Correcta creación de índices en la base de datos al iniciar la aplicación.
     *   Flujos de datos de extremo a extremo (ej. desde la recepción de un proyecto hasta su almacenamiento con un `contract_type` específico).
     *   Validación de la integridad estructural de los datos guardados en la base de datos.
-*   **Ejecución Condicional:** Estos tests se saltan automáticamente si no se provee una cadena de conexión a la base de datos (`MONGODB_URI`), permitiendo ejecutar el resto de la suite en entornos sin servicios.
+*   **Ejecución Condicional:** Estos tests se saltan automáticamente si no se provee una cadena de conexión a la base de datos (`MONGO_URI`), permitiendo ejecutar el resto de la suite en entornos sin servicios.
 
 ### 4.3 Ejecución de la Suite
 La suite de pruebas se puede ejecutar con granularidad desde la raíz del proyecto:

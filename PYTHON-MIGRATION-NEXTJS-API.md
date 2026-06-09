@@ -133,7 +133,7 @@ class Project(BaseModel):
 La conexión a MongoDB se gestiona de forma centralizada.
 
 -   **Driver:** Se utiliza el driver oficial `mongodb` para Node.js.
--   **URI de Conexión:** La URI se obtiene de la variable de entorno `MONGODB_URI`. Si no está definida, la aplicación lanza un error al iniciar.
+-   **URI de Conexión:** La URI se obtiene de la variable de entorno `MONGO_URI`. Si no está definida, la aplicación lanza un error al iniciar.
 -   **Gestión de Conexión:**
     -   En entorno de **desarrollo (`development`)**, la promesa de conexión (`clientPromise`) se almacena en una variable global (`global._mongoClientPromise`). Esto evita crear una nueva conexión en cada recarga de módulo (hot-reloading), optimizando recursos.
     -   En entorno de **producción**, se crea un nuevo cliente y se establece la conexión de forma estándar.
@@ -145,11 +145,11 @@ La conexión a MongoDB se gestiona de forma centralizada.
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 
-MONGODB_URI = os.getenv("MONGODB_URI")
-if not MONGODB_URI:
-    raise RuntimeError("MONGODB_URI environment variable is not set.")
+MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    raise RuntimeError("MONGO_URI environment variable is not set.")
 
-client = AsyncIOMotorClient(MONGODB_URI)
+client = AsyncIOMotorClient(MONGO_URI)
 
 # Para usarlo:
 # db = client[os.getenv("MONGODB_DB")]

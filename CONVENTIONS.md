@@ -48,4 +48,4 @@
     *   Application core services must be tested by providing mock implementations of the Ports they depend on.
 *   **Integration Tests (`tests/integration/`):** Designed to test the "glue" between the application and real infrastructure (e.g., a database connection).
     *   These tests are permitted to connect to local services, such as a Dockerized MongoDB instance.
-    *   They must be decorated with `@pytest.mark.skipif(not os.getenv("MONGODB_URI"), reason="MONGODB_URI not set")` to ensure they are automatically skipped in environments where the required services are not available.
+    *   They must be decorated with `@pytest.mark.skipif(not os.getenv("MONGO_URI"), reason="MONGO_URI not set")` to ensure they are automatically skipped in environments where the required services are not available.

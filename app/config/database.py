@@ -12,13 +12,13 @@ def get_mongo_config() -> Tuple[str, str]:
     """
     Lee la configuración de MongoDB desde las variables de entorno.
 
-    Prioriza MONGO_URI o MONGODB_URI. Si no se encuentra, lanza un error para evitar
+    Prioriza MONGO_URI o MONGO_URI. Si no se encuentra, lanza un error para evitar
     intentar conectar con una configuración inválida.
     """
-    uri = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI")
+    uri = os.getenv("MONGO_URI")
     if not uri:
         raise ValueError(
-            "La variable de entorno MONGO_URI o MONGODB_URI no está definida. "
+            "La variable de entorno MONGO_URI no está definida. "
             "Asegúrate de que tu archivo .env o .env.local la contenga."
         )
 

@@ -121,7 +121,7 @@ The project adopts a multi-level testing strategy managed with `pytest` to ensur
     *   Correct creation of database indexes upon application startup.
     *   End-to-end data flows (e.g., from receiving a project to storing it with a specific `contract_type`).
     *   Validation of the structural integrity of data saved in the database.
-*   **Conditional Execution:** These tests are automatically skipped if a database connection string (`MONGODB_URI`) is not provided, allowing the rest of the suite to run in environments without services.
+*   **Conditional Execution:** These tests are automatically skipped if a database connection string (`MONGO_URI`) is not provided, allowing the rest of the suite to run in environments without services.
 
 ### 4.3 Suite Execution
 The test suite can be run with granularity from the project root:

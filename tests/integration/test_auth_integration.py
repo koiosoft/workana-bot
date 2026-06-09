@@ -8,8 +8,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.api.main import app
 
 pytestmark = pytest.mark.skipif(
-    not os.getenv("MONGODB_URI"),
-    reason="MONGODB_URI not set"
+    not os.getenv("MONGO_URI"),
+    reason="MONGO_URI not set"
 )
 
 @pytest.mark.asyncio

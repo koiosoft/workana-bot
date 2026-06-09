@@ -1,22 +1,42 @@
-[{
-	"resource": "/Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Bot/tests/integration/conftest.py",
-	"owner": "Pylance7",
-	"code": {
-		"value": "reportMissingImports",
-		"target": {
-			"$mid": 1,
-			"path": "/microsoft/pylance-release/blob/main/docs/diagnostics/reportMissingImports.md",
-			"scheme": "https",
-			"authority": "github.com"
-		}
-	},
-	"severity": 8,
-	"message": "Import \"bcrypt\" could not be resolved",
-	"source": "Pylance",
-	"startLineNumber": 3,
-	"startColumn": 8,
-	"endLineNumber": 3,
-	"endColumn": 14,
-	"modelVersionId": 2,
-	"origin": "extHost1"
-}]
+============================= test session starts ==============================
+platform darwin -- Python 3.11.12, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Bot
+configfile: pytest.ini
+plugins: mock-3.15.1, cov-7.1.0, asyncio-1.4.0, dotenv-0.5.2, anyio-4.13.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 7 items
+
+tests/integration/test_auth_integration.py ...                           [ 42%]
+tests/integration/test_projects_integration.py ...F                      [100%]
+
+=================================== FAILURES ===================================
+________________________ test_update_project_invalid_id ________________________
+
+test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['localhost:27017'], document_class=dict, tz_aware=False, connect=False, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
+seed_test_data = {'project_id': '6a2867b385c8680a0b53e10a'}
+
+    @pytest.mark.asyncio
+    async def test_update_project_invalid_id(test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]) -> None:
+        """
+        Test update project with invalid ID format.
+        Asserts 400 Bad Request status code.
+        """
+        transport = ASGITransport(app=app)
+    
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.patch(
+                "/api/projects/invalid_id_format",
+                json={
+                    "proposal_status": "proposal_generated",
+                    "title": "Updated Project Title"
+                }
+            )
+    
+>           assert response.status_code == 400
+E           assert 404 == 400
+E            +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/integration/test_projects_integration.py:118: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integration/test_projects_integration.py::test_update_project_invalid_id
+========================= 1 failed, 6 passed in 1.47s ==========================

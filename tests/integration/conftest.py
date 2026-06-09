@@ -1,23 +1,17 @@
 import os
 import pytest
+import pytest_asyncio
 import bcrypt
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.config.database import get_mongo_config
 
-# Skip all integration tests if MONGODB_URI is not set, adhering to CONVENTIONS.md
+# Skip all integration tests if MONGO_URI is not set, adhering to CONVENTIONS.md
 pytestmark = pytest.mark.skipif(
-    not os.getenv("MONGODB_URI"),
-    reason="MONGODB_URI not set"
+    not os.getenv("MONGO_URI"),
+    reason="MONGO_URI not set"
 )
 
-@pytest.fixture(scope="session")
-def event_loop():
-    import asyncio
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="function")
 async def test_db():
     """
     Establish a connection to a dedicated test MongoDB database instance.
@@ -33,15 +27,32 @@ async def test_db():
     
     client.close()
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="function", autouse=True)
+async def cleanup_test_database(test_db):
+    """
+    Automated database cleanup fixture with per-function lifecycle and automatic usage.
+    Clears all collections within the test database immediately before each test 
+    function begins execution, guaranteeing a pristine database state and eliminating 
+    cross-test contamination.
+    
+    Depends on test_db to ensure only one client is created and closed per test,
+    preventing event loop closure conflicts (RuntimeError: Event loop is closed).
+    """
+    # Clear all collections in the test database before the test starts
+    collection_names = await test_db.list_collection_names()
+    for collection_name in collection_names:
+        await test_db[collection_name].delete_many({})
+        
+    yield
+
+@pytest_asyncio.fixture(scope="function")
 async def seed_test_data(test_db):
     """
-    Seed the test database with required initial data strictly for API integration tests,
-    as defined in PYTHON-MIGRATION-NEXTJS-API-INTEGRATION-TEST.md:
+    Seed the test database with required initial data for integration tests.
     - A test user in the 'users' collection with email "admin@example.com" and hashed password "SecurePassword123!".
     - A test project in the 'projects' collection with a specific title and proposal_status.
-    Returns the generated project identifier for subsequent API endpoint test steps.
-    Cleans up the data after the test session to guarantee database cleanliness.
+    Returns the generated project identifier for subsequent test steps.
+    Cleans up the data after the test to guarantee database cleanliness.
     """
     # Hash the password securely as required by the API contract
     password_bytes = "SecurePassword123!".encode('utf-8')

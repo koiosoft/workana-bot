@@ -94,4 +94,4 @@ pytest tests/ --cov=app --cov-report=html
 - Índice de MongoDB creado
 - Datos reales con `contract_type`
 
-**Nota:** Si `MONGODB_URI` no está configurado, estos tests se saltarán automáticamente.
+**Nota:** Si `MONGO_URI` no está configurado, estos tests se saltarán automáticamente.

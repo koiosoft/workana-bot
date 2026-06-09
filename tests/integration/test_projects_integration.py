@@ -6,11 +6,29 @@ from httpx import ASGITransport, AsyncClient
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.api.main import app
+from app.database.mongo import get_database
 
 pytestmark = pytest.mark.skipif(
-    not os.getenv("MONGODB_URI"),
-    reason="MONGODB_URI not set"
+    not os.getenv("MONGO_URI"),
+    reason="MONGO_URI not set"
 )
+
+@pytest.fixture(autouse=True)
+def override_db_dependency(test_db: AsyncIOMotorDatabase):
+    """
+    Override the database dependency for FastAPI routes to use the function-scoped test_db.
+    Also overrides the global cached instance to prevent 'Event loop is closed' errors
+    in repositories that might not use FastAPI's Depends().
+    """
+    app.dependency_overrides[get_database] = lambda: test_db
+    
+    from app.database import mongo
+    mongo._db = test_db
+    
+    yield
+    
+    app.dependency_overrides.clear()
+    mongo._db = None
 
 @pytest.mark.asyncio
 async def test_get_projects_success_structure(test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]) -> None:

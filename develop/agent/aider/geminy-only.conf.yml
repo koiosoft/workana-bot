@@ -6,6 +6,9 @@ architect: true
 read:
   - SPEC.md
   - CONVENTIONS.md
+  - PROTOCOL.md
+  - CUSTOM-PROMPT.txt
+  - CUSTOM-PROMPT-LOG.txt
 
 # Desactiva commits automáticos
 auto-commits: false

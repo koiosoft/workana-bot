@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Dict, List
 from pymongo import ASCENDING, UpdateOne
-from bson import ObjectId  # <-- added import
+from bson import ObjectId
 from .mongo import get_database
 from loguru import logger
 
@@ -315,7 +315,7 @@ class ProjectsRepository:
         """Retrieve a project by its MongoDB _id (as string)."""
         try:
             obj_id = ObjectId(project_id)
-        except:
+        except Exception:
             return None
         return await self.collection.find_one({"_id": obj_id})
 
@@ -323,7 +323,7 @@ class ProjectsRepository:
         """Update a project by its MongoDB _id. Returns True if modified."""
         try:
             obj_id = ObjectId(project_id)
-        except:
+        except Exception:
             return False
         now = datetime.now(timezone.utc).isoformat()
         update_data["updated_at"] = now
@@ -342,8 +342,6 @@ class ProjectsRepository:
         page: int = 1,
         limit: int = 10
     ) -> Dict[str, Any]:
-        await self.ensure_indexes()
-        
         # 1. Base Exclusions
         query: Dict[str, Any] = {
             "proposal_status": {"$ne": "not_found"},
