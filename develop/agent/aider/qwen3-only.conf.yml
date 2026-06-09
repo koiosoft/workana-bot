@@ -1,6 +1,5 @@
 # Modelo usado
-model: openrouter/qwen/qwen3-32b
-editor-model:  openrouter/qwen/qwen-2.5-coder-32b-instruct
+model: openrouter/qwen/qwen3.7-plus
 architect: false
 editor-edit-format: diff
 
