@@ -21,7 +21,3 @@ STRICT RULES:
 
 REQUIREMENTS:
 
-El proyecto Workana-Bot presenta un problema de contaminación de estado en sus pruebas de integración de base de datos (tests/integration/test_projects_integration.py). Al ejecutar los tests de forma individual funcionan correctamente, pero al correr la suite completa, el primer test altera la base de datos MongoDB de prueba y los tres siguientes fallan (.FFF). Esto ocurre porque los datos residuales del primer test no se están limpiando, afectando las condiciones iniciales de los demás.
-
-La tarea del agente consiste en garantizar el aislamiento total de cada prueba modificando o creando un fixture en tests/conftest.py. Este fixture debe configurarse con scope="function" y autouse=True para que, de manera automatizada, vacíe todas las colecciones de la base de datos de pruebas  justo antes de que inicie cada test. También se debe verificar que el fixture de datos seed_test_data tenga un ciclo de vida por función para que no comparta diccionarios modificados.
-

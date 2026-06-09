@@ -1,8 +1,0 @@
-## Current Objective
-Fix the single failing integration test `test_update_project_invalid_id` which returns a 404 Not Found status code instead of the expected 400 Bad Request when updating a project with an invalid ID format.
-
-## Task List
-- [ ] **Error in tests/integration/test_projects_integration.py:118**
-  - **Error:** `assert 404 == 400` — The test expects a `400 Bad Request` status code when calling `PATCH /api/projects/invalid_id_format`, but the API returns `404 Not Found`.
-  - **Context:** The test sends a PATCH request to `/api/projects/invalid_id_format` with a JSON body containing `proposal_status` and `title`. The assertion on line 118 expects a 400 status code, but the server returns 404. This indicates that the API route or handler is not recognizing the path and is falling through to a default 404 handler.
-  - **Action Required:** Investigate the API route definition for `PATCH /api/projects/{project_id}`. Verify that the route is correctly registered and that the path parameter `project_id` accepts string values (including `"invalid_id_format"`). Check if there is a validation middleware or route guard that rejects the request before it reaches the intended handler. Ensure that the handler for this route returns a 400 status code when the `project_id` does not match a valid MongoDB ObjectId format. If the route is missing or misconfigured, add or correct the route registration. If the route exists but the handler is not catching the invalid ID case, modify the handler logic to detect the invalid format and return a 400 response with an appropriate error message.
