@@ -107,21 +107,60 @@ else
 fi
 
 # Eliminar INSTRUCTIONS.md previo
-[ -f "INSTRUCTIONS.md" ] && { echo "🗑️  Eliminando INSTRUCTIONS.md previo..."; rm -f INSTRUCTIONS.md; }
+[ -f "INSTRUCTIONS.md" ] && { echo "🗑️  Reiniciando INSTRUCTIONS.md..."; rm -f INSTRUCTIONS.md; }
+touch INSTRUCTIONS.md
 
 echo "📝 Usando instructor: $INSTRUCTOR_CONFIG"
 echo "🎯 Modo: $MODE"
 
 if [ "$MODE" = "script" ]; then
-    aider --config "$INSTRUCTOR_CONFIG" --message-file CUSTOM-PROMPT.txt
-    if [ $? -eq 0 ] && [ -f "INSTRUCTIONS.md" ]; then
-        echo ""
-        echo "✅ INSTRUCTIONS.md generado (modo scripting). Contenido:"
-        echo "======================================================"
-        cat INSTRUCTIONS.md
-        echo "======================================================"
+    echo "📝 Generando INSTRUCTIONS.md..."
+    echo ""
+
+    # Quitamos --no-stream para que veas la generación en vivo en tu terminal
+    aider --config "$INSTRUCTOR_CONFIG" \
+          --message-file CUSTOM-PROMPT.txt \
+          --chat-mode ask \
+          --no-show-model-warnings \
+          --no-pretty \
+          --stream \
+          2>&1 | tee /tmp/aider_output.txt
+
+    exit_code=${PIPESTATUS[0]}  # Capturar código de salida de aider (no de tee)
+    echo ""
+    echo "Código de salida: $exit_code"
+
+    if [ $exit_code -eq 0 ]; then
+        echo "🧹 Filtrando la última respuesta válida..."
+
+        # 1. Eliminamos el bloque de pensamiento <think> completo si existiera
+        sed -e '/<think>/,/\<\/think\>/d' /tmp/aider_output.txt > /tmp/no_think.md
+
+        # 2. Buscamos la ÚLTIMA línea que contenga "## Current Objective" (sin importar mayúsculas)
+        LAST_MATCH_LINE=$(grep -in "## [Cc]urrent [Oo]bjective" /tmp/no_think.md | tail -n 1 | cut -d: -f1)
+
+        if [ -n "$LAST_MATCH_LINE" ]; then
+            # Extraemos desde esa última línea detectada hasta el final del archivo
+            tail -n +"$LAST_MATCH_LINE" /tmp/no_think.md > /tmp/raw_instructions.md
+        else
+            # Si por alguna razón falló el corte, tomamos el archivo limpio completo
+            cat /tmp/no_think.md > /tmp/raw_instructions.md
+        fi
+
+        # 3. Limpieza Quirúrgica: Nos aseguramos de borrar las líneas de control de Aider 
+        # y los reportes de tokens que Qwen mete al final, cortando JUSTO en "## End Task List"
+        sed -n '1,/## End Task List/p' /tmp/raw_instructions.md > INSTRUCTIONS.md
+
+        if [ -s INSTRUCTIONS.md ]; then
+            echo ""
+            echo "✅ INSTRUCTIONS.md generado con éxito."
+            echo "📄 Tamaño: $(wc -l < INSTRUCTIONS.md) líneas, $(wc -c < INSTRUCTIONS.md) bytes."
+        else
+            echo "❌ El archivo generado está vacío. Revisa la salida de aider."
+            exit 1
+        fi
     else
-        echo "❌ Falló la generación"
+        echo "❌ Aider falló con código $exit_code. Revisa el mensaje de error de arriba."
         exit 1
     fi
 else
@@ -129,7 +168,9 @@ else
     echo "💡 Puedes usar comandos como /add <archivo> para añadir contexto, luego pide 'Genera INSTRUCTIONS.md'."
     echo "   Cuando termines, escribe /exit para salir."
     echo ""
-    aider --config "$INSTRUCTOR_CONFIG" --message "$(cat CUSTOM-PROMPT.txt)"
+    aider --config "$INSTRUCTOR_CONFIG" --message "$(cat CUSTOM-PROMPT.txt)" --no-show-model-warnings
+    # Extraer el contenido Markdown (desde "## Current Objective" hasta el final)
+    sed -n '/^## Current Objective/,$p' /tmp/aider_output.txt > INSTRUCTIONS.md
     echo ""
     if [ -f "INSTRUCTIONS.md" ]; then
         echo "✅ INSTRUCTIONS.md fue generado durante la sesión."
