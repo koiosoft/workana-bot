@@ -31,3 +31,4 @@ context_cache/
 .vscode/
 .aider*
 .env.test
+.agent-instructor/logs
