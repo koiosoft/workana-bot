@@ -13,6 +13,66 @@ Bienvenido al proyecto Workana Bot. Este sistema está diseñado para automatiza
 
 ## 📂 Estructura del Proyecto
 
+El repositorio está organizado según los principios de **Arquitectura Hexagonal** y **Domain-Driven Design (DDD)**, con una separación clara entre el núcleo de la aplicación y las capas de infraestructura:
+
+```
+/
+├── app/                            # Núcleo de la aplicación (servicio principal del bot)
+│   ├── api/                      # Capa de entrada (FastAPI) con rutas y endpoints definidos
+│   │   ├── routes/
+│   │   │   ├── auth.py           # Endpoints de autenticación (login, register)
+│   │   │   ├── projects.py       # Endpoints de gestión de proyectos
+│   │   │   └── __init__.py
+│   │   └── main.py               # Configuración principal de FastAPI y middleware
+│   ├── database/                 # Capa de salida (Outbound Ports) para persistencia
+│   │   ├── mongo.py              # Conector asincrónico con MongoDB usando Motor
+│   │   ├── repositories/
+│   │   │   ├── users_repository.py
+│   │   │   ├── projects_repository.py
+│   │   │   └── __init__.py
+│   │   └── __init__.py
+│   ├── intelligence/             # Motor cognitivo (LLM) con Gemini
+│   │   └── prompts/
+│   │       └── *.j2              # Plantillas de prompts para procesamiento AI
+│   ├── scraper/                  # Motor de extracción (Inbound Port)
+│   │   └── adaptors/
+│   │       └── workana.py        # Implementación con Playwright para Workana
+│   └── __init__.py
+├── migrations/                   # Sistema de migraciones con PyMongo (sincrónico)
+├── browser_data/                 # Datos de sesión del navegador (state.json)
+├── data/                         # Volumen persistente para MongoDB
+├── logs/                         # Archivos de registro (Loguru)
+├── docker-compose.yml            # Orquestador de servicios (app, MongoDB)
+└── README.md                     # Esta documentación
+```
+
+El repositorio está organizado en los siguientes directorios clave:
+
+```
+/
+├── app/
+│   ├── api/                  # Capa de entrada (FastAPI) con rutas y endpoints definidos
+│   │   ├── routes/
+│   │   │   ├── auth.py       # Endpoints de autenticación (login, register)
+│   │   │   ├── projects.py   # Endpoints de gestión de proyectos
+│   │   │   └── __init__.py
+│   │   └── main.py           # Configuración principal de FastAPI
+│   ├── database/
+│   │   ├── mongo.py          # Conexión y configuración de MongoDB
+│   │   ├── repositories/
+│   │   │   ├── users_repository.py
+│   │   │   ├── projects_repository.py
+│   │   │   └── __init__.py
+│   │   └── __init__.py
+│   └── __init__.py
+├── browser_data/
+├── data/
+├── logs/
+├── migrations/
+├── docker-compose.yml
+└── README.md
+```
+
 El repositorio está organizado en los siguientes directorios clave:
 
 ```
@@ -27,6 +87,45 @@ El repositorio está organizado en los siguientes directorios clave:
 ```
 
 ## 🚀 Empezando
+
+### Requisitos Previos
+- **Docker y Docker Compose** para entorno aislado
+- **Python 3.11+** para migraciones y scripts
+- **MongoDB** (local o Dockerizado)
+
+### Configuración Inicial
+1. **Clonar el repositorio**:
+   ```bash
+   git clone <URL_DEL_REPOSITORIO>
+   cd workana-bot
+   ```
+2. **Configurar entorno**:
+   - Crear `.env.local` con credenciales
+   - Instalar dependencias:
+     ```bash
+     pip install -r requirements.txt
+     ```
+3. **Ejecutar servicios**:
+   ```bash
+   docker-compose up --build
+   ```
+4. **Verificar arquitectura**:
+   - Visitar http://localhost:8000/docs para probar endpoints
+   - Revisar logs en `logs/` para seguimiento de operaciones
+
+### Requisitos Previos
+- **FastAPI**: Instalado automáticamente desde `requirements.txt`
+- **MongoDB**: Servidor local o Dockerizado
+- **Python 3.11+**: Para ejecutar scripts de migración
+
+### Inicialización de la API
+1. **Ejecutar servicios con Docker**:
+   ```bash
+   docker-compose up --build
+   ```
+2. **Verificar endpoints**:
+   - Visita `http://localhost:8000/docs` para Swagger UI
+   - Prueba endpoints `/api/auth/login` y `/api/projects/`
 
 Sigue estas instrucciones para poner en marcha el proyecto en tu entorno local.
 
@@ -137,6 +236,42 @@ Para más detalles, consulta la documentación en `migrations/README.md`.
     ```
 
 ## ✅ Testing
+
+### Pruebas de la API
+- **Endpoints validados:**
+  ```bash
+  curl -X GET http://localhost:8000/api/projects/
+  curl -X POST http://localhost:8000/api/auth/login -d '{"email": "test@example.com", "password": "secret"}'
+  ```
+- **Pruebas automatizadas:**
+  - `tests/unit/`: Validación de lógica de negocio, repositorios mockeados, y manejo de errores
+  - `tests/integration/`: Flujos end-to-end con MongoDB real
+- **Validación con Swagger:**
+  http://localhost:8000/docs
+
+### Ejemplo de Endpoints Documentados:
+| Ruta                  | Método | Propósito                  | Port Tipo       |
+|-----------------------|--------|----------------------------|-----------------|
+| `/api/auth/login`     | POST   | Autenticación de usuario   | Inbound Port    |
+| `/api/projects/`      | GET    | Listar proyectos           | Inbound Port    |
+| `/api/projects/{id}`  | GET    | Detalles de un proyecto    | Inbound Port    |
+| `projects_repository.py` | -     | Acceso a MongoDB proyectos | Outbound Port   |
+| `users_repository.py` | -      | Gestión de usuarios        | Outbound Port   |
+
+### Pruebas de la API
+- `curl` o `httpie` para validar endpoints:
+  ```bash
+  curl -X GET http://localhost:8000/api/projects/
+  ```
+- Pruebas automatizadas con `pytest` en `tests/unit/` y `tests/integration/`.
+- Validación de esquemas Pydantic en respuestas de API.
+
+### Ejemplo de Endpoints Documentados:
+| Ruta                  | Método | Propósito                  |
+|-----------------------|--------|----------------------------|
+| `/api/auth/login`     | POST   | Autenticación de usuario   |
+| `/api/projects/`      | GET    | Listar proyectos           |
+| `/api/projects/{id}`  | GET    | Detalles de un proyecto    |
 
 Para ejecutar las pruebas del proyecto (aún por implementar), se utilizará `pytest`.
 ```bash

@@ -16,15 +16,23 @@ async def test_db():
     """
     Establish a connection to a dedicated test MongoDB database instance.
     Ensures isolation from production data by using a '_test' suffixed database name.
+    Also patches the application's database connection to point to the test database.
     """
+    import app.database.mongo as app_mongo
+    
     uri, db_name = get_mongo_config()
     test_db_name = f"{db_name}_test" if not db_name.endswith("_test") else db_name
     
     client = AsyncIOMotorClient(uri)
     db = client[test_db_name]
     
+    # Override the app's database to use the test database
+    app_mongo._db = db
+    
     yield db
     
+    # Restore app database to None so next connection is re-established
+    app_mongo._db = None
     client.close()
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
@@ -62,7 +70,9 @@ async def seed_test_data(test_db):
     # Insert test user
     await test_db.users.insert_one({
         "email": "admin@example.com",
-        "password": hashed_password
+        "passwordHash": hashed_password,
+        "name": "Test Admin",
+        "role": "admin",
     })
     
     # Insert test project

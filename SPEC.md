@@ -16,6 +16,55 @@ The primary objective of **Workana Bot** is to comprehensively and resiliently a
 
 ## 2. ARCHITECTURE AND DESIGN RULES
 
+The system follows **Hexagonal Architecture (Ports & Adapters)** and **Domain-Driven Design (DDD)** principles, with explicit separation between core business logic and infrastructure:
+
+```
+       [External Clients/Triggers]
+                    |
+                    v
+         +---------------------+
+         |   Driving Adaptor   |  (e.g., Telegram Bot, Web Scraper)
+         +---------------------+
+                    |
+                    v
+         +---------------------+
+         |     Inbound Port    |  (FastAPI Endpoints, Abstract Interfaces)
+         +---------------------+
+                    |
+                    v
+    =================================
+    ||       APPLICATION CORE      ||  (Pure Business Logic, Domain Models)
+    =================================
+                    |
+                    v
+         +---------------------+
+         |    Outbound Port    |  (Abstract Infrastructure Interfaces)
+         +---------------------+
+                    |
+                    v
+         +---------------------+
+         |   Driven Adaptor    |  (MongoDB Repositories, Playwright Scraper)
+         +---------------------+
+                    |
+                    v
+       [External Databases / APIs]
+```
+
+### 2.1 FastAPI as Inbound Port
+- `app/api/` implements **Inbound Ports** as REST endpoints:
+  - **`/api/auth`**: User authentication flow (login, register)
+  - **`/api/projects`**: Project management endpoints (list, retrieve, filter)
+- All endpoints use Pydantic models for request/response validation
+- Adheres to PEP8, type hints, and async context managers
+
+### 2.2 Port/Adapter Implementation Details
+- **Driven Adapters**:
+  - `database/repositories/*.py`: MongoDB access via Motor (asynchronous)
+  - `scraper/adaptors/workana.py`: Playwright-based Web Scraper
+- **Port Contracts**:
+  - Inbound Ports: Defined in `app/api/routes/*.py`
+  - Outbound Ports: Abstracted in `app/database/*` and `app/scrapper/*`
+
 The system is structured under the principles of **Domain-Driven Design (DDD)** and **Hexagonal Architecture (Ports and Adapters)**. No infrastructure details (frameworks, persistence libraries, external APIs) should permeate the core business logic.
 
 ```
@@ -144,6 +193,46 @@ The `scripts/` directory contains operational and diagnostic tools to facilitate
 
 ## 6. INGESTION AND OPERATIONAL COMPONENTS
 
+### 6.1 FastAPI API Layer Integration
+- **Endpoints Architecture**:
+  ```python
+  # Example from app/api/routes/projects.py
+  @router.get("/")
+  async def list_projects(
+      limit: int = Query(10, ge=1, le=100),
+      skip: int = Query(0, ge=0)
+  ) -> List[ProjectResponse]:
+      """List projects with pagination"""
+      projects = await ProjectsRepository().find_all(limit, skip)
+      return projects
+  ```
+- **Request/Response Models**:
+  - `ProjectRequest`, `ProjectResponse` (Pydantic models in `app/api/schemas/`)
+  - Automatic validation and documentation via Swagger
+
+### 6.2 Adapter Integration Example
+- **Scraper Adapter** (Inbound Port):
+  ```python
+  # app/scrapper/adaptors/workana.py
+  class WorkanaScraper(ScraperPort):
+      async def fetch_projects(self) -> List[ProjectData]:
+          """Fetch projects from Workana using Playwright"""
+          async with async_playwright() as p:
+              browser = await p.chromium.launch(headless=True)
+              page = await browser.new_page()
+              await page.goto("https://www.workana.com/projects")
+              # ... parsing logic ...
+  ```
+- **MongoDB Adapter** (Outbound Port):
+  ```python
+  # app/database/repositories/projects_repository.py
+  class ProjectsRepository:
+      async def find_all(self, limit: int, skip: int) -> List[Project]:
+          """Find projects from MongoDB"""
+          cursor = collection.find().skip(skip).limit(limit)
+          return await cursor.to_list(length=limit)
+  ```
+
 ### 6.1 Resilient Ingestion (Scraper)
 *   **Rendering Strategy:** The production adapter (`workana.py`) uses Playwright in headless mode to bypass protections and dynamically render JavaScript content.
 *   **High-Performance Parser:** In-memory DOM structuring is delegated to BeautifulSoup4 for its CPU efficiency.
@@ -185,20 +274,4 @@ The `scripts/` directory contains operational and diagnostic tools to facilitate
 *   **Dependency Control:** The `requirements.txt` and `requirements-dev.txt` files define the fixed dependencies. No additional modules should be imported without a prior security analysis and corresponding approval.
 *   **System Security:** Since the application interacts with the local file system and browser automations, every command in production must operate in a restricted or containerized manner.
 
----
 
-## 9. IMPLEMENTATION CHECKLIST (SDD)
-
-### Milestone 1: Infrastructure and Database
-- [x] Configure immutable environment with `app/config/` and `.env.example`.
-- [x] Implement the synchronous migration CLI and `ResilientBulkWriter`.
-- [x] Initialize the asynchronous connection with `motor` in `app/database/`.
-
-### Milestone 2: Ingestion Engine (Scraper)
-- [x] Implement the `workana.py` adapter with Playwright + BS4.
-- [x] Map scraping output to pure Pydantic models.
-- [x] **Session Lifecycle Handling:** Implement defensive error handling such that if authentication fails or the session expires, the pipeline halts gracefully with a clear instruction prompting the user to manually execute `extract_session.py` and validate it via `test_bot_session.py` before restarting.test_bot_session.py` before restarting.
-
-### Milestone 3: Cognitive Engine and Operational Channel
-- [x] Integrate `google-genai` and prompt loading from `.j2` templates.
-- [x] Implement the asynchronous Telegram bot with its Circuit Breakers.
