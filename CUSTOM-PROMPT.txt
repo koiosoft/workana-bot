@@ -26,12 +26,5 @@ STRICT RULES:
 Now, based on the following objective and the code context provided in the `STRICT CODE CONTEXT` section, generate INSTRUCTIONS.md.
 
 REQUIREMENTS:
-Review the current implementation in `app/intelligence` directory to understand how GEMINI models are integrated and utilized for different roles (e.g., evaluating projects, defining scores, reconstructing project descriptions, generating detailed proposals).
-  
-Identify the interfaces or abstract classes that define interactions with the AI models. Ensure these interfaces remain consistent to facilitate easy switching between GEMINI and OpenRouter.
 
-Create a new adapter class for OpenRouter in the `app/intelligence/adapters` directory. This adapter should implement the same interface as the existing GEMINI adapter, ensuring it can be used interchangeably with minimal changes.
-
-Update the configuration management to allow selection between GEMINI and OpenRouter models. This may involve adding environment variables or a configuration file that specifies which model to use.
-
-Refactor any parts of the application that directly instantiate AI models to instead use a factory pattern or dependency injection to obtain the appropriate adapter based on the configured model.
+Read the PYTHON-MIGRATION-LOGIN-API-INTEGRATION-TEST.md file and follow the instructions to generate the integrated Login and Logout tests that are missing from the project's integrated tests, governed by SPEC.md and CONVENTIONS.md.

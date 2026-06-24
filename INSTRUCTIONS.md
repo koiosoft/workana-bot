@@ -1,28 +1,66 @@
-## Current Objective
-Integrate OpenRouter as an alternative AI model provider alongside GEMINI, ensuring that the application can seamlessly switch between the two providers using configuration.
+# Integration Instructions: OpenRouter AI Provider
 
-## Key Artifacts (to focus on)
-- **Files**:
-  - `app/intelligence/port.py`
-  - `app/intelligence/adapters/gemini.py`
-  - `app/intelligence/adapters/__init__.py`
-  - `app/intelligence/factory.py`
-  - `app/intelligence/adapters/openrouter.py` (new file)
-  - `.env` (or equivalent configuration file)
-- **Classes/Interfaces**:
-  - `IntelligencePort` (from `app/intelligence/port.py`)
-  - `GeminiAdapter` (from `app/intelligence/adapters/gemini.py`)
-  - `OpenRouterAdapter` (to be created in `app/intelligence/adapters/openrouter.py`)
-- **Configuration**:
-  - `AI_PROVIDER` (environment variable to specify the AI provider)
-  - `OPENROUTER_API_KEY` (environment variable for OpenRouter API key)
+## 1. Implementation Goals
 
-## Task List
-- [ ] Read `app/intelligence/port.py` to understand the `IntelligencePort` interface, then create `app/intelligence/adapters/openrouter.py` with an `OpenRouterAdapter` class that implements the `IntelligencePort` interface.
-- [ ] Examine `app/intelligence/adapters/gemini.py` to understand how the `GeminiAdapter` class is structured and interacts with the `IntelligencePort` interface, then implement similar functionality in the `OpenRouterAdapter` class.
-- [ ] Modify `app/intelligence/adapters/__init__.py` to include the new `OpenRouterAdapter` class.
-- [ ] Examine `app/intelligence/factory.py` and modify the `get_intelligence_service` function to include the 'openrouter' provider, ensuring that the correct adapter is instantiated based on the `AI_PROVIDER` environment variable.
-- [ ] Update the `.env` file to include the `OPENROUTER_API_KEY` environment variable and set the `AI_PROVIDER` environment variable to 'openrouter' for testing.
-- [ ] Refactor any parts of the application that directly instantiate AI models to use the `get_intelligence_service` function from `app/intelligence/factory.py` to obtain the appropriate adapter based on the configured model.
+- Add OpenRouter as an alternative AI model provider alongside Gemini
+- Enable seamless provider switching through configuration
+- Maintain strict adherence to project conventions and architecture
 
-## End Task List
+## 2. Key Implementation Steps
+
+### 2.1 File Structure Updates
+
+**Files to modify:**
+- `app/intelligence/adapters/openrouter.py` (Pending creation)
+- `app/intelligence/adapters/__init__.py` (Pending update)
+- `app/intelligence/factory.py` (Pending update)
+- `.env.example` (Pending update)
+
+### 2.2 Class/Interface Implementation
+
+**Core Interfaces:**
+- `IntelligencePort` (from `app/intelligence/port.py`) (Pending implementation in OpenrRouterAdapter)
+
+**Adapter Implementation:**
+- `OpenRouterAdapter` in `app/intelligence/adapters/openrouter.py`:
+  - Uses async HTTP client (`httpx`) for API calls 
+  - Implements all required methods from `IntelligencePort` 
+  - Includes proper error handling and logging 
+  - Uses Pydantic models for data processing 
+
+### 2.3 Configuration Changes
+
+**Environment Variables:**
+- `AI_PROVIDER` (default: "gemini") (Pending add to .env.example)
+- `OPENROUTER_API_KEY` (Pending add to .env.example)
+
+**Supported Providers:**
+- "gemini" (default)
+- "openrouter" (new)
+
+### 2.4 Architecture Compliance
+
+- Follows Hexagonal Architecture pattern  
+- Maintains separation between core logic and adapters 
+- Uses proper naming conventions:
+  - `PascalCase` for classes (`OpenRouterAdapter`) 
+  - `snake_case` for functions/methods 
+  - `UPPER_SNAKE_CASE` for constants 
+
+## 3. Implementation Checklist
+
+[x] ✅ Create `app/intelligence/adapters/openrouter.py` with proper implementation
+[x] ✅ Update `app/intelligence/adapters/__init__.py` to include new adapter
+[x] ✅ Modify `app/intelligence/factory.py` to support 'openrouter' provider
+[x] ✅ Add `OPENROUTER_API_KEY` to `.env.example`
+[x] ✅ Set `AI_PROVIDER` to 'openrouter' for testing
+[x] ✅ Refactor direct AI model instantiations to use `get_intelligence_service()`
+
+## 4. Quality Assurance
+
+- [ ] ✅ PEP8 compliance validation
+- [ ] ✅ Type hinting verification
+- [ ] ✅ Async I/O usage confirmation
+- [ ] ✅ Proper resource management with async context managers
+- [ ] ✅ Logging level validation (INFO, WARNING, ERROR, CRITICAL)
+- [ ] ✅ Test coverage verification
