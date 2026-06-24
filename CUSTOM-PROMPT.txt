@@ -27,4 +27,20 @@ Now, based on the following objective and the code context provided in the `STRI
 
 REQUIREMENTS:
 
-Read the PYTHON-MIGRATION-LOGIN-API-INTEGRATION-TEST.md file and follow the instructions to generate the integrated Login and Logout tests that are missing from the project's integrated tests, governed by SPEC.md and CONVENTIONS.md.
+Previously, Gemini was our only AI provider. Following the hexagonal pattern, its implementation was located in the app/intelligence directory.
+
+We had to add OpenRouter as another provider. The result of the activity was:
+[x] ✅ Create `app/intelligence/adapters/openrouter.py` with proper implementation
+[x] ✅ Update `app/intelligence/adapters/__init__.py` to include the new adapter
+[x] ✅ Modify `app/intelligence/factory.py` to support the 'openrouter' provider
+[x] ✅ Add `OPENROUTER_API_KEY` to `.env.example`
+[x] ✅ Set `AI_PROVIDER` to 'openrouter' for testing
+[x] ✅ Refactor direct AI model instantiations to use `get_intelligence_service()`
+
+We need to:
+- Run the unit tests and evaluate what broke and fix it.
+
+- Add new unit tests that evaluate:
+* Changing the AI ​​provider from environment variables.
+
+* Executing tasks with OpenRouter as the provider.
