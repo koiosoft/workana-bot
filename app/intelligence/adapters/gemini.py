@@ -35,7 +35,13 @@ class GeminiAdapter(IntelligencePort):
             raise ValueError("GEMINI_API_KEY no configurada.")
 
         try:
-            self.client = genai.Client(api_key=api_key)
+            # Habilitamos retries automáticos del SDK para errores transitorios (503, 429, etc.).
+            # Por defecto: 5 intentos, backoff exponencial (1s → 60s max), con jitter.
+            # Esto evita que picos temporales de demanda en Google tumben el circuito.
+            http_opts = genai.types.HttpOptions(
+                retry_options=genai.types.HttpRetryOptions()
+            )
+            self.client = genai.Client(api_key=api_key, http_options=http_opts)
             self.model_id = "models/gemini-flash-latest"
             
             self.evaluation_instructions = ""
@@ -113,7 +119,8 @@ class GeminiAdapter(IntelligencePort):
             logger.error(f"Error en API de IA durante la evaluación: {e}")
             if circuit_breaker:
                 circuit_breaker.record_failure()
-            raise AIConnectionError(f"La API de IA falló durante la evaluación de proyectos: {e}") from e
+            error_details = getattr(e, 'response_json', {}).get('error', {})
+            raise AIConnectionError(f"La API de IA falló durante la evaluación de proyectos: {error_details.get('message', 'Unknown error')}") from e
         except Exception as e:
             logger.error(f"Error inesperado en evaluación de IA: {e}")
             # No registramos esto como una falla de API necesariamente, podría ser un error de parsing, etc.
