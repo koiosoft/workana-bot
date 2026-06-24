@@ -19,6 +19,7 @@ logs/bot.log
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
 # Variables de entorno y secretos (¡MUY IMPORTANTE!)
 .env
