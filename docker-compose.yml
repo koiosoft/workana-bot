@@ -10,7 +10,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     # Mantiene el contenedor activo para desarrollo
     tty: true
     networks:
@@ -29,7 +30,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     networks:
       - workana_network
 
@@ -44,6 +46,12 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS}
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet -u $${MONGO_INITDB_ROOT_USERNAME} -p $${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - workana_network
 
