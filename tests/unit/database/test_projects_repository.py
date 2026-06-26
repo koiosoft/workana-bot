@@ -1,6 +1,6 @@
 import pytest
 import hashlib
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, ANY
 from datetime import datetime, timedelta, timezone
 from app.database.projects_repository import ProjectsRepository
 
@@ -648,3 +648,92 @@ class TestGetProjectByHash:
 
             result = await repo.get_project_by_hash("nonexistent")
             assert result is None
+
+
+# ---------------------------------------------------------------------------
+# delete_projects
+# ---------------------------------------------------------------------------
+class TestDeleteProjects:
+    @pytest.mark.asyncio
+    async def test_delete_from_date(self):
+        repo = ProjectsRepository()
+        expected_from_dt = datetime(2024, 6, 1, tzinfo=timezone.utc)
+
+        with patch("app.database.projects_repository.get_database") as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"projects": mock_col}
+            mock_col.update_many.return_value.modified_count = 2
+
+            result = await repo.delete_projects(from_date="2024-06-01")
+
+            assert result == 2
+            mock_col.update_many.assert_awaited_once_with(
+                {
+                    "deleted_at": {"$exists": False},
+                    "estimated_published_at": {"$gte": expected_from_dt}
+                },
+                {"$set": {"deleted_at": ANY, "updated_at": ANY}}
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_all_projects(self):
+        repo = ProjectsRepository()
+
+        with patch("app.database.projects_repository.get_database") as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"projects": mock_col}
+            mock_col.update_many.return_value.modified_count = 5
+
+            result = await repo.delete_projects()
+
+            assert result == 5
+            mock_col.update_many.assert_awaited_once_with(
+                {"deleted_at": {"$exists": False}},
+                {"$set": {"deleted_at": ANY, "updated_at": ANY}}
+            )
+
+    @pytest.mark.asyncio
+    async def test_delete_returns_zero_when_no_match(self):
+        repo = ProjectsRepository()
+        with patch("app.database.projects_repository.get_database") as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"projects": mock_col}
+            mock_col.update_many.return_value.modified_count = 0
+
+            result = await repo.delete_projects(from_date="2099-01-01")
+            assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# prune_projects
+# ---------------------------------------------------------------------------
+class TestPruneProjects:
+    @pytest.mark.asyncio
+    async def test_prunes_soft_deleted_projects(self):
+        repo = ProjectsRepository()
+        with patch("app.database.projects_repository.get_database") as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"projects": mock_col}
+            delete_result = MagicMock()
+            delete_result.deleted_count = 7
+            mock_col.delete_many = AsyncMock(return_value=delete_result)
+
+            result = await repo.prune_projects()
+
+            assert result == 7
+            mock_col.delete_many.assert_awaited_once_with(
+                {"deleted_at": {"$exists": True}}
+            )
+
+    @pytest.mark.asyncio
+    async def test_prune_returns_zero_when_none_soft_deleted(self):
+        repo = ProjectsRepository()
+        with patch("app.database.projects_repository.get_database") as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"projects": mock_col}
+            delete_result = MagicMock()
+            delete_result.deleted_count = 0
+            mock_col.delete_many = AsyncMock(return_value=delete_result)
+
+            result = await repo.prune_projects()
+            assert result == 0

@@ -33,3 +33,4 @@ context_cache/
 .aider*
 .env.test
 .agent-instructor/logs
+sdd.logs

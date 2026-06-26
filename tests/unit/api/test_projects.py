@@ -135,13 +135,31 @@ def test_update_project_not_found(mock_repo):
     assert response.json() == {"detail": "Project not found or invalid ID"}
 
 def test_update_project_internal_error(mock_repo):
-    """Prueba que PATCH /api/projects/{id} devuelve 500 cuando falla la actualización."""
-    # Simular que la actualización falla (proyecto no encontrado)
-    mock_repo.update_project_by_id.return_value = False
+    """Prueba que PATCH /api/projects/{id} devuelve 500 cuando ocurre un error inesperado."""
+    # Simular una excepción inesperada en el repositorio
+    mock_repo.update_project_by_id.side_effect = Exception("DB connection lost")
 
     response = client.patch(
         "/api/projects/6a034f37d8e430e05690091b",
         json={"title": "New Title"}
     )
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Project not found or invalid ID"}
+    assert response.status_code == 500
+    data = response.json()
+    assert data["detail"]["error"] == "Internal Server Error"
+
+def test_get_project_invalid_id(mock_repo):
+    """Prueba que GET /api/projects/{id} devuelve 400 con un ObjectId inválido."""
+    response = client.get("/api/projects/not-a-valid-objectid")
+    assert response.status_code == 400
+    data = response.json()
+    assert data["detail"]["error"] == "Bad Request"
+
+def test_update_project_invalid_id(mock_repo):
+    """Prueba que PATCH /api/projects/{id} devuelve 400 con un ObjectId inválido."""
+    response = client.patch(
+        "/api/projects/not-a-valid-objectid",
+        json={"title": "New Title"}
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert data["detail"]["error"] == "Bad Request"

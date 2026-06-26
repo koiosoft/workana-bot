@@ -38,20 +38,29 @@ class ProjectsRepository:
         if not published_str or not isinstance(scraped_at_dt, datetime):
             return None
 
+        # Normalize: lowercase, strip filler words, convert word-numbers to digits
+        normalized = published_str.lower().strip()
+        for filler in ['casi ', 'aproximadamente ', 'alrededor de ']:
+            normalized = normalized.replace(filler, '')
+        for word, digit in [('una ', '1 '), ('un ', '1 '), ('dos ', '2 '), ('tres ', '3 '),
+                            ('cuatro ', '4 '), ('cinco ', '5 '), ('seis ', '6 '),
+                            ('siete ', '7 '), ('ocho ', '8 '), ('nueve ', '9 '), ('diez ', '10 ')]:
+            normalized = normalized.replace(word, digit)
+
         time_patterns = {
             'months': re.compile(r"hace\s+(?P<value>\d+)\s+mes(es)?", re.IGNORECASE),
             'days': re.compile(r"hace\s+(?P<value>\d+)\s+d[íi]a(s)?", re.IGNORECASE),
             'hours': re.compile(r"hace\s+(?P<value>\d+)\s+hora(s)?", re.IGNORECASE),
             'minutes': re.compile(r"hace\s+(?P<value>\d+)\s+minuto(s)?", re.IGNORECASE),
-            'moment': re.compile(r"hace\s+(un\s+momento|menos\s+de\s+un\s+minuto)", re.IGNORECASE)
+            'moment': re.compile(r"hace\s+((un|1)\s+momento|menos\s+de\s+(un|1)\s+minuto)", re.IGNORECASE)
         }
 
         delta = None
-        if 'ayer' in published_str.lower():
+        if 'ayer' in normalized:
             delta = timedelta(days=1)
         else:
             for unit, pattern in time_patterns.items():
-                match = pattern.search(published_str)
+                match = pattern.search(normalized)
                 if match:
                     if unit == 'moment':
                         delta = timedelta(minutes=1)
@@ -311,6 +320,40 @@ class ProjectsRepository:
         return await self.collection.find_one({"link_hash": link_hash})
 
     # ---------- NEW METHODS ----------
+    async def delete_projects(self, from_date: str | None = None) -> int:
+        """
+        Soft-delete projects. If from_date is provided (YYYY-MM-DD), delete
+        projects with estimated_published_at >= from_date. Otherwise delete all.
+        Returns the count of deleted projects.
+        """
+        await self.ensure_indexes()
+        now = datetime.now(timezone.utc).isoformat()
+
+        query: dict[str, Any] = {"deleted_at": {"$exists": False}}
+        if from_date:
+            from_dt = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            query["estimated_published_at"] = {"$gte": from_dt}
+
+        result = await self.collection.update_many(
+            query,
+            {"$set": {"deleted_at": now, "updated_at": now}}
+        )
+        return int(result.modified_count or 0)
+
+    async def prune_projects(self) -> int:
+        """
+        Physically delete all projects that have been soft-deleted
+        (i.e., have deleted_at set). Returns the count of removed projects.
+        """
+        await self.ensure_indexes()
+
+        result = await self.collection.delete_many(
+            {"deleted_at": {"$exists": True}}
+        )
+        count = int(result.deleted_count or 0)
+        logger.info(f"🧹 Pruned {count} soft-deleted projects.")
+        return count
+
     async def get_project_by_id(self, project_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a project by its MongoDB _id (as string)."""
         try:
