@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from app.bots.telegram.circuit_breaker import CircuitBreaker
 
 # Modelos disponibles via OpenRouter (compatibles con chat completions)
-STANDARD_MODEL = "google/gemini-2.5-flash"  
-PREMIUM_MODEL = "google/gemini-2.5-pro"     
+STANDARD_MODEL = "qwen/qwen3-14b"  
+PREMIUM_MODEL = "deepseek/deepseek-v4-pro"     
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
