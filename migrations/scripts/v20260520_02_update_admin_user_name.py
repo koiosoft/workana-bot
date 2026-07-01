@@ -19,8 +19,8 @@ class Migration(MigrationBase):
         """
         writer.add_update(
             collection_name=TARGET_COLLECTION,
-            query_filter={"_id": USER_ROGER_ID},
-            update_mutation={"$set": {"name": UPDATED_NAME}}
+            filter_query={"_id": USER_ROGER_ID},
+            update_query={"$set": {"name": UPDATED_NAME}}
         )
 
     def down(self, db: Database) -> None:

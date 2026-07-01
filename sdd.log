@@ -1,42 +1,35 @@
-============================= test session starts ==============================
-platform darwin -- Python 3.11.12, pytest-9.0.3, pluggy-1.6.0
-rootdir: /Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Bot
-configfile: pytest.ini
-plugins: mock-3.15.1, cov-7.1.0, asyncio-1.4.0, dotenv-0.5.2, anyio-4.13.0
-asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
-collected 7 items
-
-tests/integration/test_auth_integration.py ...                           [ 42%]
-tests/integration/test_projects_integration.py ...F                      [100%]
-
-=================================== FAILURES ===================================
-________________________ test_update_project_invalid_id ________________________
-
-test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['localhost:27017'], document_class=dict, tz_aware=False, connect=False, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
-seed_test_data = {'project_id': '6a2867b385c8680a0b53e10a'}
-
-    @pytest.mark.asyncio
-    async def test_update_project_invalid_id(test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]) -> None:
-        """
-        Test update project with invalid ID format.
-        Asserts 400 Bad Request status code.
-        """
-        transport = ASGITransport(app=app)
-    
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            response = await ac.patch(
-                "/api/projects/invalid_id_format",
-                json={
-                    "proposal_status": "proposal_generated",
-                    "title": "Updated Project Title"
-                }
-            )
-    
->           assert response.status_code == 400
-E           assert 404 == 400
-E            +  where 404 = <Response [404 Not Found]>.status_code
-
-tests/integration/test_projects_integration.py:118: AssertionError
-=========================== short test summary info ============================
-FAILED tests/integration/test_projects_integration.py::test_update_project_invalid_id
-========================= 1 failed, 6 passed in 1.47s ==========================
+(.venv) ➜  workana-bot git:(main) python3 migrations/main.py --migrate
+🔌 Conectando a MongoDB (Sync Driver)...
+✅ Conexión a MongoDB (Sync Driver) establecida con éxito.
+2026-07-01 11:22:49,152 - MigrationEngine - INFO - Iniciando proceso de migración...
+2026-07-01 11:22:49.220 | INFO     | app.scraper.factory:get_scraper:20 - 🔍 SCRAPER_SOURCE detectado desde ambiente: 'workana'
+2026-07-01 11:22:49,953 - MigrationEngine - INFO - Migración 'v20260520_01' ya ejecutada. Omitiendo.
+2026-07-01 11:22:49,954 - MigrationEngine - INFO - Ejecutando migración 'v20260520_02'...
+ERROR:root:Excepción detectada en el bloque de migración 'v20260520_02': ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'. Abortando todas las operaciones de base de datos.
+2026-07-01 11:22:49,955 - MigrationEngine - ERROR - Fallo al ejecutar la migración 'v20260520_02': ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'
+Traceback (most recent call last):
+  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/migrations/core/engine.py", line 113, in migrate
+    migration_instance.up(writer)
+  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/migrations/scripts/v20260520_02_update_admin_user_name.py", line 20, in up
+    writer.add_update(
+TypeError: ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'
+ERROR:MigrationEngine:Fallo al ejecutar la migración 'v20260520_02': ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'
+Traceback (most recent call last):
+  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/migrations/core/engine.py", line 113, in migrate
+    migration_instance.up(writer)
+  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/migrations/scripts/v20260520_02_update_admin_user_name.py", line 20, in up
+    writer.add_update(
+TypeError: ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'
+2026-07-01 11:22:49,955 - MigrationEngine - INFO - Iniciando rollback para la migración fallida 'v20260520_02'...
+INFO:MigrationEngine:Iniciando rollback para la migración fallida 'v20260520_02'...
+2026-07-01 11:22:49,955 - MigrationEngine - INFO - Fase 1: Reversión automática de datos para 'v20260520_02'...
+INFO:MigrationEngine:Fase 1: Reversión automática de datos para 'v20260520_02'...
+2026-07-01 11:22:49,956 - MigrationEngine - INFO - Fase 1 completada.
+INFO:MigrationEngine:Fase 1 completada.
+2026-07-01 11:22:49,956 - MigrationEngine - INFO - Fase 2: Ejecutando 'down()' programático para 'v20260520_02'...
+INFO:MigrationEngine:Fase 2: Ejecutando 'down()' programático para 'v20260520_02'...
+2026-07-01 11:22:49,956 - MigrationEngine - INFO - Fase 2 completada.
+INFO:MigrationEngine:Fase 2 completada.
+2026-07-01 11:22:49,957 - MigrationEngine - INFO - Rollback de 'v20260520_02' completado con éxito.
+INFO:MigrationEngine:Rollback de 'v20260520_02' completado con éxito.
+🔌 Conexión a MongoDB (Sync Driver) cerrada.
