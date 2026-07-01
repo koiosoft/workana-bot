@@ -1,25 +1,19 @@
 ## Current Objective
-Fix the generation and handling of the `state.json` file to ensure it is created as a file and not a directory, and resolve the error related to the missing session file when scraping Workana.
+Implement anti-detection techniques and configure stealth options in `scripts/extract_session.py` to enhance session extraction from Workana.
 
 ## Key Artifacts (to focus on)
-- **Files**: 
-  - `app/scraper/adapters/workana.py`
-  - `scripts/extract_session.py`
-  - `.env.example`
-  - `app/scraper/base.py`
-- **Classes/Interfaces**: 
-  - `WorkanaScraperAdapter`
-  - `ScraperPort`
-- **Configuration**: 
-  - `STATE_FILE_PATH` environment variable
-  - `docker-compose.yml` (implicitly)
+- **Files**:
+  - `scripts/extract_session.py` (new file to create)
+  - `app/scraper/adapters/workana.py` (existing file to review for scraping techniques)
+- **Classes/Interfaces**:
+  - `WorkanaScraperAdapter` class in `app/scraper/adapters/workana.py`
+- **Configuration**:
+  - Environment variables related to browser stealth options (e.g., `WORKANA_USER_AGENT`, `WORKANA_LOCALE`)
 
 ## Task List
-- [x] Read `app/scraper/adapters/workana.py` to understand how the `WorkanaScraperAdapter` handles the `state.json` file, then modify the `_is_logged_in` and `get_projects` methods to ensure that the `state.json` file is created as a file and not a directory, and add a check to ensure the file exists and is valid before attempting to use it.
-- [x] Examine `scripts/extract_session.py` and modify it to ensure it correctly generates the `state.json` file as a file, not a directory, by checking the file type and handling any directory conflicts.
-- [x] Review the `WorkanaScraperAdapter` in `app/scraper/adapters/workana.py` and update the logic that handles the `state.json` file to include a validation step that checks if the `state.json` is a file and not a directory before attempting to use it, and add error logging if it is a directory.
-- [x] Examine `.env.example` and ensure the `STATE_FILE_PATH` environment variable is correctly set to a file path (e.g., `/usr/src/app/state.json`) and not a directory, and add a note in the file to clarify this.
-- [x] Review the error message in the logs (`❌ Archivo de sesión no encontrado: /usr/src/app/state.json`) and modify the error handling in `app/scraper/adapters/workana.py` to provide more detailed logging if the `state.json` is not a file or is missing, including a suggestion to check the file path and ensure it is a valid file.
-- [x] Ensure that the `WorkanaScraperAdapter` in `app/scraper/adapters/workana.py` correctly initializes and uses the `state.json` file by verifying that the file exists, is a regular file, and has the correct permissions, and update the code to handle any file-related exceptions gracefully.
+- [x] Ensure that `scripts/extract_session.py` includes methods for simulating chrome objects and overriding WebGL and canvas fingerprint properties to avoid detection by Workana's anti-bot systems.
+- [x] Update `scripts/extract_session.py` to include functionality for removing CDP (Chrome DevTools Protocol) marks and other automation indicators that could trigger Workana's bot detection mechanisms.
+- [x] Configure `scripts/extract_session.py` to use environment variables for stealth settings such as `disable-blink-features`, `user-agent`, and `viewport` to allow for flexible and secure session extraction.
+- [x] Add Cloudflare bypass strategy detection and handling to `scripts/extract_session.py` to address scraping challenges (e.g., detection of headless browsers, JavaScript challenges, CAPTCHA bypass). Include techniques like browser指纹欺骗 (fingerprint spoofing), realistic request timing, and automatic challenge solving.
 
 ## End Task List

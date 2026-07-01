@@ -27,22 +27,9 @@ Now, based on the following objective and the code context provided in the `STRI
 
 REQUIREMENTS:
 
-Previously, Gemini was our only AI provider. Following the hexagonal pattern, its implementation was located in the app/intelligence directory.
+- Review scripts/extract_session.py and analyze scrapping techniques for session extraction.
 
-We had to add OpenRouter as another provider. The result of the activity was:
-[x] ✅ Create `app/intelligence/adapters/openrouter.py` with proper implementation
-[x] ✅ Update `app/intelligence/adapters/__init__.py` to include the new adapter
-[x] ✅ Modify `app/intelligence/factory.py` to support the 'openrouter' provider
-[x] ✅ Add `OPENROUTER_API_KEY` to `.env.example`
-[x] ✅ Set `AI_PROVIDER` to 'openrouter' for testing
-[x] ✅ Refactor direct AI model instantiations to use `get_intelligence_service()`
+- On extract_session.py  implement complete anti-detection scripts including removal of all navigator automation properties, simulation of chrome objects, WebGL override, canvas fingerprint override, and CDP mark removal.
 
-We need to:
-- Review this behaviour:  Executing scripts/extract_session.py This script announce to have generated app/state.json file, but I don see.  I restart
-docker containers with docker compose restart.  Then I can see state.json, but how a Directory, not a file.
+- On extract_session.py configure browser launch arguments and context settings with stealth options including disable-blink-features, realistic user agent, proper viewport, and complete HTTP headers.
 
-After that, reviewing logs, I can see this message
-
-workana_bot  | 2026-07-01 20:15:27.934 | ERROR    | app.bots.telegram.handlers:fetch_projects:145 - ❌ Archivo de sesión no encontrado: /usr/src/app/state.json
-
--  Fix previous behaviour, generating a state.json file correctly, for use on scrapping workana website with session.
