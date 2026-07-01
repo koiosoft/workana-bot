@@ -5,7 +5,6 @@ services:
     restart: always
     volumes:
       - ./app:/usr/src/app
-      - ./state.json:/usr/src/app/state.json
       - ./browser_data:/usr/src/app/browser_data
     env_file:
       - .env

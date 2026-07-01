@@ -1,10 +1,39 @@
 # extract_session.py
 import asyncio
 import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
 from playwright.async_api import async_playwright
 from loguru import logger
 
+
+def ensure_playwright_browsers():
+    """Check if Chromium browser is installed; install it if missing."""
+    cache_dir = Path.home() / ".cache" / "ms-playwright"
+    if not cache_dir.exists() or not list(cache_dir.glob("chromium-*")):
+        logger.warning("⚠️ Navegadores Playwright no encontrados. Instalando Chromium...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "chromium"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            logger.success("✅ Chromium instalado correctamente.")
+        except subprocess.CalledProcessError as e:
+            logger.error(
+                "❌ Falló la instalación de los navegadores Playwright:\n{}"
+                .format(e.stdout.decode() if e.stdout else str(e))
+            )
+            raise
+
+
 async def capture_forced():
+    ensure_playwright_browsers()
+
     browser_profile = {
         "user_agent": os.getenv(
             "WORKANA_USER_AGENT",
@@ -25,7 +54,27 @@ async def capture_forced():
         )
         context = await browser.new_context(**browser_profile)
         page = await context.new_page()
-        state_file = "../state.json"
+        state_file = os.getenv("STATE_FILE_PATH", "app/state.json")
+
+        # Ensure state_file path is writable as a regular file, not a directory.
+        if os.path.exists(state_file) and not os.path.isfile(state_file):
+            logger.warning(
+                f"⚠️ {state_file} existe pero no es un archivo regular. "
+                "Eliminando para evitar conflictos..."
+            )
+            try:
+                if os.path.isdir(state_file):
+                    shutil.rmtree(state_file)
+                    logger.info(f"🗑️ Directorio {state_file} eliminado.")
+                else:
+                    os.remove(state_file)
+                    logger.info(f"🗑️ Entrada inválida {state_file} eliminada.")
+            except Exception as cleanup_err:
+                logger.error(f"❌ No se pudo eliminar {state_file}: {cleanup_err}")
+                return
+        elif os.path.isfile(state_file):
+            logger.info(f"📄 {state_file} ya existe. Será sobrescrito con la nueva sesión.")
+
         session_saved = False
         
         try:

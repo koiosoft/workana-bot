@@ -141,16 +141,40 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     scraper = ScraperFactory.get_scraper()
 
     # Validate state file exists before attempting scraping
-    if hasattr(scraper, 'state_file') and not os.path.isfile(scraper.state_file):
-        logger.error(f"❌ Archivo de sesión no encontrado: {scraper.state_file}")
-        try:
-            await update.message.reply_text(
-                "⚠️ Archivo de sesión (state.json) no encontrado. "
-                "Ejecuta `scripts/extract_session.py` para generar un nuevo estado de usuario."
-            )
-        except Exception as ne:
-            logger.warning(f"No se pudo enviar notificación de sesión faltante a Telegram: {ne}")
-        return
+    if hasattr(scraper, 'state_file'):
+        state_path = scraper.state_file
+        if not os.path.exists(state_path):
+            logger.error(f"❌ Archivo de sesión no encontrado: {state_path}")
+            try:
+                await update.message.reply_text(
+                    "⚠️ Archivo de sesión (state.json) no encontrado. "
+                    "Ejecuta `python scripts/extract_session.py` para generar uno. "
+                    "Verifica que la variable STATE_FILE_PATH apunte a la ruta correcta."
+                )
+            except Exception as ne:
+                logger.warning(f"No se pudo enviar notificación de sesión faltante a Telegram: {ne}")
+            return
+        elif os.path.isdir(state_path):
+            logger.error(f"❌ La ruta de sesión es un directorio, no un archivo: {state_path}")
+            try:
+                await update.message.reply_text(
+                    "⚠️ La ruta STATE_FILE_PATH apunta a un directorio, no a un archivo. "
+                    "Corrige la variable STATE_FILE_PATH en tu archivo .env para que apunte a un archivo "
+                    "(ej. /usr/src/app/state.json)."
+                )
+            except Exception as ne:
+                logger.warning(f"No se pudo enviar notificación de directorio inválido a Telegram: {ne}")
+            return
+        elif not os.path.isfile(state_path):
+            logger.error(f"❌ La ruta de sesión no es un archivo regular: {state_path}")
+            try:
+                await update.message.reply_text(
+                    "⚠️ La ruta STATE_FILE_PATH no apunta a un archivo válido. "
+                    "Verifica la configuración e intenta nuevamente."
+                )
+            except Exception as ne:
+                logger.warning(f"No se pudo enviar notificación de archivo inválido a Telegram: {ne}")
+            return
 
     try:
         projects = await scraper.get_projects()

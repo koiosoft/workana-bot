@@ -1,38 +1,25 @@
 ## Current Objective
-- Parse 'Hace casi una hora' as 1 hour and review the error 'No se pudo parsear el tiempo relativo'. Review the method `_calculate_estimated_published_at`.
-- Create a script named `command.py` in the `/scripts` folder with three commands:
-  a) Create a new User (with input password hidden)
-  b) Update user Password with Email (with input password hidden)
-  c) Delete projects (All, from date: 2026-10-01, format yyyy-mm-dd)
-- Review and fix any issues in the tests.
+Fix the generation and handling of the `state.json` file to ensure it is created as a file and not a directory, and resolve the error related to the missing session file when scraping Workana.
 
 ## Key Artifacts (to focus on)
-- **Files**:
-  - `app/scraper/adapters/dummy.py`
-  - `app/models/project.py`
-  - `app/database/users_repository.py`
-  - `app/services/auth_service.py`
-  - `scripts/command.py` (new file)
-  - `tests/unit/api/test_projects.py`
-  - `tests/unit/bots/test_telegram_handlers.py`
-  - `tests/unit/database/test_users_repository.py`
-- **Classes/Interfaces**:
-  - `DummyScraperAdapter` (from `app/scraper/adapters/dummy.py`)
-  - `Project` (from `app/models/project.py`)
-  - `UsersRepository` (from `app/database/users_repository.py`)
-  - `AuthService` (from `app/services/auth_service.py`)
-- **Configuration**:
-  - `AUTH_SECRET` (environment variable)
-  - `MONGO_URI` (environment variable)
+- **Files**: 
+  - `app/scraper/adapters/workana.py`
+  - `scripts/extract_session.py`
+  - `.env.example`
+  - `app/scraper/base.py`
+- **Classes/Interfaces**: 
+  - `WorkanaScraperAdapter`
+  - `ScraperPort`
+- **Configuration**: 
+  - `STATE_FILE_PATH` environment variable
+  - `docker-compose.yml` (implicitly)
 
 ## Task List
-- [x] Read `app/scraper/adapters/dummy.py` to understand how the `fetch_full_detail` method parses relative times. Fix the method to correctly parse 'Hace casi una hora' as 1 hour and resolve the 'No se pudo parsear el tiempo relativo' error.
-- [x] Examine `app/database/projects_repository.py` and update the `ProjectsRepository` class to ensure the `_calculate_estimated_published_at` method supports the new relative time parsing logic.
-- [x] Read `app/database/users_repository.py` to understand user management methods. Create `scripts/command.py` with a `create_user` command that prompts for a hidden password input and uses `UsersRepository` to create a new user.
-- [x] Add an `update_password` command to `scripts/command.py` that prompts for a hidden password input and uses `UsersRepository` to update a user's password via email.
-- [x] Add a `delete_projects` command to `scripts/command.py` that deletes all projects or projects from a specified date (format: yyyy-mm-dd) using `ProjectsRepository`.
-- [x] Review `tests/unit/api/test_projects.py` and fix test cases for project creation, updating, and deletion, including date-based deletion logic.
-- [x] Review `tests/unit/bots/test_telegram_handlers.py` and fix test cases for user creation, password updates, and project deletion commands.
-- [x] Review `tests/unit/database/test_users_repository.py` and fix test cases for user creation with hidden password input and password update functionality.
-- [x] Add an `prune_projects` command to `scripts/command.py` to delete phisically all projects checked with soft-delete.  Add this command to make file too.
+- [x] Read `app/scraper/adapters/workana.py` to understand how the `WorkanaScraperAdapter` handles the `state.json` file, then modify the `_is_logged_in` and `get_projects` methods to ensure that the `state.json` file is created as a file and not a directory, and add a check to ensure the file exists and is valid before attempting to use it.
+- [x] Examine `scripts/extract_session.py` and modify it to ensure it correctly generates the `state.json` file as a file, not a directory, by checking the file type and handling any directory conflicts.
+- [x] Review the `WorkanaScraperAdapter` in `app/scraper/adapters/workana.py` and update the logic that handles the `state.json` file to include a validation step that checks if the `state.json` is a file and not a directory before attempting to use it, and add error logging if it is a directory.
+- [x] Examine `.env.example` and ensure the `STATE_FILE_PATH` environment variable is correctly set to a file path (e.g., `/usr/src/app/state.json`) and not a directory, and add a note in the file to clarify this.
+- [x] Review the error message in the logs (`❌ Archivo de sesión no encontrado: /usr/src/app/state.json`) and modify the error handling in `app/scraper/adapters/workana.py` to provide more detailed logging if the `state.json` is not a file or is missing, including a suggestion to check the file path and ensure it is a valid file.
+- [x] Ensure that the `WorkanaScraperAdapter` in `app/scraper/adapters/workana.py` correctly initializes and uses the `state.json` file by verifying that the file exists, is a regular file, and has the correct permissions, and update the code to handle any file-related exceptions gracefully.
+
 ## End Task List

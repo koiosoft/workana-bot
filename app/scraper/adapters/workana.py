@@ -33,6 +33,91 @@ class WorkanaScraperAdapter(ScraperPort):
             f"&skills=angular%2Cnode-js%2Cpostgressql%2Cpython%2Creact-js%2Creact-native%2Cvue-js"
             f"&subcategory=web-development"
         )
+    
+    def _ensure_valid_state_file(self) -> bool:
+        """
+        Ensure state_file path refers to a regular file, not a directory.
+        Verifies existence, type, permissions (read+write), and content.
+        Returns True if a valid, accessible session file exists and can be used.
+        Cleans up invalid entries (directories, broken symlinks, etc.)
+        """
+        if not os.path.exists(self.state_file):
+            logger.error(
+                f"❌ Archivo de sesión no encontrado: {self.state_file}. "
+                "El bot operará sin sesión (no autenticado). "
+                "Verifica que STATE_FILE_PATH apunte a un archivo válido. "
+                "Ejecuta 'python scripts/extract_session.py' para generar uno."
+            )
+            return False
+
+        if os.path.isdir(self.state_file):
+            logger.error(
+                f"❌ {self.state_file} es un directorio, no un archivo. "
+                "Eliminando directorio inválido. Asegúrate de que STATE_FILE_PATH "
+                "apunte a un archivo (ej. /usr/src/app/state.json), no a un directorio."
+            )
+            try:
+                shutil.rmtree(self.state_file)
+            except PermissionError:
+                logger.error(
+                    f"❌ Permiso denegado al eliminar el directorio {self.state_file}. "
+                    "Ejecuta el contenedor con los permisos adecuados o elimina el directorio manualmente."
+                )
+            except OSError as cleanup_err:
+                logger.error(f"No se pudo eliminar el directorio {self.state_file}: {cleanup_err}")
+            return False
+
+        if not os.path.isfile(self.state_file):
+            logger.error(
+                f"❌ {self.state_file} existe pero no es un archivo regular. "
+                f"Eliminando entrada inválida."
+            )
+            try:
+                os.remove(self.state_file)
+            except PermissionError:
+                logger.error(
+                    f"❌ Permiso denegado al eliminar {self.state_file}. "
+                    "Verifica los permisos del sistema de archivos."
+                )
+            except OSError as cleanup_err:
+                logger.error(f"No se pudo eliminar {self.state_file}: {cleanup_err}")
+            return False
+
+        # Verify read permission
+        if not os.access(self.state_file, os.R_OK):
+            logger.error(
+                f"❌ Sin permisos de lectura para {self.state_file}. "
+                "Ajusta los permisos del archivo (chmod +r) o ejecuta el proceso con el usuario adecuado."
+            )
+            return False
+
+        # Verify write permission (needed for storage_state updates)
+        if not os.access(self.state_file, os.W_OK):
+            logger.warning(
+                f"⚠️ Sin permisos de escritura para {self.state_file}. "
+                "La sesión se podrá leer pero no se actualizará. "
+                "Ajusta los permisos (chmod +w) para permitir la renovación automática."
+            )
+            # Still return True — we can read, just can't update
+
+        try:
+            file_size = os.path.getsize(self.state_file)
+        except OSError as e:
+            logger.error(f"❌ No se pudo leer el tamaño de {self.state_file}: {e}")
+            return False
+
+        if file_size == 0:
+            logger.warning(
+                f"⚠️ {self.state_file} es un archivo vacío. "
+                "La sesión no contiene datos. El bot operará sin autenticación."
+            )
+            return False
+
+        # File exists, is a regular file, has content, and has correct permissions
+        perm_str = "lectura/escritura" if os.access(self.state_file, os.W_OK) else "solo lectura"
+        logger.info(f"✅ Archivo de sesión válido encontrado: {self.state_file} "
+                     f"({file_size} bytes, {perm_str})")
+        return True
 
     @staticmethod
     def _normalize_project_link(href: str | None) -> str:
@@ -41,7 +126,16 @@ class WorkanaScraperAdapter(ScraperPort):
         return urljoin("https://www.workana.com", href)
 
     async def _is_logged_in(self, page) -> bool:
-        return await page.query_selector(".user-avatar") is not None
+        is_logged = await page.query_selector(".user-avatar") is not None
+        if not is_logged:
+            logger.warning(
+                "⚠️ No se detectó sesión activa (avatar de usuario no encontrado en la página). "
+                "Verifica que el archivo de sesión state.json sea válido y no esté expirado."
+            )
+            self._ensure_valid_state_file()
+        else:
+            logger.info("🔎 Sesión activa detectada en Workana.")
+        return is_logged
             
     async def auto_scroll(self, page):
         """Hace scroll hacia abajo para disparar la carga de elementos lazy"""
@@ -61,25 +155,9 @@ class WorkanaScraperAdapter(ScraperPort):
                 args=["--no-sandbox", "--disable-setuid-sandbox"]
             )
             context_kwargs = {}
-            if os.path.isfile(self.state_file) and os.path.getsize(self.state_file) > 0:
+            if self._ensure_valid_state_file():
                 context_kwargs["storage_state"] = self.state_file
                 logger.info(f"🔐 Cargando sesión desde {self.state_file}...")
-            elif os.path.exists(self.state_file):
-                logger.warning(
-                    f"⚠️ {self.state_file} existe pero no es un archivo regular (posible directorio). "
-                    "Eliminando entrada inválida y procediendo sin sesión."
-                )
-                try:
-                    if os.path.isdir(self.state_file):
-                        shutil.rmtree(self.state_file)
-                    else:
-                        os.remove(self.state_file)
-                except Exception as cleanup_err:
-                    logger.error(f"No se pudo eliminar {self.state_file}: {cleanup_err}")
-                logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
-            else:
-                logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
-
             context_kwargs.update(self.browser_profile)
             context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
@@ -223,8 +301,24 @@ class WorkanaScraperAdapter(ScraperPort):
                     )
 
                 # Guardamos una "foto" de la sesión en el JSON por si acaso
-                await context.storage_state(path=self.state_file)
-                logger.success(f"📊 Extracción completa: {len(all_projects)} proyectos totales.")
+                # Validar que la ruta de destino es un archivo (no un directorio) antes de escribir.
+                if os.path.exists(self.state_file) and not os.path.isfile(self.state_file):
+                    logger.error(
+                        f"❌ No se puede guardar la sesión: {self.state_file} no es un archivo regular."
+                    )
+                    if os.path.isdir(self.state_file):
+                        logger.error(
+                            f"❌ {self.state_file} es un directorio. "
+                            "Elimínalo manualmente o corrige STATE_FILE_PATH para que apunte a un archivo."
+                        )
+                else:
+                    # Asegurar que el directorio padre existe
+                    parent_dir = os.path.dirname(self.state_file)
+                    if parent_dir and not os.path.exists(parent_dir):
+                        os.makedirs(parent_dir, exist_ok=True)
+                        logger.info(f"📁 Directorio padre creado: {parent_dir}")
+                    await context.storage_state(path=self.state_file)
+                    logger.info(f"💾 Sesión guardada en {self.state_file}")
                 
             except Exception as e:
                 logger.error(f"❌ Error durante el scraping: {e}")
@@ -255,25 +349,9 @@ class WorkanaScraperAdapter(ScraperPort):
         """
         async with async_playwright() as p:
             context_kwargs = {}
-            if os.path.isfile(self.state_file) and os.path.getsize(self.state_file) > 0:
+            if self._ensure_valid_state_file():
                 context_kwargs["storage_state"] = self.state_file
                 logger.info(f"🔐 Cargando sesión desde {self.state_file}...")
-            elif os.path.exists(self.state_file):
-                logger.warning(
-                    f"⚠️ {self.state_file} existe pero no es un archivo regular (posible directorio). "
-                    "Eliminando entrada inválida y procediendo sin sesión."
-                )
-                try:
-                    if os.path.isdir(self.state_file):
-                        shutil.rmtree(self.state_file)
-                    else:
-                        os.remove(self.state_file)
-                except Exception as cleanup_err:
-                    logger.error(f"No se pudo eliminar {self.state_file}: {cleanup_err}")
-                logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
-            else:
-                logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
-
             browser = await p.chromium.launch(headless=True)
             context_kwargs.update(self.browser_profile)
             context = await browser.new_context(**context_kwargs)

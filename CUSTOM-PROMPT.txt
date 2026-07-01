@@ -38,9 +38,11 @@ We had to add OpenRouter as another provider. The result of the activity was:
 [x] ✅ Refactor direct AI model instantiations to use `get_intelligence_service()`
 
 We need to:
-- Run the unit tests and evaluate what broke and fix it.
+- Review this behaviour:  Executing scripts/extract_session.py This script announce to have generated app/state.json file, but I don see.  I restart
+docker containers with docker compose restart.  Then I can see state.json, but how a Directory, not a file.
 
-- Add new unit tests that evaluate:
-* Changing the AI ​​provider from environment variables.
+After that, reviewing logs, I can see this message
 
-* Executing tasks with OpenRouter as the provider.
+workana_bot  | 2026-07-01 20:15:27.934 | ERROR    | app.bots.telegram.handlers:fetch_projects:145 - ❌ Archivo de sesión no encontrado: /usr/src/app/state.json
+
+-  Fix previous behaviour, generating a state.json file correctly, for use on scrapping workana website with session.
