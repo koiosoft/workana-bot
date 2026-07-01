@@ -1,35 +1,5 @@
-(.venv) ➜  workana-bot git:(main) python3 migrations/main.py --migrate
-🔌 Conectando a MongoDB (Sync Driver)...
-✅ Conexión a MongoDB (Sync Driver) establecida con éxito.
-2026-07-01 11:22:49,152 - MigrationEngine - INFO - Iniciando proceso de migración...
-2026-07-01 11:22:49.220 | INFO     | app.scraper.factory:get_scraper:20 - 🔍 SCRAPER_SOURCE detectado desde ambiente: 'workana'
-2026-07-01 11:22:49,953 - MigrationEngine - INFO - Migración 'v20260520_01' ya ejecutada. Omitiendo.
-2026-07-01 11:22:49,954 - MigrationEngine - INFO - Ejecutando migración 'v20260520_02'...
-ERROR:root:Excepción detectada en el bloque de migración 'v20260520_02': ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'. Abortando todas las operaciones de base de datos.
-2026-07-01 11:22:49,955 - MigrationEngine - ERROR - Fallo al ejecutar la migración 'v20260520_02': ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'
+(.venv) ➜  workana-bot git:(main) python3 scripts/command.py
 Traceback (most recent call last):
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/migrations/core/engine.py", line 113, in migrate
-    migration_instance.up(writer)
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/migrations/scripts/v20260520_02_update_admin_user_name.py", line 20, in up
-    writer.add_update(
-TypeError: ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'
-ERROR:MigrationEngine:Fallo al ejecutar la migración 'v20260520_02': ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'
-Traceback (most recent call last):
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/migrations/core/engine.py", line 113, in migrate
-    migration_instance.up(writer)
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/migrations/scripts/v20260520_02_update_admin_user_name.py", line 20, in up
-    writer.add_update(
-TypeError: ResilientBulkWriter.add_update() got an unexpected keyword argument 'query_filter'
-2026-07-01 11:22:49,955 - MigrationEngine - INFO - Iniciando rollback para la migración fallida 'v20260520_02'...
-INFO:MigrationEngine:Iniciando rollback para la migración fallida 'v20260520_02'...
-2026-07-01 11:22:49,955 - MigrationEngine - INFO - Fase 1: Reversión automática de datos para 'v20260520_02'...
-INFO:MigrationEngine:Fase 1: Reversión automática de datos para 'v20260520_02'...
-2026-07-01 11:22:49,956 - MigrationEngine - INFO - Fase 1 completada.
-INFO:MigrationEngine:Fase 1 completada.
-2026-07-01 11:22:49,956 - MigrationEngine - INFO - Fase 2: Ejecutando 'down()' programático para 'v20260520_02'...
-INFO:MigrationEngine:Fase 2: Ejecutando 'down()' programático para 'v20260520_02'...
-2026-07-01 11:22:49,956 - MigrationEngine - INFO - Fase 2 completada.
-INFO:MigrationEngine:Fase 2 completada.
-2026-07-01 11:22:49,957 - MigrationEngine - INFO - Rollback de 'v20260520_02' completado con éxito.
-INFO:MigrationEngine:Rollback de 'v20260520_02' completado con éxito.
-🔌 Conexión a MongoDB (Sync Driver) cerrada.
+  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/scripts/command.py", line 18, in <module>
+    from app.database.users_repository import UsersRepository
+ModuleNotFoundError: No module named 'app'

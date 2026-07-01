@@ -15,6 +15,13 @@ import getpass
 import sys
 from datetime import datetime
 
+from pathlib import Path
+
+# --- Inicio de la corrección de rutas ---
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
+# --- Fin de la corrección de rutas ---
+
 from app.database.users_repository import UsersRepository
 from app.database.projects_repository import ProjectsRepository
 
