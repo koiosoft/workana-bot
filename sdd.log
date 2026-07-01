@@ -1,5 +1,39 @@
-(.venv) ➜  workana-bot git:(main) python3 scripts/command.py
-Traceback (most recent call last):
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/scripts/command.py", line 18, in <module>
-    from app.database.users_repository import UsersRepository
-ModuleNotFoundError: No module named 'app'
+Cuando se ejecuta el comando /lista en Telegram, puede ser que necesitaactivar la sesion en workana, 
+pero entonces debe dar un mensaje de error adecuado. en  Telegram.
+
+Ademas, debes dar como gardar la sesión /state.json'
+
+
+
+workana_bot  | 2026-07-01 16:19:57.803 | INFO     | app.scraper.adapters.workana:get_projects:53 - 🕸️ Iniciando scraping exhaustivo (Filtro: 1w)...
+workana_bot  | 2026-07-01 16:19:58.892 | INFO     | app.scraper.adapters.workana:get_projects:65 - 🔐 Cargando sesión desde ./state.json...
+workana_bot  | No error handlers are registered, logging exception.
+workana_bot  | Traceback (most recent call last):
+workana_bot  |   File "/usr/local/lib/python3.11/site-packages/telegram/ext/_application.py", line 1315, in process_update
+workana_bot  |     await coroutine
+workana_bot  |   File "/usr/local/lib/python3.11/site-packages/telegram/ext/_handlers/basehandler.py", line 159, in handle_update
+workana_bot  |     return await self.callback(update, context)
+workana_bot  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+workana_bot  |   File "/usr/src/app/bots/telegram/handlers.py", line 142, in fetch_projects
+workana_bot  |     projects = await scraper.get_projects()
+workana_bot  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+workana_bot  |   File "/usr/src/app/scraper/adapters/workana.py", line 70, in get_projects
+workana_bot  |     context = await browser.new_context(**context_kwargs)
+workana_bot  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+workana_bot  |   File "/usr/local/lib/python3.11/site-packages/playwright/async_api/_generated.py", line 14026, in new_context
+workana_bot  |     await self._impl_obj.new_context(
+workana_bot  |   File "/usr/local/lib/python3.11/site-packages/playwright/_impl/_browser.py", line 169, in new_context
+workana_bot  |     await self._browser_type._prepare_browser_context_params(params)
+workana_bot  |   File "/usr/local/lib/python3.11/site-packages/playwright/_impl/_browser_type.py", line 316, in _prepare_browser_context_params
+workana_bot  |     (await async_readfile(storageState)).decode()
+workana_bot  |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+workana_bot  |   File "/usr/local/lib/python3.11/site-packages/playwright/_impl/_helper.py", line 535, in async_readfile
+workana_bot  |     return await loop.run_in_executor(None, inner)
+workana_bot  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+workana_bot  |   File "/usr/local/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+workana_bot  |     result = self.fn(*self.args, **self.kwargs)
+workana_bot  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+workana_bot  |   File "/usr/local/lib/python3.11/site-packages/playwright/_impl/_helper.py", line 531, in inner
+workana_bot  |     with open(file, "rb") as fh:
+workana_bot  |          ^^^^^^^^^^^^^^^^
+workana_bot  | IsADirectoryError: [Errno 21] Is a directory: './state.json'

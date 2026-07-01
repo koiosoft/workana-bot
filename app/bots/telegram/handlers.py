@@ -139,7 +139,31 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"No se pudo enviar notificación inicial a Telegram: {e}")
     
     scraper = ScraperFactory.get_scraper()
-    projects = await scraper.get_projects()
+
+    # Validate state file exists before attempting scraping
+    if hasattr(scraper, 'state_file') and not os.path.isfile(scraper.state_file):
+        logger.error(f"❌ Archivo de sesión no encontrado: {scraper.state_file}")
+        try:
+            await update.message.reply_text(
+                "⚠️ Archivo de sesión (state.json) no encontrado. "
+                "Ejecuta `scripts/extract_session.py` para generar un nuevo estado de usuario."
+            )
+        except Exception as ne:
+            logger.warning(f"No se pudo enviar notificación de sesión faltante a Telegram: {ne}")
+        return
+
+    try:
+        projects = await scraper.get_projects()
+    except Exception as e:
+        logger.error(f"❌ Error durante el scraping: {e}", exc_info=True)
+        try:
+            await update.message.reply_text(
+                "⚠️ Error al buscar proyectos: Hubo un problema con la sesión de navegación. "
+                "Intenta nuevamente o verifica el estado del scraper."
+            )
+        except Exception as ne:
+            logger.warning(f"No se pudo enviar notificación de error de scraping a Telegram: {ne}")
+        return
     logger.info(f"Se obtuvieron {len(projects)} proyectos del scraping.")
 
     if not projects:

@@ -1,5 +1,6 @@
 import re
 import os
+import shutil
 from datetime import datetime, timezone
 from urllib.parse import urljoin
 from playwright.async_api import Page, async_playwright, TimeoutError as PlaywrightTimeoutError
@@ -8,7 +9,7 @@ from ..base import ScraperPort
 
 class WorkanaScraperAdapter(ScraperPort):
     def __init__(self):
-            self.state_file = "./state.json"
+            self.state_file = os.getenv("STATE_FILE_PATH", "/usr/src/app/state.json")
             self.browser_profile = {
                 "user_agent": os.getenv(
                     "WORKANA_USER_AGENT",
@@ -60,9 +61,22 @@ class WorkanaScraperAdapter(ScraperPort):
                 args=["--no-sandbox", "--disable-setuid-sandbox"]
             )
             context_kwargs = {}
-            if os.path.exists(self.state_file) and os.path.getsize(self.state_file) > 0:
+            if os.path.isfile(self.state_file) and os.path.getsize(self.state_file) > 0:
                 context_kwargs["storage_state"] = self.state_file
                 logger.info(f"🔐 Cargando sesión desde {self.state_file}...")
+            elif os.path.exists(self.state_file):
+                logger.warning(
+                    f"⚠️ {self.state_file} existe pero no es un archivo regular (posible directorio). "
+                    "Eliminando entrada inválida y procediendo sin sesión."
+                )
+                try:
+                    if os.path.isdir(self.state_file):
+                        shutil.rmtree(self.state_file)
+                    else:
+                        os.remove(self.state_file)
+                except Exception as cleanup_err:
+                    logger.error(f"No se pudo eliminar {self.state_file}: {cleanup_err}")
+                logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
             else:
                 logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
 
@@ -241,9 +255,22 @@ class WorkanaScraperAdapter(ScraperPort):
         """
         async with async_playwright() as p:
             context_kwargs = {}
-            if os.path.exists(self.state_file) and os.path.getsize(self.state_file) > 0:
+            if os.path.isfile(self.state_file) and os.path.getsize(self.state_file) > 0:
                 context_kwargs["storage_state"] = self.state_file
                 logger.info(f"🔐 Cargando sesión desde {self.state_file}...")
+            elif os.path.exists(self.state_file):
+                logger.warning(
+                    f"⚠️ {self.state_file} existe pero no es un archivo regular (posible directorio). "
+                    "Eliminando entrada inválida y procediendo sin sesión."
+                )
+                try:
+                    if os.path.isdir(self.state_file):
+                        shutil.rmtree(self.state_file)
+                    else:
+                        os.remove(self.state_file)
+                except Exception as cleanup_err:
+                    logger.error(f"No se pudo eliminar {self.state_file}: {cleanup_err}")
+                logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
             else:
                 logger.warning(f"⚠️ No existe una sesión válida en {self.state_file}.")
 
