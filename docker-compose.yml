@@ -35,7 +35,7 @@ services:
       - workana_network
 
   mongodb:
-    image: mongo:8.0
+    image: mongo:8.0.4
     container_name: workana_db
     restart: always
     ports:
