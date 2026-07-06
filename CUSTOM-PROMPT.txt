@@ -27,9 +27,19 @@ Now, based on the following objective and the code context provided in the `STRI
 
 REQUIREMENTS:
 
-- Review scripts/extract_session.py and analyze scrapping techniques for session extraction.
+Let's take as an example that we have AI Model Adapters where there are two variables: STANDARD_MODEL and PREMIUM_MODEL. We use STANDARD_MODEL, among other things, to format descriptions, assign AI scores, and so on. Meanwhile, we use PREMIUM_MODEL to generate project proposals. Examples include GeminiAdapter and OpenRouterAdapter.
 
-- On extract_session.py  implement complete anti-detection scripts including removal of all navigator automation properties, simulation of chrome objects, WebGL override, canvas fingerprint override, and CDP mark removal.
+In the Intelligence factory, we use a unique identifier key for each provider to identify each Adapter:
 
-- On extract_session.py configure browser launch arguments and context settings with stealth options including disable-blink-features, realistic user agent, proper viewport, and complete HTTP headers.
+* "gemini" for GeminiAdapter
+* "openrouter" for OpenRouterAdapter
 
+The following is required:
+
+Taking into account the existence of the Model Collections (LLMs), whose REST queries we have already performed, we must:
+
+- Incorporate REST endpoints for creating, editing, and deleting Model Providers (LLMs).
+- Incorporate REST endpoints for creating, editing, and deleting Models (LLMs).
+- Create a REST endpoint that, in a single query, sets one Model ID to `is_default` and another Model ID to `is_premium`. When doing so, the previous values ​​should be set to `false`.
+- Incorporate the corresponding Unit Tests.
+- Incorporate the corresponding Integration Tests.

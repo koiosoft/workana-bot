@@ -19,11 +19,21 @@ STANDARD_MODEL = "models/gemini-2.5-flash" # 2000 RPM - Pago (muy barato)
 PREMIUM_MODEL = "models/gemini-2.5-pro"    # 2 RPM - Pago (1.5 centavos)
 
 class GeminiAdapter(IntelligencePort):
-    def __init__(self):
+    def __init__(
+        self,
+        standard_model: str | None = None,
+        premium_model: str | None = None,
+    ):
         self.default_strategy = "none"
         self.flash_strategy = 'flash'
         self.pro_strategy = 'pro'
         self.delay_model = 1
+
+        # Allow overriding model IDs from the database-driven factory.
+        # Fall back to module-level constants when no override is provided.
+        self._standard_model_override = standard_model
+        self._premium_model_override = premium_model
+
         template_path = os.path.join(os.path.dirname(__file__), '../prompts')
         self.jinja_env = Environment(loader=FileSystemLoader(template_path))
 
@@ -252,9 +262,9 @@ class GeminiAdapter(IntelligencePort):
     def set_gemini_model(self, strategy = "none") -> str:
         self.model_id = FILTER_MODEL
         if strategy == self.pro_strategy:
-            self.model_id  = PREMIUM_MODEL
-        elif strategy == self.flash_strategy :
-            self.model_id  = STANDARD_MODEL
+            self.model_id = self._premium_model_override or PREMIUM_MODEL
+        elif strategy == self.flash_strategy:
+            self.model_id = self._standard_model_override or STANDARD_MODEL
         return self.model_id 
 
     def set_delay_model(self, strategy = "none") -> float:

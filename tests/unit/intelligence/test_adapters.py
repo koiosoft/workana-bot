@@ -209,8 +209,8 @@ def test_select_model_flash_strategy(adapter: OpenRouterAdapter) -> None:
 def test_select_model_pro_strategy(adapter: OpenRouterAdapter) -> None:
     """Pro strategy should set PREMIUM_MODEL."""
     result = adapter._select_model("pro")
-    assert result == "google/gemini-2.5-pro"
-    assert adapter.model_id == "google/gemini-2.5-pro"
+    assert result == "deepseek/deepseek-v4-pro"
+    assert adapter.model_id == "deepseek/deepseek-v4-pro"
 
 
 # ------------------------------------------------------------------
@@ -240,3 +240,187 @@ def test_set_delay_override(adapter: OpenRouterAdapter) -> None:
     """GEMINI_DELAY_OVERRIDE env var should take precedence."""
     with patch.dict(os.environ, {"GEMINI_DELAY_OVERRIDE": "2.5"}):
         assert adapter._set_delay("none") == 2.5
+
+
+# ------------------------------------------------------------------
+#  Database-driven model override tests (OpenRouterAdapter)
+# ------------------------------------------------------------------
+
+
+class TestOpenRouterAdapterModelOverrides:
+    """Validate that OpenRouterAdapter uses DB-provided model IDs when given."""
+
+    def test_constructor_accepts_model_overrides(self) -> None:
+        """Should accept standard_model and premium_model in constructor."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}):
+            adapter = OpenRouterAdapter(
+                standard_model="custom-standard-model",
+                premium_model="custom-premium-model",
+            )
+        assert adapter._standard_model_override == "custom-standard-model"
+        assert adapter._premium_model_override == "custom-premium-model"
+
+    def test_select_model_standard_uses_override(self) -> None:
+        """_select_model('flash') should prefer the override over hardcoded."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}):
+            adapter = OpenRouterAdapter(standard_model="db-standard")
+        result = adapter._select_model("flash")
+        assert result == "db-standard"
+        assert adapter.model_id == "db-standard"
+
+    def test_select_model_premium_uses_override(self) -> None:
+        """_select_model('pro') should prefer the override over hardcoded."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}):
+            adapter = OpenRouterAdapter(premium_model="db-premium")
+        result = adapter._select_model("pro")
+        assert result == "db-premium"
+        assert adapter.model_id == "db-premium"
+
+    def test_select_model_falls_back_when_override_is_none(self) -> None:
+        """When override is None, should fall back to hardcoded STANDARD_MODEL."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}):
+            adapter = OpenRouterAdapter()
+        result = adapter._select_model("flash")
+        assert result == STANDARD_MODEL
+        assert adapter.model_id == STANDARD_MODEL
+
+    def test_select_model_premium_falls_back_when_override_is_none(self) -> None:
+        """When premium override is None, should fall back to hardcoded PREMIUM_MODEL."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}):
+            adapter = OpenRouterAdapter()
+        result = adapter._select_model("pro")
+        assert result == "deepseek/deepseek-v4-pro"
+
+    def test_default_strategy_also_uses_standard_override(self) -> None:
+        """_select_model with no strategy ('none') should use the standard override."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}):
+            adapter = OpenRouterAdapter(standard_model="db-default")
+        result = adapter._select_model("none")
+        assert result == "db-default"
+
+    def test_override_does_not_affect_delay(self) -> None:
+        """Model overrides should not affect delay calculation."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}, clear=True):
+            adapter = OpenRouterAdapter(
+                standard_model="db-s", premium_model="db-p"
+            )
+        with patch.dict(os.environ, {}, clear=True):
+            assert adapter._set_delay("flash") == 1.0
+            assert adapter._set_delay("pro") == 35.0
+
+
+# ------------------------------------------------------------------
+#  Database-driven model override tests (GeminiAdapter)
+# ------------------------------------------------------------------
+
+
+class TestGeminiAdapterModelOverrides:
+    """Validate that GeminiAdapter uses DB-provided model IDs when given."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_genai(self) -> None:
+        """Prevent GeminiAdapter from making real API client calls."""
+        with patch("app.intelligence.adapters.gemini.genai.Client"):
+            yield
+
+    def test_constructor_accepts_model_overrides(self) -> None:
+        """Should accept standard_model and premium_model in constructor."""
+        from app.intelligence.adapters.gemini import GeminiAdapter
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-key"}):
+            adapter = GeminiAdapter(
+                standard_model="db-gemini-standard",
+                premium_model="db-gemini-premium",
+            )
+        assert adapter._standard_model_override == "db-gemini-standard"
+        assert adapter._premium_model_override == "db-gemini-premium"
+
+    def test_set_model_flash_uses_override(self) -> None:
+        """set_gemini_model('flash') should use the standard override."""
+        from app.intelligence.adapters.gemini import GeminiAdapter
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-key"}):
+            adapter = GeminiAdapter(standard_model="db-gs")
+        result = adapter.set_gemini_model("flash")
+        assert result == "db-gs"
+        assert adapter.model_id == "db-gs"
+
+    def test_set_model_pro_uses_override(self) -> None:
+        """set_gemini_model('pro') should use the premium override."""
+        from app.intelligence.adapters.gemini import GeminiAdapter
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-key"}):
+            adapter = GeminiAdapter(premium_model="db-gp")
+        result = adapter.set_gemini_model("pro")
+        assert result == "db-gp"
+        assert adapter.model_id == "db-gp"
+
+    def test_set_model_falls_back_to_hardcoded_standard(self) -> None:
+        """When no override given, should use hardcoded STANDARD_MODEL for flash."""
+        from app.intelligence.adapters.gemini import (
+            GeminiAdapter,
+            STANDARD_MODEL as GEMINI_STANDARD,
+        )
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-key"}):
+            adapter = GeminiAdapter()
+        result = adapter.set_gemini_model("flash")
+        assert result == GEMINI_STANDARD
+
+    def test_set_model_falls_back_to_hardcoded_premium(self) -> None:
+        """When no override given, should use hardcoded PREMIUM_MODEL for pro."""
+        from app.intelligence.adapters.gemini import (
+            GeminiAdapter,
+            PREMIUM_MODEL as GEMINI_PREMIUM,
+        )
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-key"}):
+            adapter = GeminiAdapter()
+        result = adapter.set_gemini_model("pro")
+        assert result == GEMINI_PREMIUM
+
+    def test_set_model_default_strategy_uses_filter_model(self) -> None:
+        """The default strategy ('none') should still use FILTER_MODEL, not overrides."""
+        from app.intelligence.adapters.gemini import (
+            FILTER_MODEL,
+            GeminiAdapter,
+        )
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-key"}):
+            adapter = GeminiAdapter(
+                standard_model="db-gs", premium_model="db-gp"
+            )
+        result = adapter.set_gemini_model("none")
+        # FILTER_MODEL should be used for default, regardless of overrides
+        assert result == FILTER_MODEL
+
+    def test_override_does_not_affect_delay(self) -> None:
+        """Model overrides should not affect delay logic."""
+        from app.intelligence.adapters.gemini import GeminiAdapter
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-key"}):
+            adapter = GeminiAdapter(
+                standard_model="db-gs", premium_model="db-gp"
+            )
+        with patch.dict(os.environ, {}, clear=True):
+            assert adapter.set_delay_model("flash") == 1.0
+            assert adapter.set_delay_model("pro") == 35.0
+
+    def test_generate_proposal_uses_model_override(
+        self, cb: MagicMock
+    ) -> None:
+        """Adapters should carry overrides through the full call chain."""
+        from app.intelligence.adapters.gemini import GeminiAdapter
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy-key"}):
+            adapter = GeminiAdapter(
+                standard_model="db-gs-from-proposal",
+                premium_model="db-gp-from-proposal",
+            )
+
+        assert adapter._standard_model_override == "db-gs-from-proposal"
+        assert adapter._premium_model_override == "db-gp-from-proposal"
+
+        # Simulate what happens during generate_proposal with a 'pro' strategy
+        adapter.set_gemini_model("pro")
+        assert adapter.model_id == "db-gp-from-proposal"

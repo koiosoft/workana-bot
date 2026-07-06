@@ -26,11 +26,20 @@ class OpenRouterAdapter(IntelligencePort):
     compatible con OpenAI, permitiendo enrutar solicitudes a distintos modelos.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        standard_model: str | None = None,
+        premium_model: str | None = None,
+    ) -> None:
         self.default_strategy = "none"
         self.flash_strategy = "flash"
         self.pro_strategy = "pro"
         self.delay_model = 1.0
+
+        # Allow overriding model IDs from the database-driven factory.
+        # Fall back to module-level constants when no override is provided.
+        self._standard_model_override = standard_model
+        self._premium_model_override = premium_model
 
         template_path = os.path.join(os.path.dirname(__file__), "../prompts")
         self.jinja_env = Environment(loader=FileSystemLoader(template_path))
@@ -60,11 +69,11 @@ class OpenRouterAdapter(IntelligencePort):
         Devuelve el nombre del modelo en formato OpenRouter (e.g. google/gemini-2.5-flash).
         """
         if strategy == self.pro_strategy:
-            self.model_id = PREMIUM_MODEL
+            self.model_id = self._premium_model_override or PREMIUM_MODEL
         elif strategy == self.flash_strategy:
-            self.model_id = STANDARD_MODEL
+            self.model_id = self._standard_model_override or STANDARD_MODEL
         else:
-            self.model_id = STANDARD_MODEL  # default
+            self.model_id = self._standard_model_override or STANDARD_MODEL  # default
         return self.model_id
 
     def _set_delay(self, strategy: str = "none") -> float:
