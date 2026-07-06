@@ -36,28 +36,12 @@ In the Intelligence factory, we use a unique identifier key for each provider to
 
 The following is required:
 
--  Generate a collection for the Providers, with the fields: key (text field required), name (text field required), url  (text field required).
+Taking into account the existence of the Model Collections (LLMs), whose REST queries we have already performed, we must:
 
-- Generate a collection for the Models, with the fields model_id (text field), provider_key (text field), 
-is_default(boolean field), and is_premium (bolean field). All models with is_premium are "standard".
-The collection must enforce the following constraints:
-There can be no more than 2 documents where is_default is true.
-There can be exactly 1 document where is_default is true and is_premium is true.
-There can be exactly 1 document where is_default is true and is_premium is false.
-This means that the only allowed combinations for is_default: true are:
-{ is_default: true, is_premium: true } → limited to 1 record
-{ is_default: true, is_premium: false } → limited to 1 record
-Any other combination with is_default: false has no restrictions.
+Detail Reference: app/api/routes/models.py
 
-- Load, through migrations, the currently existing models, which are found in the constants STANDARD_MODEL and PREMIUM_MODEL on the adapters. 
-Define currently models "OpenRouter" how defaults standard and premium following previous rules.
-
-- Implement an endpoint that displays a list of Providers 
-
-- Implement an endpoint that displays a list of Standard or Premium models, including the brand of those selected by default, through a "standard" or "premium" filter.
-
-- Implement an endpoint that receives the model ID and indicates whether it is premium or standard, to assign it.
-
-- Add relevant unit tests and validate existing ones.
-
-- Add relevant integration tests and validate existing ones.
+- Incorporate REST endpoints for creating, editing, and deleting Model Providers (LLMs) (PUT, POST, DELETE).
+- Incorporate REST endpoints for creating, editing, and deleting Models (LLMs) (PUT, POST, DELETE).
+- Create a REST endpoint that, in a single query, sets one Model ID to `is_default` and another Model ID to `is_premium`. When doing so, the previous values ​​should be set to `false`. (PUT)
+- Incorporate the corresponding Unit Tests.
+- Incorporate the corresponding Integration Tests.

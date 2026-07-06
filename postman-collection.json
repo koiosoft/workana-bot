@@ -1,0 +1,459 @@
+{
+  "info": {
+    "name": "Workana Bot - Models & Providers API",
+    "description": "REST API for managing AI Model Providers and LLM Models. Includes CRUD operations with soft-delete, mutual exclusion for default models, and cascade deletion.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "workana-bot"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Providers",
+      "item": [
+        {
+          "name": "List All Providers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 - Returns provider list\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response is an array\", function () {",
+                  "    pm.response.to.be.json;",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/models/providers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models", "providers"]
+            },
+            "description": "Returns all registered AI model providers from the providers collection."
+          },
+          "response": [
+            {
+              "name": "200 - Providers List",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "[\n  {\n    \"_id\": \"6a4bfcf05aa4dce247af189b\",\n    \"key\": \"openrouter\",\n    \"name\": \"OpenRouter\",\n    \"url\": \"https://openrouter.ai/api/v1\"\n  },\n  {\n    \"_id\": \"6a4bfcf05aa4dce247af189c\",\n    \"key\": \"gemini\",\n    \"name\": \"Google Gemini\",\n    \"url\": \"https://ai.google.dev\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Create Provider",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 201 - Provider created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test(\"Response contains key\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('key');",
+                  "    pm.expect(data).to.have.property('_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"openrouter\",\n  \"name\": \"OpenRouter\",\n  \"url\": \"https://openrouter.ai/api/v1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/models/providers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models", "providers"]
+            },
+            "description": "Creates a new AI model provider.\n\n**Validation:**\n- `key` (string, required, unique) — Provider identifier (e.g., 'openrouter')\n- `name` (string, required) — Human-readable name\n- `url` (string, required) — Provider base URL\n\n**Possible Errors:**\n- 409 Conflict — Duplicate key\n- 422 Validation Error — Missing fields"
+          },
+          "response": [
+            {
+              "name": "201 - Created",
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"_id\": \"6a4bfcf05aa4dce247af189b\",\n  \"key\": \"openrouter\",\n  \"name\": \"OpenRouter\",\n  \"url\": \"https://openrouter.ai/api/v1\"\n}"
+            },
+            {
+              "name": "409 - Duplicate",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"detail\": {\n    \"error\": \"Conflict\",\n    \"message\": \"A provider with key 'openrouter' already exists.\"\n  }\n}"
+            },
+            {
+              "name": "422 - Validation Error",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"missing\",\n      \"loc\": [\"body\", \"name\"],\n      \"msg\": \"Field required\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Provider",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 - Provider updated\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Updated name matches\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.name).to.eql('OpenRouter v2');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"OpenRouter v2\",\n  \"url\": \"https://new.url\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/models/providers/openrouter",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models", "providers", "openrouter"]
+            },
+            "description": "Updates an existing provider by its unique key.\n\n**Path Parameter:**\n- `provider_key` (string) — The provider's unique key\n\n**Body (all fields optional):**\n- `name` (string, min 1) — New name\n- `url` (string, min 1) — New URL\n\n**Possible Errors:**\n- 404 Not Found — Provider doesn't exist\n- 400 Bad Request — Empty body\n- 422 Validation Error — Empty strings"
+          },
+          "response": [
+            {
+              "name": "200 - Updated",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"key\": \"openrouter\",\n  \"name\": \"OpenRouter v2\",\n  \"url\": \"https://new.url\"\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"detail\": {\n    \"error\": \"Not Found\",\n    \"message\": \"Provider with key 'openrouter' not found.\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Soft-Delete Provider",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 - Provider soft-deleted\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response includes cascade count\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('cascaded_models');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/models/providers/openrouter",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models", "providers", "openrouter"]
+            },
+            "description": "Soft-deletes a provider by setting `is_deleted: true`. Also cascades the soft-delete to all associated models.\n\n**Path Parameter:**\n- `provider_key` (string) — The provider's unique key\n\n**Response:**\n- `message` — Confirmation message\n- `cascaded_models` — Number of associated models also soft-deleted\n\n**Possible Errors:**\n- 404 Not Found — Provider doesn't exist"
+          },
+          "response": [
+            {
+              "name": "200 - Deleted",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"message\": \"Provider 'openrouter' soft-deleted successfully.\",\n  \"cascaded_models\": 2\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"detail\": {\n    \"error\": \"Not Found\",\n    \"message\": \"Provider with key 'openrouter' not found.\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Models",
+      "item": [
+        {
+          "name": "List Models",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 - Returns model list\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response is an array\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/models",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models"],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "standard",
+                  "description": "Filter by tier: 'standard' (non-premium) or 'premium' (premium only). Omit for all.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns models enriched with provider information.\n\n**Query Parameters (optional):**\n- `filter=standard` — Only non-premium models\n- `filter=premium` — Only premium models\n- Omitted — All models"
+          },
+          "response": [
+            {
+              "name": "200 - Models List",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"_id\": \"6a4bfcf05aa4dce247af189c\",\n    \"model_id\": \"gpt-4o\",\n    \"provider_key\": \"openrouter\",\n    \"is_default\": true,\n    \"is_premium\": false,\n    \"provider_name\": \"OpenRouter\",\n    \"provider_url\": \"https://openrouter.ai/api/v1\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Create Model",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 201 - Model created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test(\"Response contains model_id\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('model_id');",
+                  "    pm.expect(data).to.have.property('_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model_id\": \"gpt-4o\",\n  \"provider_key\": \"openrouter\",\n  \"is_default\": true,\n  \"is_premium\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/models",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models"]
+            },
+            "description": "Creates a new LLM model entry.\n\n**Validation:**\n- `model_id` (string, required) — Unique model identifier\n- `provider_key` (string, required) — Must reference an existing provider\n- `is_default` (boolean, required) — Mark as default for its tier\n- `is_premium` (boolean, required) — Premium or standard tier\n\n**Possible Errors:**\n- 400 Bad Request — Provider not found\n- 409 Conflict — Duplicate (model_id + provider_key)\n- 422 Validation Error — Missing/invalid fields"
+          },
+          "response": [
+            {
+              "name": "201 - Created",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"_id\": \"6a4bfcf05aa4dce247af189c\",\n  \"model_id\": \"gpt-4o\",\n  \"provider_key\": \"openrouter\",\n  \"is_default\": true,\n  \"is_premium\": false\n}"
+            },
+            {
+              "name": "400 - Provider Not Found",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"detail\": {\n    \"error\": \"Bad Request\",\n    \"message\": \"Provider with key 'nonexistent' does not exist.\"\n  }\n}"
+            },
+            {
+              "name": "409 - Duplicate",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"detail\": {\n    \"error\": \"Conflict\",\n    \"message\": \"A model with model_id 'gpt-4o' and provider_key 'openrouter' already exists.\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Model Flags",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 - Model updated\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Flags updated correctly\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.is_premium).to.be.true;",
+                  "    pm.expect(data.is_default).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_default\": false,\n  \"is_premium\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/models/gpt-4o",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models", "gpt-4o"]
+            },
+            "description": "Updates model flags (is_default, is_premium).\n\n**Path Parameter:**\n- `model_id` (string) — The model's unique identifier\n\n**Body (all optional):**\n- `is_default` (boolean) — Mark as default for its tier\n- `is_premium` (boolean) — Move to premium/standard tier\n\n**Mutual Exclusion:** Setting `is_default=true` automatically unsets `is_default` on all other models in the same tier.\n\n**Possible Errors:**\n- 404 Not Found — Model doesn't exist\n- 400 Bad Request — Empty body\n- 422 Validation Error — Non-boolean values"
+          },
+          "response": [
+            {
+              "name": "200 - Updated",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"model_id\": \"gpt-4o\",\n  \"provider_key\": \"openrouter\",\n  \"is_default\": false,\n  \"is_premium\": true\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"detail\": {\n    \"error\": \"Not Found\",\n    \"message\": \"Model with id 'gpt-4o' not found.\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Soft-Delete Model",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status 200 - Model soft-deleted\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Returns success message\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.message).to.include('soft-deleted');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/models/gpt-4o",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models", "gpt-4o"]
+            },
+            "description": "Soft-deletes a model by setting `is_deleted: true`. Historical usage records are preserved.\n\n**Path Parameter:**\n- `model_id` (string) — The model's unique identifier\n\n**Possible Errors:**\n- 404 Not Found — Model doesn't exist"
+          },
+          "response": [
+            {
+              "name": "200 - Deleted",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"message\": \"Model 'gpt-4o' soft-deleted successfully.\"\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{\n  \"detail\": {\n    \"error\": \"Not Found\",\n    \"message\": \"Model with id 'gpt-4o' not found.\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
