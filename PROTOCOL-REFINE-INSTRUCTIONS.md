@@ -1,9 +1,28 @@
-Read ./INSTRUCTIONS.md (it is located next to PROTOCOL-REFINE-INSTRUCTIONS.md, in the same directory). Analyze the current project structure, source files, and key artifacts. Compare them against the tasks and artifacts listed in INSTRUCTIONS.md. 
+**STEP 1 (SOURCE OF TRUTH):**
+Read the file ./CUSTOM-PROMPT.txt completely. This file contains the original, immutable requirements of the project.
 
-If you find any mismatch (missing artifacts, outdated paths, completed tasks still marked as pending, or contradictory rules), update ./INSTRUCTIONS.md accordingly. 
-IMPORTANT: 
-- ONLY modify ./INSTRUCTIONS.md. 
-- Preserve its exact formatting (headings, bullets, indentation).
-- If everything matches, make NO changes.
+**STEP 2 (THE EXISTING PLAN):**
+Read ./INSTRUCTIONS.md (located next to PROTOCOL-REFINE-INSTRUCTIONS.md). 
+**CRITICAL:** This file already contains a full list of artifacts, tasks, and paths derived from CUSTOM-PROMPT.txt. Your job is NOT to rebuild this list from the codebase. Your job is to verify its accuracy (unless that is necessary).
 
-After execution, report: "✅ Updated: [reason]" or "✅ No update needed."
+**STEP 3 (VALIDATION AGAINST REQUIREMENTS - vs CUSTOM-PROMPT.txt):**
+Compare the tasks and artifacts listed in ./INSTRUCTIONS.md against the functional requirements written in ./CUSTOM-PROMPT.txt. Ask yourself:
+- Is there any explicit requirement in CUSTOM-PROMPT.txt that lacks a corresponding task or artifact in INSTRUCTIONS.md? (If missing, you must add it).
+- Is there any task or artifact in INSTRUCTIONS.md that does not stem from CUSTOM-PROMPT.txt or contradicts it? (If redundant or incorrect, you must correct/remove it).
+
+**STEP 4 (VALIDATION AGAINST THE ACTUAL CODE - FOCUSED & SCOPED):**
+Take ONLY the specific paths, file names, and artifacts explicitly mentioned in ./INSTRUCTIONS.md.
+- Check the indexed project to verify whether those exact paths exist and whether the file names are up-to-date.
+- Check if any tasks marked as "pending" in ./INSTRUCTIONS.md have actually been implemented in those specific files.
+- **CRITICAL:** DO NOT analyze files that are not mentioned in INSTRUCTIONS.md. DO NOT generate new artifacts from scratch. Strictly limit yourself to cross-checking the items already written in the file.
+
+**UPDATE CRITERIA:**
+If you find ANY discrepancy in Steps 3 or 4 (orphaned requirements, fabricated tasks, outdated paths, or incorrect statuses), you MUST update ./INSTRUCTIONS.md to fix it.
+
+**STRICT RULES:**
+- ONLY modify the ./INSTRUCTIONS.md file.
+- Preserve its EXACT formatting (headings, bullets, indentation, structure). Do not alter the layout.
+- If everything matches perfectly (both against CUSTOM-PROMPT.txt and against the actual files mentioned), make NO changes.
+
+**FINAL REPORT:**
+When finished, respond ONLY with: "✅ Updated: [concrete reason for the change]" or "✅ No update needed."

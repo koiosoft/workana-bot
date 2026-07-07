@@ -169,3 +169,102 @@ def test_update_project_invalid_id(mock_repo):
     assert response.status_code == 400
     data = response.json()
     assert data["detail"]["error"] == "Bad Request"
+
+
+# ---------------------------------------------------------------------------
+# PATCH: proposal_versions creation (decoupling from projects.proposal)
+# ---------------------------------------------------------------------------
+
+class TestUpdateProjectProposalVersion:
+    """Verify that PATCH /api/projects/{id} creates proposal versions
+    correctly and never stores proposal data in the projects collection."""
+
+    def test_with_proposal_creates_version_not_stored_in_projects(self, mock_repo) -> None:
+        """When proposal data is included in the payload, it must create a new
+        version in proposal_versions with source_of_changes='HUMAN' and NOT
+        end up in the projects collection."""
+        mock_repo.update_project_by_id.return_value = True
+        mock_repo.get_project_by_id.return_value = {
+            "_id": "6a034f37d8e430e05690091b",
+            "link_hash": "abc123hash",
+        }
+
+        proposal_payload = {"cover_letter": "Hello", "milestones": []}
+
+        with patch(
+            "app.api.routes.projects.ProposalVersionsRepository"
+        ) as MockProposalsRepo:
+            mock_proposals = MockProposalsRepo.return_value
+            mock_proposals.insert_version = AsyncMock()
+
+            response = client.patch(
+                "/api/projects/6a034f37d8e430e05690091b",
+                json={"title": "New Title", "proposal": proposal_payload},
+            )
+
+            assert response.status_code == 200
+            assert response.json() == {"message": "Project updated successfully"}
+
+            # Must call insert_version with HUMAN source
+            mock_proposals.insert_version.assert_awaited_once_with(
+                project_id="6a034f37d8e430e05690091b",
+                link_hash="abc123hash",
+                proposal_data=proposal_payload,
+                source_of_changes="HUMAN",
+            )
+
+            # Must NOT call update_source_of_changes (no double-marking)
+            mock_proposals.update_source_of_changes.assert_not_called()
+
+            # Proposal field must be stripped before update_project_by_id
+            call_args = mock_repo.update_project_by_id.call_args
+            passed_data = call_args[0][1]
+            assert "proposal" not in passed_data
+            assert passed_data == {"title": "New Title"}
+
+    def test_without_proposal_marks_latest_as_human(self, mock_repo) -> None:
+        """When no proposal is in the payload, fall back to marking the latest
+        version's source_of_changes as 'HUMAN' without creating a version."""
+        mock_repo.update_project_by_id.return_value = True
+
+        with patch(
+            "app.api.routes.projects.ProposalVersionsRepository"
+        ) as MockProposalsRepo:
+            mock_proposals = MockProposalsRepo.return_value
+            mock_proposals.update_source_of_changes = AsyncMock()
+
+            response = client.patch(
+                "/api/projects/6a034f37d8e430e05690091b",
+                json={"title": "Only Title"},
+            )
+
+            assert response.status_code == 200
+
+            mock_proposals.update_source_of_changes.assert_awaited_once_with(
+                "6a034f37d8e430e05690091b", source="HUMAN"
+            )
+            mock_proposals.insert_version.assert_not_called()
+
+    def test_proposal_missing_link_hash_returns_500(self, mock_repo) -> None:
+        """When proposal data is sent but the project has no link_hash,
+        the endpoint must return a 500 error."""
+        mock_repo.update_project_by_id.return_value = True
+        mock_repo.get_project_by_id.return_value = {
+            "_id": "6a034f37d8e430e05690091b",
+            # deliberately no link_hash
+        }
+
+        with patch(
+            "app.api.routes.projects.ProposalVersionsRepository"
+        ) as MockProposalsRepo:
+            MockProposalsRepo.return_value
+
+            response = client.patch(
+                "/api/projects/6a034f37d8e430e05690091b",
+                json={"proposal": {"cover_letter": "Test"}},
+            )
+
+            assert response.status_code == 500
+            data = response.json()
+            assert data["detail"]["error"] == "Internal Server Error"
+            assert "link_hash" in data["detail"]["message"]

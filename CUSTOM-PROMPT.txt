@@ -27,14 +27,6 @@ Now, based on the following objective and the code context provided in the `STRI
 
 REQUIREMENTS:
 
-Currently, every time the project is updated, a version is generated in the MongoDB collection "proposal_versions".
-
-However, a field is needed in MongoDB, specifically in proposal_versions, called source_of_changes, with the values ​​"IA" or "HUMAN".
-
-Therefore, in the Telegram bot, when a proposal is created, the entry in proposal_versions must have the source_of_changes field set to "IA".
-
-When the project is updated, source_of_changes must be set to "HUMAN" when the proposal_versions collection is accessed.
-
-Unit tests must be validated, debugged, and created as needed.
-
-Integration tests must also be validated, debugged, and created as needed.
+- Correct the project update by ID in the API (patch: /api/projects/{projectId}), because it's using the "proposal" field in the "projects" collection. Instead, it should generate an entry in the "proposal_versions" collection, setting the "source_of_changes" field to "HUMAN".
+- Review, correct, and add the necessary unit tests.
+- Review, correct, and add the necessary integration tests.

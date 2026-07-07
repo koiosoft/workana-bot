@@ -71,13 +71,46 @@ async def update_project(
 
     repo = ProjectsRepository()
     try:
+        # Extract proposal data before passing to update_project_by_id,
+        # so it never lands in the projects collection.
+        proposal_data = update_data.pop("proposal", None)
+
         success = await repo.update_project_by_id(id, update_data)
         if not success:
             raise HTTPException(status_code=404, detail="Project not found or invalid ID")
 
-        # Mark the latest proposal version as human-edited
         proposals_repo = ProposalVersionsRepository()
-        await proposals_repo.update_source_of_changes(id, source="HUMAN")
+
+        if proposal_data is not None:
+            # Create a new proposal version with HUMAN as the source of changes
+            project = await repo.get_project_by_id(id)
+            link_hash = project.get("link_hash") if project else None
+
+            if not link_hash:
+                logger.error(
+                    f"Cannot insert proposal version – project {id} has no link_hash."
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "error": "Internal Server Error",
+                        "message": "Project is missing link_hash; cannot store proposal version.",
+                    },
+                )
+
+            await proposals_repo.insert_version(
+                project_id=id,
+                link_hash=link_hash,
+                proposal_data=proposal_data,
+                source_of_changes="HUMAN",
+            )
+            logger.info(
+                f"Created new proposal version for project {id} "
+                f"with source_of_changes=HUMAN"
+            )
+        else:
+            # No proposal payload – just mark the latest version as human-edited
+            await proposals_repo.update_source_of_changes(id, source="HUMAN")
 
         return {"message": "Project updated successfully"}
     except HTTPException:

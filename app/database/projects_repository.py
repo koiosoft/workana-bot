@@ -448,13 +448,19 @@ class ProjectsRepository:
         return await self.collection.find_one({"_id": obj_id})
 
     async def update_project_by_id(self, project_id: str, update_data: Dict[str, Any]) -> bool:
-        """Update a project by its MongoDB _id. Returns True if modified."""
+        """Update a project by its MongoDB _id. Returns True if modified.
+
+        The ``proposal`` field is explicitly stripped – proposal data now lives
+        exclusively in the ``proposal_versions`` collection.
+        """
         try:
             obj_id = ObjectId(project_id)
         except Exception:
             return False
         now = datetime.now(timezone.utc).isoformat()
         update_data["updated_at"] = now
+        # Never allow proposal data to be stored in the projects collection
+        update_data.pop("proposal", None)
         result = await self.collection.update_one(
             {"_id": obj_id},
             {"$set": update_data}
