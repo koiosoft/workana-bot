@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 from bson import ObjectId
 from bson.errors import InvalidId
 from app.database.projects_repository import ProjectsRepository
+from app.database.proposal_versions_repository import ProposalVersionsRepository
 from loguru import logger
 
 router = APIRouter(tags=["projects"])
@@ -73,6 +74,11 @@ async def update_project(
         success = await repo.update_project_by_id(id, update_data)
         if not success:
             raise HTTPException(status_code=404, detail="Project not found or invalid ID")
+
+        # Mark the latest proposal version as human-edited
+        proposals_repo = ProposalVersionsRepository()
+        await proposals_repo.update_source_of_changes(id, source="HUMAN")
+
         return {"message": "Project updated successfully"}
     except HTTPException:
         raise

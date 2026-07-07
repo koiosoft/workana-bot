@@ -1,39 +1,29 @@
 ## Current Objective
-Decouple the `proposal` data from the `projects` collection to enable full version history, audit trails, and AI-driven refinements while maintaining backward compatibility with all existing API responses.
+Add a `source_of_changes` field to MongoDB's `proposal_versions` collection with values "IA" (for proposals created by the Telegram bot) or "HUMAN" (for project updates), and ensure unit/integration tests validate this behavior.
 
 ## Key Artifacts (to focus on)
 - **Files**:  
-  - `app/models/project.py` (current embedded proposal structure)  
-  - `app/database/projects_repository.py` (project data access logic)  
-  - `app/api/routes/projects.py` (GET /api/projects/{projectId} and paginated endpoints)  
-  - `app/models/models.py` (Pydantic models for API responses)  
-  - `tests/unit/database/test_projects_repository.py` (unit tests for repository logic)  
-  - `tests/integration/test_projects.py` (integration tests for API endpoints)  
-  - `app/database/mongo.py` (MongoDB connection and collection management)  
-  - New file: `app/database/proposal_versions_repository.py`  
-  - New file: `tests/unit/database/test_proposal_versions_repository.py`  
-
+  - `app/models/proposal_version.py`  
+  - `app/database/proposal_versions_repository.py`  
+  - `app/api/routes/projects.py`  
+  - `tests/unit/database/test_proposal_versions_repository.py`  
+  - `tests/integration/test_proposal_versions.py` (new file)  
 - **Classes/Interfaces**:  
-  - `Project` (Pydantic model in `app/models/project.py`)  
-  - `ProjectsRepository` (MongoDB access layer in `app/database/projects_repository.py`)  
-  - `ProposalVersionsRepository` (new repository class)  
-  - `IntelligencePort` (AI adapter interface in `app/intelligence/port.py`)  
-
+  - `ProposalVersion` (Pydantic model)  
+  - `ProposalVersionsRepository`  
+  - `update_project` (API endpoint)  
 - **Configuration**:  
-  - MongoDB collection names (`projects`, `proposal_versions`)  
-  - Environment variables for MongoDB connection (`MONGO_URI`)  
+  - MongoDB schema for `proposal_versions` collection  
 
 ## Task List
-- [x] Read `app/models/project.py` to analyze the structure of the `proposal` field, then create `app/models/proposal_version.py` containing `ProposalVersion` model that extends the proposal schema with version control fields: `version_number`, `project_id`, `refinement_log`, and `created_at`.  
-- [x] Examine `app/database/projects_repository.py` and modify its `save_project` method to no longer store `proposal` data in the `projects` collection. Instead, create a new class `ProposalVersionsRepository` in `app/database/proposal_versions_repository.py` with methods to insert, query, and aggregate proposal versions.  
-- [x] Modify `app/api/routes/projects.py` to update the `get_project` endpoint: query `proposal_versions` for the latest version matching `project_id`, sort by `version_number` descending, and populate the `proposal` field in the API response using the same structure as before.  
-- [x] Update the paginated `list_projects` endpoint in `app/api/routes/projects.py` to implement a two-step query strategy: fetch project metadata, extract `project_ids`, and use MongoDB aggregation on `proposal_versions` to group by `project_id` and retain the latest version. Map results back to the project list.  
-- [x] Modify `app/database/mongo.py` to add compound indexes on the `proposal_versions` collection: `(project_id, version_number)` and `(project_id)` for performance.  
-- [x] Read `app/intelligence/adapters/gemini.py` to analyze its `generate_proposal` method implementation, then modify both `app/intelligence/adapters/gemini.py` and `app/intelligence/adapters/openrouter.py` to insert new proposal versions into `proposal_versions` collection with `version_number = MAX + 1` during refinements instead of updating embedded proposals.  
-- [x] Create `app/migrations/migrate_proposals_to_versions.py` by reading `app/models/project.py` to extract proposal schema, then implement a script that: 1) Iterates projects collection; 2) Extracts embedded `proposal` field; 3) Transforms into `proposal_versions` documents with `version_number = 1` and null refinement/user fields; 4) Inserts into new collection.  
-- [x] Read `app/database/proposal_versions_repository.py` to understand its API, then create `tests/unit/database/test_proposal_versions_repository.py` with unit tests for: 1) Insert operations 2) Latest version lookup 3) Aggregation queries 4) Index validation.  
-- [x] Modify `tests/integration/test_projects.py` to add integration tests for the `GET /api/projects/{projectId}` and `GET /api/projects` endpoints, verifying that the `proposal` field is populated correctly from `proposal_versions` and handles missing versions gracefully.  
-- [x] Read `app/database/mongo.py` to understand indexing strategy, then implement unit tests in `tests/unit/database/test_proposal_versions_repository.py` for: 1) Compound index validation 2) Query performance 3) Aggregation pipeline accuracy.  
-- [x] Update `app/models/models.py` to ensure that the `ProposalVersion` model aligns with the API response structure, maintaining backward compatibility with existing frontend code.  
+- [x] Read `app/models/proposal_version.py` to understand the `ProposalVersion` Pydantic model, then modify it to include a new field `source_of_changes: Optional[str] = Field(None, description="Source of changes: 'IA' or 'HUMAN'")` to ensure MongoDB documents can store this value.  
+- [x] Examine `app/database/proposal_versions_repository.py` and modify the `insert_version` method to include `source_of_changes="IA"` in the `doc` dictionary when inserting a new proposal version.  
+- [x] Add a new method `update_source_of_changes` to `ProposalVersionsRepository` that updates the `source_of_changes` field to "HUMAN" for the latest version of a given `project_id`. This method should query the latest version using `get_latest_version`, update its `source_of_changes` field, and save the change.  
+- [x] Read `app/api/routes/projects.py` and modify the `update_project` function to call `update_source_of_changes` on `ProposalVersionsRepository` with `source_of_changes="HUMAN"` after successfully updating the project.  
+- [x] Create a new file `tests/integration/test_proposal_versions.py` and write integration tests to verify that:  
+  - `source_of_changes` is set to "IA" when a proposal is inserted via the Telegram bot.  
+  - `source_of_changes` is set to "HUMAN" when a project is updated through the API.  
+- [x] Examine `tests/unit/database/test_proposal_versions_repository.py` and add unit tests for the new `insert_version` logic (verifying "IA" is set) and the new `update_source_of_changes` method (verifying "HUMAN" is set).  
+- [x] Ensure all test files use `pytest.mark.asyncio` and include proper mocks for database interactions, adhering to the project's test structure and type hinting requirements.  
 
 ## End Task List

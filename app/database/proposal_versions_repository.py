@@ -76,6 +76,7 @@ class ProposalVersionsRepository:
             "version_number": next_version,
             "proposal_data": proposal_data,
             "created_at": datetime.now(timezone.utc),
+            "source_of_changes": "IA",
         }
         if refinement_log is not None:
             doc["refinement_log"] = refinement_log
@@ -87,6 +88,37 @@ class ProposalVersionsRepository:
             f"for project_id={project_id}"
         )
         return inserted_id
+
+    async def update_source_of_changes(
+        self, project_id: str, source: str = "HUMAN"
+    ) -> bool:
+        """Update the source_of_changes field on the latest version for a project.
+
+        Returns True if a document was updated, False otherwise.
+        """
+        await self.ensure_indexes()
+
+        latest = await self.get_latest_version(project_id)
+        if not latest:
+            logger.warning(
+                f"No proposal version found for project_id={project_id}; "
+                f"cannot update source_of_changes."
+            )
+            return False
+
+        version_id = latest["_id"]
+        result = await self.collection.update_one(
+            {"_id": ObjectId(version_id)},
+            {"$set": {"source_of_changes": source}},
+        )
+
+        if result.modified_count > 0:
+            logger.info(
+                f"Updated source_of_changes to '{source}' for version "
+                f"{version_id} of project_id={project_id}"
+            )
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Query – latest version

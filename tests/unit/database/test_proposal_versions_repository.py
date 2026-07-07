@@ -4,6 +4,8 @@ import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from bson import ObjectId
+
 from app.database.proposal_versions_repository import ProposalVersionsRepository
 
 
@@ -151,6 +153,108 @@ class TestInsertVersion:
 
             doc = mock_col.insert_one.call_args[0][0]
             assert doc["refinement_log"] == refinement
+
+    @pytest.mark.asyncio
+    async def test_insert_version_sets_source_of_changes_to_ia(self):
+        """Verify that source_of_changes is always set to 'IA' on insert."""
+        repo = ProposalVersionsRepository()
+        proposal = {"cover_letter": "Hello"}
+
+        with patch(
+            "app.database.proposal_versions_repository.get_database"
+        ) as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"proposal_versions": mock_col}
+            mock_col.find_one.return_value = None
+            mock_col.insert_one.return_value = MagicMock(inserted_id="abc-ia")
+
+            await repo.insert_version(
+                project_id="pid-ia",
+                link_hash="hash-ia",
+                proposal_data=proposal,
+            )
+
+            doc = mock_col.insert_one.call_args[0][0]
+            assert doc["source_of_changes"] == "IA"
+
+
+# ---------------------------------------------------------------------------
+# update_source_of_changes
+# ---------------------------------------------------------------------------
+
+class TestUpdateSourceOfChanges:
+    @pytest.mark.asyncio
+    async def test_updates_source_to_human(self):
+        """update_source_of_changes should set source_of_changes to 'HUMAN'."""
+        repo = ProposalVersionsRepository()
+
+        with patch(
+            "app.database.proposal_versions_repository.get_database"
+        ) as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"proposal_versions": mock_col}
+
+            # Simulate a latest version existing
+            valid_oid = ObjectId()
+            mock_col.find_one.return_value = {
+                "_id": str(valid_oid),
+                "project_id": "pid-1",
+                "version_number": 3,
+                "source_of_changes": "IA",
+            }
+            mock_col.update_one.return_value = MagicMock(modified_count=1)
+
+            result = await repo.update_source_of_changes("pid-1")
+
+            assert result is True
+            mock_col.update_one.assert_awaited_once()
+            # Verify the $set operation targets source_of_changes
+            call_args = mock_col.update_one.call_args
+            assert call_args[0][0] == {"_id": valid_oid}
+            assert call_args[0][1] == {"$set": {"source_of_changes": "HUMAN"}}
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_version_exists(self):
+        """Should return False when no proposal version exists for the project."""
+        repo = ProposalVersionsRepository()
+
+        with patch(
+            "app.database.proposal_versions_repository.get_database"
+        ) as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"proposal_versions": mock_col}
+            mock_col.find_one.return_value = None  # No version found
+
+            result = await repo.update_source_of_changes("nonexistent")
+
+            assert result is False
+            mock_col.update_one.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_custom_source_value(self):
+        """Should accept a custom source value."""
+        repo = ProposalVersionsRepository()
+
+        with patch(
+            "app.database.proposal_versions_repository.get_database"
+        ) as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"proposal_versions": mock_col}
+            valid_oid = ObjectId()
+            mock_col.find_one.return_value = {
+                "_id": str(valid_oid),
+                "project_id": "pid-custom",
+            }
+            mock_col.update_one.return_value = MagicMock(modified_count=1)
+
+            result = await repo.update_source_of_changes(
+                "pid-custom", source="CUSTOM"
+            )
+
+            assert result is True
+            assert mock_col.update_one.call_args[0][1] == {
+                "$set": {"source_of_changes": "CUSTOM"}
+            }
 
 
 # ---------------------------------------------------------------------------

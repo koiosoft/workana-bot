@@ -43,3 +43,4 @@ class ProposalVersion(BaseModel):
     proposal_data: AnyProposal = Field(..., description="The proposal content (MilestoneProposal or StaffAugmentationProposal)")
     refinement_log: Optional[List[RefinementEntry]] = Field(None, description="Log of previous refinements applied to this version")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="When this version was created")
+    source_of_changes: Optional[str] = Field(None, description="Source of changes: 'IA' or 'HUMAN'")

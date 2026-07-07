@@ -27,84 +27,14 @@ Now, based on the following objective and the code context provided in the `STRI
 
 REQUIREMENTS:
 
-#### 1. Objective
-Decouple the `proposal` data from the `projects` collection to enable full version history, audit trails, and AI-driven refinements, while maintaining backward compatibility with all existing API responses.
+Currently, every time the project is updated, a version is generated in the MongoDB collection "proposal_versions".
 
-#### 2. New Data Model: `proposal_versions`
-A new MongoDB collection will store every generated or refined version of a proposal as an independent document.
+However, a field is needed in MongoDB, specifically in proposal_versions, called source_of_changes, with the values ​​"IA" or "HUMAN".
 
-**Fields (Inherited from current embedded `proposal`)**
-- `proposal_header` (string)
-- `milestones` (array of milestone objects, each containing `step`, `name`, `hours_with_overhead`, `subtotal`, and `tasks`)
-- `summary` (object with `total_hours`, `total_budget`, `delivery_time_weeks`, `hourly_rate_applied`)
-- `technical_pitch` (string)
-- `questions_for_client` (array of strings)
+Therefore, in the Telegram bot, when a proposal is created, the entry in proposal_versions must have the source_of_changes field set to "IA".
 
-**Additional Mandatory Fields (specific to versioning)**
+When the project is updated, source_of_changes must be set to "HUMAN" when the proposal_versions collection is accessed.
 
-| Field | Type | Purpose |
-| :--- | :--- | :--- |
-| `project_id` | ObjectId/String | Reference to the parent project. Allows grouping all versions belonging to the same project. |
-| `version_number` | Integer | Auto-incremental number starting from 1 for the first generated proposal. Enables sorting and retrieval of the latest version. |
-| `refinement_log` | String | Justification text returned by the AI explaining what was changed, where, and why. `null` for version 1. |
-| `user_feedback` | String | The raw instructions/observations provided by the user that triggered this refinement. `null` for version 1. |
-| `llm_model_used` | String | Identifier of the AI model used to generate this version (e.g., "deepseek-v3", "gpt-4"). `null` or "initial" for the first version. |
-| `context_snapshot` | Object (Optional) | Stores the `project_description`, `project_skills`, `my_profile_skills`, and `hourly_rate` used at the time of creation for complete traceability. |
-| `created_at` | Timestamp | Date and time when this version was created. |
+Unit tests must be validated, debugged, and created as needed.
 
-**Objective of the additional fields:** Provide a complete audit trail, allow reverting to previous versions, display the refinement history in the UI, and keep track of exactly what user input led to which changes.
-
----
-
-#### 3. Storage Logic (Saving Proposals)
-- **Initial generation (V1):** When a proposal is created from scratch (via the standard generation prompt), the system **shall not** embed it in the `projects` collection. Instead, it **shall** insert a new document into `proposal_versions` with `version_number = 1`, `refinement_log = null`, and `user_feedback = null`.
-- **Refinement (V2, V3, ...):** When a user submits feedback and triggers a refinement, the system **shall**:
-  1. Query `proposal_versions` for the given `project_id`.
-  2. Determine the highest existing `version_number` (e.g., `MAX(version_number)`).
-  3. Construct the new refined proposal.
-  4. Insert a new document with `version_number = (MAX + 1)`.
-- The `projects` collection **shall not** be updated with proposal data during these operations. It will only store project metadata (title, description, budget, skills, source link, etc.).
-
----
-
-#### 4. Retrieval Logic – Single Project (GET /api/projects/{projectId})
-- When a client requests a single project, the system **shall**:
-  1. Fetch the project metadata from the `projects` collection.
-  2. Query the `proposal_versions` collection for documents matching `project_id`.
-  3. Sort them by `version_number` in **descending order**.
-  4. Take the first document (i.e., the latest version).
-  5. Populate the `proposal` field of the API response **exactly** as it is currently structured (so the frontend does not break).
-- If no `proposal_versions` exist for that project, the `proposal` field **shall** return `null`.
-
----
-
-#### 5. Retrieval Logic – Paginated Project List (GET /api/projects?page=2&limit=5)
-- To maintain performance and avoid N+1 queries, the system **shall** use a **single aggregation pipeline** or a **two-step query strategy**:
-  1. Fetch the paginated list of project metadata (e.g., 20 projects) from `projects`.
-  2. Extract the list of `project_ids` from these results.
-  3. Query `proposal_versions` using an aggregation that:
-     - Filters by `project_id` in the extracted list.
-     - Sorts documents by `version_number` descending.
-     - Groups by `project_id` to retain only the most recent document (`$first` or `$max`).
-  4. Map the resulting latest proposals back to their corresponding project objects by `project_id`.
-  5. Assign the mapped proposal to the `proposal` attribute of each project in the list response.
-- The final JSON response structure **must remain identical** to the current endpoint, ensuring zero impact on the consuming frontend applications.
-
----
-
-#### 7. Edge Cases & Performance Considerations
-- **Missing version:** If a project exists but has no `proposal_versions`, the API must return `proposal: null` without throwing errors.
-- **Indexing:** To support fast retrieval, create compound indexes on `proposal_versions`:
-  - `(project_id, version_number)` for descending lookups.
-  - `(project_id)` for the aggregation pipeline.
-- **Backward compatibility:** All existing fields (`proposal_header`, `milestones`, `summary`, etc.) must keep their exact same names and data types in the API response. The frontend must not differentiate between an embedded proposal and a hydrated one from `proposal_versions`.
-
-#### 8. Migrations
-- **Migration Proposal:** Generate project migration, getting currently proposal and creating a entry on `proposal_versions` following new model and strategy.
-
-
-#### 8. Testing
-- **MongoDb Unit Test concerns:** Create and update currently unit testing for mongodb operations 
-- **End Point Unit Test concerns:** Create and update currently unit testing for End Point operations 
-- **MongoDb Integration Test concerns:** Create and update currently unit testing for mongodb operations 
-- **End Point Integration Test concerns:** Create and update currently unit testing for End Point operations 
+Integration tests must also be validated, debugged, and created as needed.

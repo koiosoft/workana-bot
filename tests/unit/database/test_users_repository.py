@@ -276,7 +276,11 @@ class TestGetUserById:
     @pytest.mark.asyncio
     async def test_returns_none_for_invalid_objectid(self):
         repo = UsersRepository()
-        result = await repo.get_user_by_id("not-valid")
+        with patch("app.database.users_repository.get_database") as mock_get_db:
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"users": mock_col}
+
+            result = await repo.get_user_by_id("not-valid")
         assert result is None
 
 
