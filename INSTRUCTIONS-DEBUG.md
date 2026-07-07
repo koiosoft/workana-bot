@@ -1,13 +1,13 @@
 ## Current Objective
-Resolve the test failures in the `test_adapters.py` and `test_gemini_adapter.py` files related to model selection and configuration in the AI adapter implementations.
+Fix the integration test failures related to duplicate key constraints in the `providers` and `models` collections when attempting to create duplicate entries via the API.
 
 ## Task List
-- [x] **Error in tests/unit/intelligence/test_adapters.py:299**
-  - **Error:** AssertionError: assert 'qwen/qwen3-14b' == 'db-default'
-  - **Context:** The `_select_model` method in `OpenRouterAdapter` is not using the expected model override when the strategy is set to 'none'.
-  - **Action Required:** Inspect the `_select_model` method in the `OpenRouterAdapter` class to verify how it selects the model when the strategy is 'none'. Ensure that it correctly falls back to the `_standard_model_override` if provided. If the fallback logic is incorrect, adjust the method to use the overridden model as expected during testing.
+- [x] **Error in tests/integration/test_models_integration.py:120**
+  - **Error:** `AssertionError: assert 201 == 409`
+  - **Context:** The test `test_create_provider_duplicate_key` is failing because inserting a duplicate provider key into the `providers` collection is not correctly returning a 409 Conflict status code. Instead, it is returning a 201 Created status.
+  - **Action Required:** Investigate the `create_provider` endpoint in `app/api/routes/models.py` to verify if the unique index on the `key` field in the `providers` collection is being enforced correctly. Ensure that the API returns a 409 Conflict when a duplicate key is attempted, and that the database schema validation is correctly implemented in `app/database/mongo.py` for the `providers` collection.
 
-- [x] **Error in tests/unit/intelligence/test_gemini_adapter.py:151**
-  - **Error:** AssertionError: assert 'models/gemma-4-31b-it' == 'models/gemini-2.5-flash'
-  - **Context:** The `format_project_description` method in `GeminiAdapter` is using an incorrect model when the default strategy is applied.
-  - **Action Required:** Review the `set_gemini_model` method in the `GeminiAdapter` class to confirm that it correctly selects the `STANDARD_MODEL` when the strategy is not explicitly set. Ensure that the model ID used for formatting is consistent with the `STANDARD_MODEL` constant, and that any overrides or defaults are applied correctly during the method's execution.
+- [x] **Error in tests/integration/test_models_integration.py:262**
+  - **Error:** `AssertionError: assert 201 == 409`
+  - **Context:** The test `test_create_model_duplicate_key` is failing because inserting a duplicate `(model_id, provider_key)` combination into the `models` collection is not correctly returning a 409 Conflict status code. Instead, it is returning a 201 Created status.
+  - **Action Required:** Investigate the `create_model` endpoint in `app/api/routes/models.py` to verify if the unique compound index on the `model_id` and `provider_key` fields in the `models` collection is being enforced correctly. Ensure that the API returns a 409 Conflict when a duplicate key combination is attempted, and that the database schema validation is correctly implemented in `app/database/mongo.py` for the `models` collection.

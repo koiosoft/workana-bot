@@ -62,8 +62,8 @@ async def ensure_providers_collection() -> str:
                 }
             }
         )
-        # Create a unique index on the key field
-        await db["providers"].create_index("key", unique=True)
+    # Create a unique index on the key field (always ensure it exists)
+    await db["providers"].create_index("key", unique=True)
     return "providers"
 
 
@@ -109,6 +109,6 @@ async def ensure_models_collection() -> str:
                 }
             }
         )
-        # Create a unique compound index on model_id + provider_key
-        await db["models"].create_index([("model_id", 1), ("provider_key", 1)], unique=True)
+    # Create a unique compound index on model_id + provider_key (always ensure it exists)
+    await db["models"].create_index([("model_id", 1), ("provider_key", 1)], unique=True)
     return "models"
