@@ -112,3 +112,72 @@ async def ensure_models_collection() -> str:
     # Create a unique compound index on model_id + provider_key (always ensure it exists)
     await db["models"].create_index([("model_id", 1), ("provider_key", 1)], unique=True)
     return "models"
+
+
+async def ensure_proposal_versions_collection() -> str:
+    """
+    Ensure the 'proposal_versions' collection exists with schema validation
+    and performance-critical compound indexes.
+
+    Indexes created (in line with the indexing strategy used by providers / models):
+      - Compound ``(project_id, version_number DESC)`` for efficient latest-version lookups.
+      - Single-field ``(project_id)`` for aggregation ``$group`` performance.
+      - Single-field ``(link_hash)`` for queries by link_hash.
+
+    Returns the collection name on success.
+    """
+    db = get_database()
+    collections = await db.list_collection_names()
+    if "proposal_versions" not in collections:
+        await db.create_collection(
+            "proposal_versions",
+            validator={
+                "$jsonSchema": {
+                    "bsonType": "object",
+                    "required": ["project_id", "link_hash", "version_number", "proposal_data", "created_at"],
+                    "properties": {
+                        "project_id": {
+                            "bsonType": "string",
+                            "description": "MongoDB _id of the parent project (as string)",
+                        },
+                        "link_hash": {
+                            "bsonType": "string",
+                            "description": "Unique link_hash of the parent project",
+                        },
+                        "version_number": {
+                            "bsonType": "int",
+                            "minimum": 1,
+                            "description": "Monotonically increasing version number",
+                        },
+                        "proposal_data": {
+                            "bsonType": "object",
+                            "description": "The proposal content (MilestoneProposal or StaffAugmentationProposal)",
+                        },
+                        "refinement_log": {
+                            "bsonType": ["array", "null"],
+                            "description": "Optional log of refinement entries",
+                        },
+                        "created_at": {
+                            "bsonType": "date",
+                            "description": "When this version was created",
+                        },
+                    },
+                }
+            },
+        )
+    # Compound index: (project_id, version_number DESC) – latest-version lookups
+    await db["proposal_versions"].create_index(
+        [("project_id", 1), ("version_number", -1)],
+        name="project_id_version_desc",
+    )
+    # Single-field index: (project_id) – aggregation $group
+    await db["proposal_versions"].create_index(
+        [("project_id", 1)],
+        name="project_id_asc",
+    )
+    # Single-field index: (link_hash) – queries by link_hash
+    await db["proposal_versions"].create_index(
+        [("link_hash", 1)],
+        name="link_hash_asc",
+    )
+    return "proposal_versions"

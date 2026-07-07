@@ -78,7 +78,8 @@ async def seed_test_data(test_db):
     # Insert test project
     project_data = {
         "title": "Test Project Title",
-        "proposal_status": "pending"
+        "proposal_status": "proposal_generated",
+        "ai_score": 8
     }
     project_result = await test_db.projects.insert_one(project_data)
     project_id = str(project_result.inserted_id)

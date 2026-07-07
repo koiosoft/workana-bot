@@ -12,6 +12,7 @@ def _make_mock_collection():
     """Return a fresh AsyncMock collection with default async methods."""
     col = MagicMock()
     col.find = MagicMock()
+    col.find_one = AsyncMock()
     col.update_one = AsyncMock()
     col.update_many = AsyncMock()
     col.bulk_write = AsyncMock()
@@ -587,34 +588,54 @@ class TestUpdateProjectProposal:
         proposal = {"cover_letter": "Hello", "budget_summary": {"hourly_rate": 25}}
 
         with patch("app.database.projects_repository.get_database") as mock_get_db, \
-             patch("app.database.projects_repository.datetime") as mock_datetime:
+             patch("app.database.projects_repository.datetime") as mock_datetime, \
+             patch("app.database.proposal_versions_repository.get_database") as mock_pv_db:
             mock_datetime.now.return_value = now_dt
             mock_col = _make_mock_collection()
             mock_get_db.return_value = {"projects": mock_col}
             mock_col.update_one.return_value.modified_count = 1
+            # The project lookup for _id
+            mock_col.find_one.return_value = {"_id": "507f1f77bcf86cd799439011"}
+
+            # Mock proposal_versions collection
+            pv_col = MagicMock()
+            pv_col.find_one = AsyncMock(return_value=None)
+            pv_col.insert_one = AsyncMock()
+            pv_col.create_index = AsyncMock()
+            mock_pv_db.return_value = {"proposal_versions": pv_col}
 
             result = await repo.update_project_proposal("hash1", proposal)
 
             assert result is True
+            # Verify the project status update (NO proposal in $set)
             mock_col.update_one.assert_awaited_once_with(
                 {"link_hash": "hash1"},
                 {
                     "$set": {
-                        "proposal": proposal,
                         "proposal_status": "proposal_generated",
                         "proposal_at": now_iso,
                         "updated_at": now_iso,
-                    }
+                    },
+                    "$unset": {"proposal": ""},
                 },
             )
+            # Verify version was inserted
+            pv_col.insert_one.assert_awaited_once()
+            inserted_doc = pv_col.insert_one.call_args[0][0]
+            assert inserted_doc["project_id"] == "507f1f77bcf86cd799439011"
+            assert inserted_doc["version_number"] == 1
+            assert inserted_doc["proposal_data"] == proposal
 
     @pytest.mark.asyncio
-    async def test_returns_false_when_no_match(self):
+    async def test_returns_false_when_project_not_found(self):
+        """When the project doc is not found, we cannot insert a version
+        (no project_id) so the method returns False."""
         repo = ProjectsRepository()
+
         with patch("app.database.projects_repository.get_database") as mock_get_db:
             mock_col = _make_mock_collection()
             mock_get_db.return_value = {"projects": mock_col}
-            mock_col.update_one.return_value.modified_count = 0
+            mock_col.find_one.return_value = None  # project not found
 
             result = await repo.update_project_proposal("nonexistent", {})
             assert result is False

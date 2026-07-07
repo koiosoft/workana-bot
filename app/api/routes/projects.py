@@ -23,6 +23,8 @@ async def list_projects(
         page=page,
         limit=limit
     )
+    # Populate proposals from proposal_versions (two-step: fetch metadata, hydrate)
+    result["projects"] = await repo.populate_proposals_for_projects(result["projects"])
     return result
 
 @router.get("/{id}")
@@ -46,6 +48,8 @@ async def get_project(
         raise HTTPException(status_code=404, detail="Project not found")
     # Convert ObjectId to string for JSON serialization
     project["_id"] = str(project["_id"])
+    # Populate proposal from proposal_versions (latest version, newest first)
+    project = await repo.populate_proposal_for_project(project)
     return project
 
 @router.patch("/{id}")

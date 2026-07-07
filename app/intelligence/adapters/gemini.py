@@ -206,7 +206,6 @@ class GeminiAdapter(IntelligencePort):
             if 'questions_for_client' not in proposal_data:
                 proposal_data['questions_for_client'] = []
 
-            
             return proposal_data
 
         except RemoteProtocolError as e:

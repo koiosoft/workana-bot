@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 import pytest
@@ -116,3 +117,119 @@ async def test_update_project_invalid_id(test_db: AsyncIOMotorDatabase, seed_tes
         )
         
         assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Proposal population from proposal_versions (decoupling tests)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_project_populates_proposal_from_versions(
+    test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]
+) -> None:
+    """
+    GET /api/projects/{id} should populate the ``proposal`` field from the
+    latest version in the ``proposal_versions`` collection.
+    """
+    # Insert a proposal version for the seeded project
+    proposal_data = {"cover_letter": "Hello from version", "questions_for_client": []}
+    await test_db.proposal_versions.insert_one({
+        "project_id": seed_test_data["project_id"],
+        "link_hash": "test-link-hash",
+        "version_number": 1,
+        "proposal_data": proposal_data,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    # Also insert a second version (should be the one returned)
+    proposal_data_v2 = {"cover_letter": "Latest version", "questions_for_client": []}
+    await test_db.proposal_versions.insert_one({
+        "project_id": seed_test_data["project_id"],
+        "link_hash": "test-link-hash",
+        "version_number": 2,
+        "proposal_data": proposal_data_v2,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get(f"/api/projects/{seed_test_data['project_id']}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "proposal" in data
+        assert data["proposal"] == proposal_data_v2
+        assert data.get("proposal_version_number") == 2
+
+
+@pytest.mark.asyncio
+async def test_get_project_handles_missing_versions_gracefully(
+    test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]
+) -> None:
+    """
+    GET /api/projects/{id} should not fail when no proposal_versions exist;
+    ``proposal`` should be null.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get(f"/api/projects/{seed_test_data['project_id']}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("proposal") is None
+
+
+@pytest.mark.asyncio
+async def test_list_projects_populates_proposals_from_versions(
+    test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]
+) -> None:
+    """
+    GET /api/projects (paginated) should populate ``proposal`` on each
+    project from proposal_versions.
+    """
+    proposal_data = {"cover_letter": "Batch proposal", "questions_for_client": []}
+    await test_db.proposal_versions.insert_one({
+        "project_id": seed_test_data["project_id"],
+        "link_hash": "test-link-hash",
+        "version_number": 1,
+        "proposal_data": proposal_data,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/api/projects", params={"page": 1, "limit": 10})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["projects"]) >= 1
+        # The seeded project should have the proposal populated
+        matching = [p for p in data["projects"] if p["_id"] == seed_test_data["project_id"]]
+        assert len(matching) == 1
+        assert matching[0]["proposal"] == proposal_data
+
+
+@pytest.mark.asyncio
+async def test_get_project_with_legacy_embedded_proposal(
+    test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]
+) -> None:
+    """
+    When a project still has an embedded ``proposal`` field (legacy data
+    before migration) and no ``proposal_versions`` entry, the embedded
+    proposal should be returned for backward compatibility.
+    """
+    legacy_proposal = {"proposal_header": "Legacy", "milestones": []}
+    from bson import ObjectId
+    await test_db.projects.update_one(
+        {"_id": ObjectId(seed_test_data["project_id"])},
+        {"$set": {"proposal": legacy_proposal}},
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get(f"/api/projects/{seed_test_data['project_id']}")
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should still return the legacy embedded proposal
+        assert data["proposal"] == legacy_proposal

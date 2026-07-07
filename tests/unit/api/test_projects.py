@@ -15,6 +15,12 @@ def mock_repo():
         mock_instance.get_projects = AsyncMock()
         mock_instance.get_project_by_id = AsyncMock()
         mock_instance.update_project_by_id = AsyncMock()
+        mock_instance.populate_proposal_for_project = AsyncMock(
+            side_effect=lambda p: p  # identity – returns project as-is
+        )
+        mock_instance.populate_proposals_for_projects = AsyncMock(
+            side_effect=lambda projects: projects
+        )
         yield mock_instance
 
 def test_list_projects_default_params(mock_repo):

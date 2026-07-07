@@ -1,98 +1,37 @@
-============================= test session starts ==============================
-platform darwin -- Python 3.11.12, pytest-9.0.3, pluggy-1.6.0
-rootdir: /Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Bot
-configfile: pytest.ini
-plugins: mock-3.15.1, cov-7.1.0, asyncio-1.4.0, dotenv-0.5.2, anyio-4.13.0
-asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
-collected 51 items
+==================================================================================== FAILURES =====================================================================================
+______________________________________________________________ test_list_projects_populates_proposals_from_versions _______________________________________________________________
 
-tests/integration/intelligence/test_factory.py .........                 [ 17%]
-tests/integration/test_auth_integration.py .......                       [ 31%]
-tests/integration/test_models_endpoints.py ........                      [ 47%]
-tests/integration/test_models_integration.py .F....F................     [ 92%]
-tests/integration/test_projects_integration.py ....                      [100%]
-
-=================================== FAILURES ===================================
-______________________ test_create_provider_duplicate_key ______________________
-
-test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['ac-ktojd7p-shard-00-02.qu7h0p6.mongodb.net:27017', 'ac-ktojd7p-shard-...-xrqbkr-shard-0', tls=True, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
-ensure_collections = None
+test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['ac-ktojd7p-shard-00-00.qu7h0p6.mongodb.net:27017', 'ac-ktojd7p-shard-...-xrqbkr-shard-0', tls=True, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
+seed_test_data = {'project_id': '6a4d5589b0d5312089c04c63'}
 
     @pytest.mark.asyncio
-    async def test_create_provider_duplicate_key(
-        test_db: AsyncIOMotorDatabase,
-        ensure_collections: None,
+    async def test_list_projects_populates_proposals_from_versions(
+        test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]
     ) -> None:
-        """POST /providers with an existing key should return 409 Conflict."""
-        # Pre-insert a provider
-        await test_db["providers"].insert_one({
-            "key": "gemini",
-            "name": "Google Gemini",
-            "url": "https://ai.google.dev",
+        """
+        GET /api/projects (paginated) should populate ``proposal`` on each
+        project from proposal_versions.
+        """
+        proposal_data = {"cover_letter": "Batch proposal", "questions_for_client": []}
+        await test_db.proposal_versions.insert_one({
+            "project_id": seed_test_data["project_id"],
+            "link_hash": "test-link-hash",
+            "version_number": 1,
+            "proposal_data": proposal_data,
+            "created_at": datetime.now(timezone.utc),
         })
-    
+
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/models/providers",
-                json={
-                    "key": "gemini",
-                    "name": "Duplicate Gemini",
-                    "url": "https://example.com",
-                },
-            )
-    
->       assert response.status_code == 409
-E       assert 201 == 409
-E        +  where 201 = <Response [201 Created]>.status_code
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get("/api/projects", params={"page": 1, "limit": 10})
 
-tests/integration/test_models_integration.py:120: AssertionError
------------------------------ Captured stderr call -----------------------------
-2026-07-07 11:20:17.520 | INFO     | app.api.routes.models:create_provider:172 - Provider created: key='gemini', id=6a4d19317fcae07551f92ca3
-_______________________ test_create_model_duplicate_key ________________________
+            assert response.status_code == 200
+            data = response.json()
+>           assert len(data["projects"]) >= 1
+E           assert 0 >= 1
+E            +  where 0 = len([])
 
-test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['ac-ktojd7p-shard-00-02.qu7h0p6.mongodb.net:27017', 'ac-ktojd7p-shard-...-xrqbkr-shard-0', tls=True, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
-ensure_collections = None
-
-    @pytest.mark.asyncio
-    async def test_create_model_duplicate_key(
-        test_db: AsyncIOMotorDatabase,
-        ensure_collections: None,
-    ) -> None:
-        """POST /models with existing (model_id, provider_key) should return 409."""
-        # Pre-insert a provider and a model
-        await test_db["providers"].insert_one({
-            "key": "openrouter",
-            "name": "OpenRouter",
-            "url": "https://openrouter.ai/api/v1",
-        })
-        await test_db["models"].insert_one({
-            "model_id": "gpt-4o",
-            "provider_key": "openrouter",
-            "is_default": False,
-            "is_premium": True,
-        })
-    
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/models",
-                json={
-                    "model_id": "gpt-4o",
-                    "provider_key": "openrouter",
-                    "is_default": True,
-                    "is_premium": False,
-                },
-            )
-    
->       assert response.status_code == 409
-E       assert 201 == 409
-E        +  where 201 = <Response [201 Created]>.status_code
-
-tests/integration/test_models_integration.py:262: AssertionError
------------------------------ Captured stderr call -----------------------------
-2026-07-07 11:20:27.569 | INFO     | app.api.routes.models:create_model:225 - Model created: model_id='gpt-4o', provider='openrouter', id=6a4d193b7fcae07551f92cad
-=========================== short test summary info ============================
-FAILED tests/integration/test_models_integration.py::test_create_provider_duplicate_key
-FAILED tests/integration/test_models_integration.py::test_create_model_duplicate_key
-=================== 2 failed, 49 passed in 115.39s (0:01:55) ===================
+tests/integration/test_projects_integration.py:205: AssertionError
+============================================================================= short test summary info =============================================================================
+FAILED tests/integration/test_projects_integration.py::test_list_projects_populates_proposals_from_versions - assert 0 >= 1
+==================================================================== 1 failed, 54 passed in 141.22s (0:02:21) ===================================================================

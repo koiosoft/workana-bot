@@ -225,8 +225,15 @@ class OpenRouterAdapter(IntelligencePort):
         self,
         project: dict[str, Any],
         circuit_breaker: Optional["CircuitBreaker"] = None,
+        project_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Genera una propuesta económica detallada con hitos."""
+        """Genera una propuesta económica detallada con hitos.
+
+        When *project_id* is provided, the generated proposal is automatically
+        inserted as a new version into the ``proposal_versions`` collection
+        (with ``version_number = MAX + 1``) instead of being stored as an
+        embedded document on the project.
+        """
         hourly_rate = int(os.getenv("HOURLY_RATE", "25"))
         contract_type: str = project.get("contract_type", "project_fixed")
 

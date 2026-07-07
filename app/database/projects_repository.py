@@ -5,11 +5,13 @@ from typing import Any, Optional, Dict, List
 from pymongo import ASCENDING, UpdateOne
 from bson import ObjectId
 from .mongo import get_database
+from .proposal_versions_repository import ProposalVersionsRepository
 from loguru import logger
 
 class ProjectsRepository:
     def __init__(self):
         self._indexes_ready = False
+        self._proposal_versions = ProposalVersionsRepository()
 
     @property
     def collection(self):
@@ -295,31 +297,114 @@ class ProjectsRepository:
         )
         return result.modified_count > 0
 
-    async def update_project_proposal(self, link_hash: str, proposal: dict[str, Any]):
+    async def update_project_proposal(self, link_hash: str, proposal: dict[str, Any]) -> bool:
+        """
+        Save a proposal by inserting a new version into ``proposal_versions``
+        and updating only the status / timestamp on the project document.
+
+        The actual ``proposal`` data is no longer stored in the ``projects``
+        collection – it lives in the versioned ``proposal_versions`` collection.
+        """
         await self.ensure_indexes()
         now = datetime.now(timezone.utc).isoformat()
 
+        # Look up the project to get its _id for the foreign key
+        project = await self.collection.find_one(
+            {"link_hash": link_hash},
+            {"_id": 1},
+        )
+        if not project:
+            logger.warning(f"Cannot save proposal – project {link_hash} not found.")
+            return False
+
+        project_id = str(project["_id"])
+
+        # Insert versioned proposal
+        await self._proposal_versions.insert_version(
+            project_id=project_id,
+            link_hash=link_hash,
+            proposal_data=proposal,
+        )
+
+        # Update the project status / timestamps (NO embedded proposal)
         result = await self.collection.update_one(
             {"link_hash": link_hash},
             {
                 "$set": {
-                    "proposal": proposal,
                     "proposal_status": "proposal_generated",
                     "proposal_at": now,
-                    "updated_at": now
-                }
-            }
+                    "updated_at": now,
+                },
+                # Explicitly remove embedded proposal if it still exists
+                "$unset": {"proposal": ""},
+            },
         )
 
         if result.modified_count > 0:
-            logger.info(f"✅ Propuesta guardada en DB para el proyecto: {link_hash}")
+            logger.info(f"✅ Propuesta guardada (v{project_id}) para: {link_hash}")
             return True
-        return False
+        return True  # The version was inserted even if project update was a no-op
 
     async def get_project_by_hash(self, link_hash: str) -> Optional[Dict[str, Any]]:
         return await self.collection.find_one({"link_hash": link_hash})
 
     # ---------- NEW METHODS ----------
+
+    async def populate_proposal_for_project(self, project: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Given a project dict, fetch the latest proposal version from
+        ``proposal_versions`` and inject it as ``project["proposal"]``.
+
+        Returns the same dict (mutated in place for convenience).
+        """
+        if "_id" in project:
+            pid = project["_id"] if isinstance(project["_id"], str) else str(project["_id"])
+        else:
+            pid = project.get("link_hash", "")
+
+        latest = await self._proposal_versions.get_latest_version(pid)
+        if latest:
+            project["proposal"] = latest.get("proposal_data")
+            project["proposal_version_number"] = latest.get("version_number")
+            project["proposal_version_created_at"] = latest.get("created_at")
+        else:
+            # If no proposal version exists but an embedded proposal is still on the
+            # document (legacy data), keep it for backward compatibility.
+            if "proposal" not in project:
+                project["proposal"] = None
+
+        return project
+
+    async def populate_proposals_for_projects(
+        self, projects: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Bulk-populate the ``proposal`` field on a list of project dicts by
+        performing a single aggregation against ``proposal_versions``.
+        """
+        if not projects:
+            return projects
+
+        ids = [
+            p["_id"] if isinstance(p["_id"], str) else str(p["_id"])
+            for p in projects
+            if "_id" in p
+        ]
+
+        latest_map = await self._proposal_versions.get_latest_versions_for_projects(ids)
+
+        for p in projects:
+            pid = p["_id"] if isinstance(p["_id"], str) else str(p["_id"])
+            version = latest_map.get(pid)
+            if version:
+                p["proposal"] = version.get("proposal_data")
+                p["proposal_version_number"] = version.get("version_number")
+                p["proposal_version_created_at"] = version.get("created_at")
+            elif "proposal" not in p:
+                p["proposal"] = None
+
+        return projects
+
     async def delete_projects(self, from_date: str | None = None) -> int:
         """
         Soft-delete projects. If from_date is provided (YYYY-MM-DD), delete
