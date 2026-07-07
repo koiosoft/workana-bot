@@ -1,13 +1,13 @@
 ## Current Objective
-Resolve the error encountered when attempting to launch the Playwright browser in the `extract_session.py` script due to missing executable files.
+Resolve the test failures in the `test_adapters.py` and `test_gemini_adapter.py` files related to model selection and configuration in the AI adapter implementations.
 
 ## Task List
-- [ ] **Error in scripts/extract_session.py:97**
-  - **Error:** `playwright._impl._errors.Error: BrowserType.launch: Executable doesn't exist at /home/rzavala/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome`
-  - **Context:** The error occurs when attempting to launch the Chromium browser using Playwright. The executable file is missing, which indicates that the necessary browser binaries have not been downloaded.
-  - **Action Required:** 
-    1. Identify that the error is caused by a missing Playwright browser binary.
-    2. Ensure that Playwright is installed in the environment.
-    3. Run the `playwright install` command to download the required browser binaries.
-    4. Verify that the command is executed in the correct virtual environment.
-    5. Re-run the `extract_session.py` script after the installation is complete to confirm that the error is resolved.
+- [x] **Error in tests/unit/intelligence/test_adapters.py:299**
+  - **Error:** AssertionError: assert 'qwen/qwen3-14b' == 'db-default'
+  - **Context:** The `_select_model` method in `OpenRouterAdapter` is not using the expected model override when the strategy is set to 'none'.
+  - **Action Required:** Inspect the `_select_model` method in the `OpenRouterAdapter` class to verify how it selects the model when the strategy is 'none'. Ensure that it correctly falls back to the `_standard_model_override` if provided. If the fallback logic is incorrect, adjust the method to use the overridden model as expected during testing.
+
+- [x] **Error in tests/unit/intelligence/test_gemini_adapter.py:151**
+  - **Error:** AssertionError: assert 'models/gemma-4-31b-it' == 'models/gemini-2.5-flash'
+  - **Context:** The `format_project_description` method in `GeminiAdapter` is using an incorrect model when the default strategy is applied.
+  - **Action Required:** Review the `set_gemini_model` method in the `GeminiAdapter` class to confirm that it correctly selects the `STANDARD_MODEL` when the strategy is not explicitly set. Ensure that the model ID used for formatting is consistent with the `STANDARD_MODEL` constant, and that any overrides or defaults are applied correctly during the method's execution.

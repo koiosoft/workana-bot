@@ -1,34 +1,81 @@
-(.venv) ➜  workana-bot git:(main) python3 scripts/extract_session.py
-Traceback (most recent call last):
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/scripts/extract_session.py", line 97, in <module>
-    asyncio.run(capture_forced())
-  File "/home/rzavala/.pyenv/versions/3.11.12/lib/python3.11/asyncio/runners.py", line 190, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "/home/rzavala/.pyenv/versions/3.11.12/lib/python3.11/asyncio/runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/rzavala/.pyenv/versions/3.11.12/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
-    return future.result()
-           ^^^^^^^^^^^^^^^
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/scripts/extract_session.py", line 22, in capture_forced
-    browser = await p.chromium.launch(
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/.venv/lib/python3.11/site-packages/playwright/async_api/_generated.py", line 14547, in launch
-    await self._impl_obj.launch(
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/.venv/lib/python3.11/site-packages/playwright/_impl/_browser_type.py", line 97, in launch
-    await self._channel.send(
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/.venv/lib/python3.11/site-packages/playwright/_impl/_connection.py", line 69, in send
-    return await self._connection.wrap_api_call(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/rzavala/Documents/Projects/Koiosoft/workana-bot/.venv/lib/python3.11/site-packages/playwright/_impl/_connection.py", line 559, in wrap_api_call
-    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
-playwright._impl._errors.Error: BrowserType.launch: Executable doesn't exist at /home/rzavala/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome
-╔════════════════════════════════════════════════════════════╗
-║ Looks like Playwright was just installed or updated.       ║
-║ Please run the following command to download new browsers: ║
-║                                                            ║
-║     playwright install                                     ║
-║                                                            ║
-║ <3 Playwright Team                                         ║
-╚════════════════════════════════════════════════════════════╝
+============================= test session starts ==============================
+platform darwin -- Python 3.11.12, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Bot
+configfile: pytest.ini
+plugins: mock-3.15.1, cov-7.1.0, asyncio-1.4.0, dotenv-0.5.2, anyio-4.13.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 304 items
+
+tests/unit/api/test_models.py ...............................            [ 10%]
+tests/unit/api/test_projects.py ..........                               [ 13%]
+tests/unit/bots/test_circuit_breaker.py .............                    [ 17%]
+tests/unit/bots/test_error_handling.py .                                 [ 18%]
+tests/unit/bots/test_fetch_projects_notifications.py ...                 [ 19%]
+tests/unit/bots/test_messages.py ........                                [ 21%]
+tests/unit/bots/test_process_projects_handler.py ..........              [ 25%]
+tests/unit/bots/test_telegram_handlers.py .........                      [ 27%]
+tests/unit/database/test_contract_type_detection.py ..                   [ 28%]
+tests/unit/database/test_projects_repository.py ........................ [ 36%]
+..................                                                       [ 42%]
+tests/unit/database/test_semaphore_unit.py ........................      [ 50%]
+tests/unit/database/test_users_repository.py ...................         [ 56%]
+tests/unit/intelligence/test_adapters.py .....................F......... [ 66%]
+                                                                         [ 66%]
+tests/unit/intelligence/test_factory.py ..............................   [ 76%]
+tests/unit/intelligence/test_gemini_adapter.py ........F..............   [ 84%]
+tests/unit/intelligence/test_port.py ....                                [ 85%]
+tests/unit/models/test_model.py ..................                       [ 91%]
+tests/unit/models/test_provider.py .............                         [ 95%]
+tests/unit/scraper/test_workana_scraper.py .............                 [100%]
+
+=================================== FAILURES ===================================
+_ TestOpenRouterAdapterModelOverrides.test_default_strategy_also_uses_standard_override _
+
+self = <tests.unit.intelligence.test_adapters.TestOpenRouterAdapterModelOverrides object at 0x10c7151d0>
+
+    def test_default_strategy_also_uses_standard_override(self) -> None:
+        """_select_model with no strategy ('none') should use the standard override."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}):
+            adapter = OpenRouterAdapter(standard_model="db-default")
+        result = adapter._select_model("none")
+>       assert result == "db-default"
+E       AssertionError: assert 'qwen/qwen3-14b' == 'db-default'
+E         
+E         - db-default
+E         + qwen/qwen3-14b
+
+tests/unit/intelligence/test_adapters.py:299: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-07-07 11:02:59.144 | INFO     | app.intelligence.adapters.openrouter:__init__:50 - Instanciando el Adapter de OpenRouter
+_________________ test_format_description_uses_standard_model __________________
+
+mock_genai_client = <MagicMock name='Client()' id='4506184016'>
+mock_circuit_breaker = <MagicMock spec='CircuitBreaker' id='4506368656'>
+
+    @pytest.mark.asyncio
+    async def test_format_description_uses_standard_model(mock_genai_client, mock_circuit_breaker):
+        """Should use STANDARD_MODEL for formatting."""
+        adapter = GeminiAdapter()
+        mock_genai_client.models.generate_content.return_value.text = "Formatted"
+        description = "raw"
+    
+        await adapter.format_project_description(description, circuit_breaker=mock_circuit_breaker)
+    
+        # Verify the model used is the standard one
+        call_args = mock_genai_client.models.generate_content.call_args
+        assert call_args is not None
+>       assert call_args[1]['model'] == "models/gemini-2.5-flash"
+E       AssertionError: assert 'models/gemma-4-31b-it' == 'models/gemini-2.5-flash'
+E         
+E         - models/gemini-2.5-flash
+E         + models/gemma-4-31b-it
+
+tests/unit/intelligence/test_gemini_adapter.py:151: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-07-07 11:02:59.316 | INFO     | app.intelligence.adapters.gemini:__init__:43 - Instanciando el Adapter de GEMINI
+2026-07-07 11:02:59.317 | INFO     | app.intelligence.adapters.gemini:format_project_description:238 - 🤖 Llamando a Gemini para formatear descripción...
+2026-07-07 11:02:59.317 | SUCCESS  | app.intelligence.adapters.gemini:format_project_description:251 - ✅ Descripción formateada exitosamente.
+=========================== short test summary info ============================
+FAILED tests/unit/intelligence/test_adapters.py::TestOpenRouterAdapterModelOverrides::test_default_strategy_also_uses_standard_override
+FAILED tests/unit/intelligence/test_gemini_adapter.py::test_format_description_uses_standard_model
+======================== 2 failed, 302 passed in 4.88s =========================

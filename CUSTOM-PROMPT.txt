@@ -27,21 +27,20 @@ Now, based on the following objective and the code context provided in the `STRI
 
 REQUIREMENTS:
 
-Let's take as an example that we have AI Model Adapters where there are two variables: STANDARD_MODEL and PREMIUM_MODEL. We use STANDARD_MODEL, among other things, to format descriptions, assign AI scores, and so on. Meanwhile, we use PREMIUM_MODEL to generate project proposals. Examples include GeminiAdapter and OpenRouterAdapter.
+- We currently use AI_PROVIDER to obtain the intelligence adapter. This is done when actions are initiated in the Telegram bot. The intelligence adapter has the LLM ID defined with constants: STANDARD_MODEL and PREMIUM_MODEL. To work with Telegram bots, a defined ADAPTER is used, which depends on the PROVIDER environment variable. This needs to change.
 
-In the Intelligence factory, we use a unique identifier key for each provider to identify each Adapter:
+- There must be an ADAPTER for STANDARD_MODEL and an adapter for PREMIUM_MODEL, defined in the module's factory. - These adapters must be obtained from the MongoDB database, with the is_default field set to TRUE.
 
-* "gemini" for GeminiAdapter
-* "openrouter" for OpenRouterAdapter
+- Of the LLMs obtained with is_default TRUE, the id must have the is_premium field. This will be used for the PREMIUM ADAPTER (the instance with that model), and if is_premium is FALSE, it will be used to construct the ADAPTER_STANDARD.
 
-The following is required:
+- There must be an ADAPTER for the FILTER, but we can use it, for now, with the same STANDARD adapter.
 
-Taking into account the existence of the Model Collections (LLMs), whose REST queries we have already performed, we must:
+- In the TELEGRAM BOT, only one ADAPTER is currently used, defined by the .env provider. However, there must be 3 instantiated adapters: STANDARD, PREMIUM, and FILTER, because each one may have a different model.
 
-Detail Reference: app/api/routes/models.py
+- To perform the evolutionary build, first generate the Adapter versions from the Factory, using the environment variable, and validate that it works with the unit and integration tests.
 
-- Incorporate REST endpoints for creating, editing, and deleting Model Providers (LLMs) (PUT, POST, DELETE).
-- Incorporate REST endpoints for creating, editing, and deleting Models (LLMs) (PUT, POST, DELETE).
-- Create a REST endpoint that, in a single query, sets one Model ID to `is_default` and another Model ID to `is_premium`. When doing so, the previous values ​​should be set to `false`. (PUT)
-- Incorporate the corresponding Unit Tests.
-- Incorporate the corresponding Integration Tests.
+- Then, in the Factory, replace the logic for using the environment variables, retrieving them from the database, and generating the corresponding error messages.
+
+- Make the adjustments in the unit tests.
+
+- Make the adjustments in the integration tests.

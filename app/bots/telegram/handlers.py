@@ -8,7 +8,7 @@ from telegram.error import NetworkError as TelegramNetworkError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from app.scraper.factory import ScraperFactory
 from app.database import get_projects_repository, get_process_semaphore
-from app.intelligence.factory import get_intelligence_service
+from app.intelligence.factory import create_intelligence_service
 from .messages import send_long_message
 from app.bots.telegram.circuit_breaker import CircuitBreaker
 from app.exceptions import (
@@ -207,7 +207,9 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.warning(f"No se pudo enviar notificación de sincronización a Telegram: {e}")
 
-    ai_service = get_intelligence_service()
+    adapters = await create_intelligence_service()
+    # FILTER adapter for project evaluation (fast/cheap model)
+    ai_service = adapters["FILTER"]
     total_processed = 0
     all_relevant = []
     max_iterations = 10
@@ -337,7 +339,7 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     projects_repository = get_projects_repository()
     semaphore = get_process_semaphore()
-    ai_service = get_intelligence_service()
+    adapters = await create_intelligence_service()
 
     # FASE 1: VERIFICACIÓN DEL SEMÁFORO GLOBAL
     if await semaphore.is_locked():
@@ -421,7 +423,8 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             raw_description = full_detail.get("full_description")
             if raw_description:
-                formatted_description = await ai_service.format_project_description(
+                # STANDARD adapter for description formatting
+                formatted_description = await adapters["STANDARD"].format_project_description(
                     raw_description, circuit_breaker=circuit_breaker
                 )
                 full_detail["full_description"] = formatted_description
@@ -434,7 +437,7 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "strategy": project.get("strategy", "none")
             })
 
-            proposal = await ai_service.generate_proposal(full_detail, circuit_breaker=circuit_breaker)
+            proposal = await adapters["PREMIUM"].generate_proposal(full_detail, circuit_breaker=circuit_breaker)
             
             if proposal and "error" not in proposal:
                 await projects_repository.update_project_proposal(link_hash, proposal)

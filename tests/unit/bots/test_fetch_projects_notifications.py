@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch, ANY
+from unittest.mock import AsyncMock, MagicMock, patch, ANY
 from app.bots.telegram.handlers import fetch_projects
 
 @pytest.fixture
@@ -8,7 +8,7 @@ def mock_dependencies():
          patch("app.bots.telegram.handlers.get_process_semaphore") as mock_sem, \
          patch("app.bots.telegram.handlers.get_projects_repository") as mock_repo, \
          patch("app.bots.telegram.handlers.ScraperFactory") as mock_scraper, \
-         patch("app.bots.telegram.handlers.get_intelligence_service") as mock_ai, \
+         patch("app.bots.telegram.handlers.create_intelligence_service") as mock_ai, \
          patch("asyncio.sleep", new_callable=AsyncMock):
         
         # is_locked is an async method -> must be AsyncMock
@@ -24,18 +24,20 @@ def mock_dependencies():
         
         mock_scraper.get_scraper.return_value.get_projects = AsyncMock()
         
-        mock_ai.return_value.evaluate_projects = AsyncMock()
+        mock_filter = MagicMock()
+        mock_filter.evaluate_projects = AsyncMock()
+        mock_ai.return_value = {"FILTER": mock_filter, "STANDARD": MagicMock(), "PREMIUM": MagicMock()}
         
-        yield mock_repo, mock_scraper, mock_ai
+        yield mock_repo, mock_scraper, mock_filter
 
 @pytest.mark.asyncio
 async def test_notifies_when_no_relevant_projects_found(mock_dependencies):
-    mock_repo, mock_scraper, mock_ai = mock_dependencies
+    mock_repo, mock_scraper, mock_filter = mock_dependencies
     
     mock_scraper.get_scraper.return_value.get_projects.return_value = [{"link_hash": "1"}]
     mock_repo.return_value.collection.count_documents.return_value = 1
     mock_repo.return_value.claim_pending_projects.side_effect = [[{"link_hash": "1"}], []]
-    mock_ai.return_value.evaluate_projects.return_value = [{"score": 2}]
+    mock_filter.evaluate_projects.return_value = [{"score": 2}]
 
     mock_update = AsyncMock()
     await fetch_projects(update=mock_update, context=AsyncMock())
@@ -46,12 +48,12 @@ async def test_notifies_when_no_relevant_projects_found(mock_dependencies):
 
 @pytest.mark.asyncio
 async def test_notifies_when_relevant_projects_found(mock_dependencies):
-    mock_repo, mock_scraper, mock_ai = mock_dependencies
+    mock_repo, mock_scraper, mock_filter = mock_dependencies
     
     mock_scraper.get_scraper.return_value.get_projects.return_value = [{"link_hash": "1"}]
     mock_repo.return_value.collection.count_documents.return_value = 1
     mock_repo.return_value.claim_pending_projects.side_effect = [[{"link_hash": "1"}], []]
-    mock_ai.return_value.evaluate_projects.return_value = [{"score": 8, "title": "Great Project"}]
+    mock_filter.evaluate_projects.return_value = [{"score": 8, "title": "Great Project"}]
 
     with patch("app.bots.telegram.handlers.send_long_message") as mock_send:
         mock_update = AsyncMock()
@@ -62,7 +64,7 @@ async def test_notifies_when_relevant_projects_found(mock_dependencies):
 
 @pytest.mark.asyncio
 async def test_notifies_when_no_pending_projects_exist(mock_dependencies):
-    mock_repo, mock_scraper, mock_ai = mock_dependencies
+    mock_repo, mock_scraper, mock_filter = mock_dependencies
     
     mock_scraper.get_scraper.return_value.get_projects.return_value = []
 

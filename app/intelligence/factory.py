@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 from typing import Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -9,31 +10,76 @@ from .adapters.openrouter import OpenRouterAdapter
 from app.database.mongo import get_database
 from loguru import logger
 
-_instance: IntelligencePort | None = None
 
+# ---------------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------------
 
-def get_intelligence_service() -> IntelligencePort:
+@dataclass
+class ModelInfo:
+    """Resolved default-model information retrieved from MongoDB.
+
+    Attributes:
+        model_id: Provider-specific model identifier (e.g.
+            ``'models/gemini-2.5-flash'``).  An empty string signals
+            "use the adapter's hardcoded default".
+        provider_key: Unique provider key (``'gemini'`` or
+            ``'openrouter'``) that determines which adapter class to
+            instantiate.  Matches the ``key`` field in the
+            ``providers`` collection.
     """
-    Retorna una instancia singleton del servicio de inteligencia,
-    seleccionando el proveedor desde las variables de entorno.
+    model_id: str
+    provider_key: str
+
+
+# ---------------------------------------------------------------------------
+# Custom exceptions
+# ---------------------------------------------------------------------------
+
+class DefaultModelNotFoundError(Exception):
+    """Raised when one or more required default models are missing from
+    the ``models`` collection."""
+
+
+class ModelsCollectionUnavailableError(Exception):
+    """Raised when the ``models`` collection cannot be accessed (e.g.
+    MongoDB connection failure)."""
+
+
+# ---------------------------------------------------------------------------
+# Cached adapter instances (STANDARD, PREMIUM, FILTER)
+# ---------------------------------------------------------------------------
+
+_instances: dict[str, IntelligencePort] = {}
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+async def get_intelligence_service(
+    db: AsyncIOMotorDatabase | None = None,
+) -> IntelligencePort:
+    """Return the **STANDARD** intelligence service adapter (cached).
+
+    Delegates to :func:`create_intelligence_service` on first call to
+    initialise all three adapters from the database.  Subsequent calls
+    return the previously cached instance immediately.
     """
-    global _instance
-    if _instance is None:
-        provider = os.getenv("AI_PROVIDER", "gemini").lower()
-        logger.info(f"🤖 Proveedor de IA seleccionado: '{provider}'")
+    global _instances
+    if "STANDARD" not in _instances:
+        await create_intelligence_service(db)
+    return _instances["STANDARD"]
 
-        if provider == "gemini":
-            _instance = GeminiAdapter()
-        elif provider == "openrouter":
-            _instance = OpenRouterAdapter()
-        # Futuro: Añadir otros proveedores como "openai" o un "dummy" para pruebas
-        # elif provider == "dummy":
-        #     _instance = DummyIntelligenceAdapter()
-        else:
-            logger.error(f"Proveedor de IA desconocido: {provider}")
-            raise ValueError(f"Proveedor de IA desconocido: {provider}")
 
-    return _instance
+def get_intelligence_adapters() -> dict[str, IntelligencePort] | None:
+    """Return the cached adapters dict *without* triggering DB queries.
+
+    Returns ``None`` when :func:`create_intelligence_service` has not been
+    called yet.  Use :func:`get_intelligence_service` or
+    :func:`create_intelligence_service` to populate the cache first.
+    """
+    return _instances if _instances else None
 
 
 # ---------------------------------------------------------------------------
@@ -42,14 +88,32 @@ def get_intelligence_service() -> IntelligencePort:
 
 async def get_default_models_from_db(
     db: AsyncIOMotorDatabase | None = None,
-) -> tuple[str, str]:
-    """Query the ``models`` collection for the current default models.
+) -> tuple[ModelInfo, ModelInfo]:
+    """Query the ``models`` collection for the two default models.
+
+    The ``models`` collection is expected to hold **exactly two**
+    default entries (see :class:`~app.models.models.Model`):
+
+    * **STANDARD** — ``is_default=True``, ``is_premium=False``.
+      This model handles both project evaluation and description
+      filtering (the FILTER adapter shares the same model).
+    * **PREMIUM** — ``is_default=True``, ``is_premium=True``.
+      Used exclusively for proposal generation.
+
+    Each document's ``provider_key`` field (matching
+    ``providers.key`` — see :class:`~app.models.provider.ProviderModel`)
+    determines which adapter class is instantiated later.
 
     Returns:
-        (standard_model_id, premium_model_id)
+        ``(standard_info, premium_info)`` where each
+        :class:`ModelInfo` carries the resolved ``model_id`` and
+        ``provider_key``.
 
-    Falls back to adapter-level hardcoded constants if the collection
-    is empty or unavailable.
+    Raises:
+        DefaultModelNotFoundError: when either default model is
+            missing from the collection.
+        ModelsCollectionUnavailableError: when the database connection
+            fails or the collection cannot be queried.
     """
     if db is None:
         db = get_database()
@@ -62,62 +126,133 @@ async def get_default_models_from_db(
             {"is_default": True, "is_premium": True}
         )
 
-        standard_id: str = (
-            default_standard["model_id"]
-            if default_standard
-            else OpenRouterAdapter.__module__  # won't be used; see below
-        )
-        premium_id: str = (
-            default_premium["model_id"]
-            if default_premium
-            else ""
-        )
+        missing: list[str] = []
+        if not default_standard:
+            missing.append("STANDARD (is_default=True, is_premium=False)")
+        if not default_premium:
+            missing.append("PREMIUM (is_default=True, is_premium=True)")
 
-        if default_standard and default_premium:
-            logger.info(
-                f"📦 Default models from DB: standard={standard_id}, premium={premium_id}"
+        if missing:
+            raise DefaultModelNotFoundError(
+                f"Missing default models in DB: {', '.join(missing)}"
             )
-            return standard_id, premium_id
 
-        logger.warning("Default models not found in DB — falling back to adapter constants")
+        standard_info = ModelInfo(
+            model_id=default_standard["model_id"],
+            provider_key=default_standard.get("provider_key", "gemini"),
+        )
+        premium_info = ModelInfo(
+            model_id=default_premium["model_id"],
+            provider_key=default_premium.get("provider_key", "gemini"),
+        )
+
+        logger.info(
+            f"📦 Default models from DB: "
+            f"standard={standard_info.model_id} (via {standard_info.provider_key}), "
+            f"premium={premium_info.model_id} (via {premium_info.provider_key})"
+        )
+        return standard_info, premium_info
+
+    except DefaultModelNotFoundError:
+        raise
     except Exception as e:
-        logger.warning(f"Could not query models collection: {e} — falling back to adapter constants")
+        raise ModelsCollectionUnavailableError(
+            f"Could not query models collection: {e}"
+        ) from e
 
-    return "", ""  # empty signals to adapters "use your own hardcoded default"
+
+# ---------------------------------------------------------------------------
+# Adapter instantiation
+# ---------------------------------------------------------------------------
+
+
+def _create_adapter(
+    provider_key: str,
+    model_id: str | None,
+) -> IntelligencePort:
+    """Instantiate the correct adapter class for *provider_key*.
+
+    All three model overrides (standard, premium, filter) receive the
+    same *model_id* so the adapter always routes through its dedicated
+    tier model regardless of internal strategy selection.
+    """
+    if provider_key == "gemini":
+        return GeminiAdapter(
+            standard_model=model_id,
+            premium_model=model_id,
+            filter_model=model_id,
+        )
+    if provider_key == "openrouter":
+        return OpenRouterAdapter(
+            standard_model=model_id,
+            premium_model=model_id,
+            filter_model=model_id,
+        )
+
+    raise ValueError(
+        f"Unknown AI provider key: '{provider_key}'. "
+        f"Expected 'gemini' or 'openrouter'."
+    )
 
 
 async def create_intelligence_service(
     db: AsyncIOMotorDatabase | None = None,
-) -> IntelligencePort:
-    """Create an intelligence service instance using model IDs from the database.
+) -> dict[str, IntelligencePort]:
+    """Create and cache all three intelligence service adapters.
 
-    Reads the ``models`` collection to find the default standard and premium
-    model IDs and injects them into the adapter, overriding the hardcoded
-    constants in each adapter module.
+    Reads the ``models`` collection to find the default STANDARD and
+    PREMIUM models.  Each model's ``provider_key`` determines which
+    adapter class is instantiated, allowing STANDARD and PREMIUM to
+    be served by different providers.
 
-    Falls back to adapter-level defaults when the DB is not available.
+    * **STANDARD** adapter → standard model from DB (any provider).
+    * **PREMIUM** adapter → premium model from DB (any provider).
+    * **FILTER** adapter → same model as STANDARD (non-transactional
+      filtering uses the fast/cheap standard model).
+
+    Returns:
+        ``{"STANDARD": ..., "PREMIUM": ..., "FILTER": ...}``.
+
+    Falls back to hardcoded Gemini defaults **only** when MongoDB
+    is unavailable or default models are missing.
     """
-    global _instance
-    if _instance is not None:
-        return _instance
+    global _instances
+    if _instances:
+        return _instances
 
-    standard_model_id, premium_model_id = await get_default_models_from_db(db)
+    try:
+        standard_info, premium_info = await get_default_models_from_db(db)
+    except ModelsCollectionUnavailableError as e:
+        logger.warning(f"{e} — falling back to hardcoded Gemini defaults")
+        standard_info = ModelInfo(model_id="", provider_key="gemini")
+        premium_info = ModelInfo(model_id="", provider_key="gemini")
+    except DefaultModelNotFoundError as e:
+        logger.warning(f"{e} — falling back to hardcoded Gemini defaults")
+        standard_info = ModelInfo(model_id="", provider_key="gemini")
+        premium_info = ModelInfo(model_id="", provider_key="gemini")
 
-    provider = os.getenv("AI_PROVIDER", "gemini").lower()
-    logger.info(f"🤖 Proveedor de IA seleccionado: '{provider}'")
+    # STANDARD adapter — uses the standard model's provider
+    _instances["STANDARD"] = _create_adapter(
+        standard_info.provider_key,
+        standard_info.model_id or None,
+    )
 
-    if provider == "gemini":
-        _instance = GeminiAdapter(
-            standard_model=standard_model_id or None,
-            premium_model=premium_model_id or None,
-        )
-    elif provider == "openrouter":
-        _instance = OpenRouterAdapter(
-            standard_model=standard_model_id or None,
-            premium_model=premium_model_id or None,
-        )
-    else:
-        logger.error(f"Proveedor de IA desconocido: {provider}")
-        raise ValueError(f"Proveedor de IA desconocido: {provider}")
+    # PREMIUM adapter — uses the premium model's provider (may differ!)
+    _instances["PREMIUM"] = _create_adapter(
+        premium_info.provider_key,
+        premium_info.model_id or None,
+    )
 
-    return _instance
+    # FILTER adapter — shares the standard model (filtering is non-transactional)
+    _instances["FILTER"] = _create_adapter(
+        standard_info.provider_key,
+        standard_info.model_id or None,
+    )
+
+    logger.info(
+        f"✅ Adapters initialised: "
+        f"STANDARD [{standard_info.provider_key}], "
+        f"PREMIUM [{premium_info.provider_key}], "
+        f"FILTER [{standard_info.provider_key}]"
+    )
+    return _instances

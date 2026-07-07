@@ -30,16 +30,19 @@ class OpenRouterAdapter(IntelligencePort):
         self,
         standard_model: str | None = None,
         premium_model: str | None = None,
+        filter_model: str | None = None,
     ) -> None:
         self.default_strategy = "none"
         self.flash_strategy = "flash"
         self.pro_strategy = "pro"
+        self.filter_strategy = "filter"
         self.delay_model = 1.0
 
         # Allow overriding model IDs from the database-driven factory.
         # Fall back to module-level constants when no override is provided.
         self._standard_model_override = standard_model
         self._premium_model_override = premium_model
+        self._filter_model_override = filter_model
 
         template_path = os.path.join(os.path.dirname(__file__), "../prompts")
         self.jinja_env = Environment(loader=FileSystemLoader(template_path))
@@ -72,8 +75,10 @@ class OpenRouterAdapter(IntelligencePort):
             self.model_id = self._premium_model_override or PREMIUM_MODEL
         elif strategy == self.flash_strategy:
             self.model_id = self._standard_model_override or STANDARD_MODEL
+        elif strategy == self.filter_strategy:
+            self.model_id = self._filter_model_override or STANDARD_MODEL
         else:
-            self.model_id = self._standard_model_override or STANDARD_MODEL  # default
+            self.model_id = self._standard_model_override or STANDARD_MODEL
         return self.model_id
 
     def _set_delay(self, strategy: str = "none") -> float:
@@ -322,7 +327,7 @@ class OpenRouterAdapter(IntelligencePort):
         logger.info("🤖 Llamando a OpenRouter para formatear descripción...")
 
         try:
-            self._select_model(self.flash_strategy)
+            self._select_model(self.filter_strategy)
 
             text_response = await self._chat_completion(prompt, circuit_breaker)
 

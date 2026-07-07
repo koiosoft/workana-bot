@@ -69,7 +69,7 @@ def mock_scraper():
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_happy_path(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin,
@@ -78,7 +78,7 @@ async def test_process_projects_happy_path(
     # Arrange
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
 
     # Act
@@ -97,7 +97,7 @@ async def test_process_projects_happy_path(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_first_ai_failure(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -106,7 +106,7 @@ async def test_process_projects_first_ai_failure(
     # Arrange
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     # Simulate failure on the first project
     mock_ai_service.generate_proposal.side_effect = [AIConnectionError, {"summary": "A great proposal."}]
@@ -129,7 +129,7 @@ async def test_process_projects_first_ai_failure(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_warning_backoff(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -138,7 +138,7 @@ async def test_process_projects_warning_backoff(
     # Arrange
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     # This exception will be raised on the first call, and a normal dict on the second
     mock_ai_service.generate_proposal.side_effect = [
@@ -158,7 +158,7 @@ async def test_process_projects_warning_backoff(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_shutdown_on_trip(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -167,7 +167,7 @@ async def test_process_projects_shutdown_on_trip(
     # Arrange
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     mock_ai_service.generate_proposal.side_effect = CircuitBreakerTrippedError("Tripped", failures=5)
 
@@ -189,7 +189,7 @@ async def test_process_projects_shutdown_on_trip(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_suspension_backoff(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -198,7 +198,7 @@ async def test_process_projects_suspension_backoff(
     """Should handle CircuitBreakerSuspension with 10-minute backoff."""
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     mock_ai_service.generate_proposal.side_effect = [
         CircuitBreakerSuspension("Suspension", failures=3, backoff=10),
@@ -216,7 +216,7 @@ async def test_process_projects_suspension_backoff(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_critical_backoff(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -225,7 +225,7 @@ async def test_process_projects_critical_backoff(
     """Should handle CircuitBreakerCritical with 20-minute backoff."""
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     mock_ai_service.generate_proposal.side_effect = [
         CircuitBreakerCritical("Critical", failures=4, backoff=20),
@@ -243,7 +243,7 @@ async def test_process_projects_critical_backoff(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_project_not_found(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -252,7 +252,7 @@ async def test_process_projects_project_not_found(
     """Should mark project as not_found when scraper returns None."""
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     # First project not found, second succeeds
     mock_scraper.fetch_full_detail.side_effect = [None, {"full_description": "details"}]
@@ -271,7 +271,7 @@ async def test_process_projects_project_not_found(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_semaphore_already_locked(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -280,7 +280,7 @@ async def test_process_projects_semaphore_already_locked(
     """Should not process when semaphore is already locked."""
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     mock_semaphore.is_locked.return_value = True
     mock_semaphore.get_status = AsyncMock(return_value={
@@ -306,7 +306,7 @@ async def test_process_projects_semaphore_already_locked(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_no_projects(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -315,7 +315,7 @@ async def test_process_projects_no_projects(
     """Should handle empty project list gracefully."""
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     mock_repo.get_projects_for_deep_analysis.return_value = []
 
@@ -333,7 +333,7 @@ async def test_process_projects_no_projects(
 @patch("app.bots.telegram.handlers.is_admin", return_value=True)
 @patch("app.bots.telegram.handlers.get_projects_repository")
 @patch("app.bots.telegram.handlers.get_process_semaphore")
-@patch("app.bots.telegram.handlers.get_intelligence_service")
+@patch("app.bots.telegram.handlers.create_intelligence_service")
 @patch("app.bots.telegram.handlers.ScraperFactory")
 async def test_process_projects_format_description_failure(
     mock_scraper_factory, mock_get_ai, mock_get_semaphore, mock_get_repo, mock_is_admin, mock_sleep,
@@ -342,7 +342,7 @@ async def test_process_projects_format_description_failure(
     """Should handle failure in format_project_description gracefully."""
     mock_get_repo.return_value = mock_repo
     mock_get_semaphore.return_value = mock_semaphore
-    mock_get_ai.return_value = mock_ai_service
+    mock_get_ai.return_value = {"STANDARD": mock_ai_service, "PREMIUM": mock_ai_service, "FILTER": mock_ai_service}
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     mock_ai_service.format_project_description.side_effect = AIConnectionError("Format failed")
 

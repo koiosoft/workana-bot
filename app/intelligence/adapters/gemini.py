@@ -10,6 +10,7 @@ from loguru import logger
 from ..port import IntelligencePort
 from app.exceptions import AIConnectionError
 from typing import TYPE_CHECKING
+from httpx import RemoteProtocolError
 
 if TYPE_CHECKING:
     from app.bots.telegram.circuit_breaker import CircuitBreaker
@@ -23,6 +24,7 @@ class GeminiAdapter(IntelligencePort):
         self,
         standard_model: str | None = None,
         premium_model: str | None = None,
+        filter_model: str | None = None,
     ):
         self.default_strategy = "none"
         self.flash_strategy = 'flash'
@@ -33,6 +35,7 @@ class GeminiAdapter(IntelligencePort):
         # Fall back to module-level constants when no override is provided.
         self._standard_model_override = standard_model
         self._premium_model_override = premium_model
+        self._filter_model_override = filter_model
 
         template_path = os.path.join(os.path.dirname(__file__), '../prompts')
         self.jinja_env = Environment(loader=FileSystemLoader(template_path))
@@ -52,7 +55,7 @@ class GeminiAdapter(IntelligencePort):
                 retry_options=genai.types.HttpRetryOptions()
             )
             self.client = genai.Client(api_key=api_key, http_options=http_opts)
-            self.model_id = "models/gemini-flash-latest"
+            self.model_id = FILTER_MODEL
             
             self.evaluation_instructions = ""
             self.proposal_instructions = ""
@@ -232,11 +235,11 @@ class GeminiAdapter(IntelligencePort):
             raw_description=description
         )
         
-        logger.info("🤖 Llamando a Gemini Flash para formatear descripción...")
+        logger.info("🤖 Llamando a Gemini para formatear descripción...")
         try:
-            # Usamos el modelo más rápido y económico para esta tarea.
+            self.set_gemini_model(self.flash_strategy)
             response = self.client.models.generate_content(
-                model=STANDARD_MODEL,
+                model=self.model_id,
                 contents=prompt
             )
 
@@ -260,7 +263,7 @@ class GeminiAdapter(IntelligencePort):
             raise e
 
     def set_gemini_model(self, strategy = "none") -> str:
-        self.model_id = FILTER_MODEL
+        self.model_id = self._filter_model_override or FILTER_MODEL
         if strategy == self.pro_strategy:
             self.model_id = self._premium_model_override or PREMIUM_MODEL
         elif strategy == self.flash_strategy:
@@ -281,5 +284,4 @@ class GeminiAdapter(IntelligencePort):
         return self.delay_model 
     
     
-from httpx import RemoteProtocolError
-from app.exceptions import AIConnectionError
+

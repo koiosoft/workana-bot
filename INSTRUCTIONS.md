@@ -1,35 +1,53 @@
 ## Current Objective
-Implement REST endpoints for managing Model Providers and Models (LLMs), including endpoints for setting default and premium models, along with corresponding unit and integration tests.
+Refactor the AI adapter selection mechanism to retrieve STANDARD, PREMIUM, and FILTER adapters from MongoDB based on `is_default: True` models, replacing the current environment variable-based approach.
 
 ## Key Artifacts (to focus on)
-- **Files**:
-  - `app/api/routes/models.py` (new file to create)
-  - `tests/unit/api/test_models.py` (new file to create)
-  - `tests/integration/test_models_integration.py` (new file to create)
-- **Classes/Interfaces**:
-  - `ModelProvider` (Pydantic model)
-  - `Model` (Pydantic model)
-  - `ModelsRouter` (FastAPI router)
-- **Configuration**:
-  - Environment variables related to MongoDB connection
-  - `MONGO_URI` for integration tests
+- **Files**:  
+  - `app/intelligence/factory.py`  
+  - `app/intelligence/adapters/openrouter.py`  
+  - `app/intelligence/adapters/gemini.py`  
+  - `app/bots/telegram/handlers.py`  
+  - `tests/integration/intelligence/test_factory.py`  
+  - `tests/unit/intelligence/test_factory.py`  
+  - `app/models/models.py`  
+  - `app/models/provider.py`  
+- **Classes/Interfaces**:  
+  - `IntelligencePort` (from `app/intelligence/port.py`)  
+  - `OpenRouterAdapter`, `GeminiAdapter` (from `app/intelligence/adapters/`)  
+  - `get_intelligence_service`, `create_intelligence_service` (from `app/intelligence/factory.py`)  
+  - `Model` (from `app/models/models.py`)  
+- **Configuration**:  
+  - `AI_PROVIDER` environment variable  
+  - `MONGO_URI` for database access  
 
 ## Task List
-- [x] Read `app/api/main.py` to understand the existing FastAPI setup, then create `app/api/routes/models.py`.
-- [x] Define `POST /providers` endpoint in `ModelsRouter` for creating Model Providers with validation against `ModelProvider` Pydantic model.
-- [x] Define `POST /models` endpoint in `ModelsRouter` for creating Models (LLMs) with validation against `Model` Pydantic model.
-- [x] Create `tests/unit/api/test_models.py` and implement unit tests for `POST /providers` and `POST /models` endpoints.
-- [x] Create `tests/integration/test_models_integration.py` and implement integration tests for `POST` endpoints with MongoDB interaction via `MONGO_URI`.
-- [x] Define `PUT /providers/{provider_id}` endpoint in `ModelsRouter` for updating Model Providers (name, description, etc.)
-- [x] Define `PUT /models/{model_id}` endpoint in `ModelsRouter` to update Model flags: set `is_default` and `is_premium` while ensuring mutual exclusion with existing defaults/premium models.
-- [x] Extend `tests/unit/api/test_models.py` to include unit tests for `PUT` endpoints, validating input types and business logic.
-- [x] Extend `tests/integration/test_models_integration.py` to include integration tests for `PUT` endpoints with database state validation.
-- [x] Define `DELETE /providers/{provider_id}` endpoint in `ModelsRouter` for soft-deleting Model Providers (add `is_deleted` flag and cascade to associated models)
-- [x] Define `DELETE /models/{model_id}` endpoint in `ModelsRouter` for soft-deleting Models while preserving historical usage records.
-- [x] Extend `tests/unit/api/test_models.py` to include unit tests for `DELETE` endpoints with validation of deletion constraints.
-- [x] Extend `tests/integration/test_models_integration.py` to include integration tests for `DELETE` endpoints with database state validation.
-- [x] Examine `app/models/provider.py` and create `ModelProvider` Pydantic model in `app/models/models.py` with required fields: id, name, description, created_at, updated_at.
-- [x] Examine `app/models/project.py` and create `Model` Pydantic model in `app/models/models.py` with required fields: id, provider_id, name, is_default, is_premium, created_at, updated_at.
-- [x] Ensure all files adhere to PEP 8, use strict type hints, and include `pytest.mark.asyncio` for async tests with no network I/O in unit tests and proper Loguru logging.
+- [x] Read `app/intelligence/factory.py` to:
+    - Understand `get_intelligence_service` and `create_intelligence_service` logic.
+    - Modify `get_intelligence_service` to delegate to `create_intelligence_service` and remove environment variable dependency.
+    - Ensure the three adapters are retrieved from MongoDB via `is_default: True` models and passed to downstream components.
+- [x] Examine `app/intelligence/adapters/openrouter.py` and `app/intelligence/adapters/gemini.py` to:
+    - Confirm `standard_model` and `premium_model` parameters override hardcoded IDs.
+    - Add `filter_model` initialization in `create_intelligence_service` using database-retrieved IDs.
+    - Ensure all three adapters are uniquely instantiated and injected into service objects.
+- [x] Modify `app/bots/telegram/handlers.py` to:
+    - Replace `get_intelligence_service()` with `create_intelligence_service()` to retrieve all three adapters.
+    - Add user-tier-based logic to select between STANDARD, PREMIUM, and FILTER adapters.
+    - Ensure adapter instances are used explicitly in `process_projects` logic for their respective use cases.
+- [x] Update `app/intelligence/factory.py` to:
+    - Enhance `get_default_models_from_db` to raise descriptive errors for missing default models.
+    - Ensure `create_intelligence_service` returns a dictionary of adapters: `{STANDARD: ..., PREMIUM: ..., FILTER: ...}`.
+    - Default to hardcoded values only if MongoDB is unavailable, preserving adapter isolation.
+- [x] Examine `tests/unit/intelligence/test_factory.py` to:
+    - Mock MongoDB queries for `get_default_models_from_db`.
+    - Verify STANDARD, PREMIUM, and FILTER adapters are correctly instantiated with database models.
+    - Add assertions to check adapter `is_default` and `is_premium` flags align with database records.
+- [x] Review `tests/integration/intelligence/test_factory.py` to:
+    - Add tests for database edge cases (missing default models, multiple default models).
+    - Verify `create_intelligence_service` raises correct errors and uses hardcoded fallbacks.
+    - Ensure integration tests validate all three adapters are instantiated in normal/edge cases.
+- [x] Ensure `app/models/models.py` and `app/models/provider.py` are referenced in `get_default_models_from_db` to:
+    - Correctly query the `models` collection for `is_default: True` entries.
+    - Distinguish between STANDARD (is_premium: False) and PREMIUM (is_premium: True) models.
+    - Exclude FILTER models from `is_premium` checks if they are non-transactional.
 
 ## End Task List
