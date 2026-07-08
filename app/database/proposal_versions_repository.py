@@ -56,6 +56,7 @@ class ProposalVersionsRepository:
         proposal_data: Dict[str, Any],
         refinement_log: Optional[List[Dict[str, Any]]] = None,
         source_of_changes: str = "IA",
+        refinement_justification: Optional[str] = None,
     ) -> str:
         """Insert a new proposal version with auto-incremented version_number.
 
@@ -81,6 +82,8 @@ class ProposalVersionsRepository:
         }
         if refinement_log is not None:
             doc["refinement_log"] = refinement_log
+        if refinement_justification is not None:
+            doc["refinement_justification"] = refinement_justification
 
         result = await self.collection.insert_one(doc)
         inserted_id = str(result.inserted_id)

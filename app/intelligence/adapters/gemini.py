@@ -224,6 +224,82 @@ class GeminiAdapter(IntelligencePort):
             # Devolvemos un error para que el handler sepa que este proyecto falló.
             return {"error": f"Error inesperado: {e}"}
 
+    async def refine_proposal(
+        self,
+        project: dict[str, Any],
+        user_feedback_observations: str,
+        model_id: str,
+        circuit_breaker: Optional["CircuitBreaker"] = None,
+    ) -> dict[str, Any]:
+        """Refine an existing proposal using user feedback and a specific LLM model.
+
+        Renders the ``refine.j2`` template, calls the specified model via
+        Gemini, and returns the parsed JSON response.
+        """
+        project_payload: dict[str, Any] = {
+            "title": project.get("title", "Proyecto sin título"),
+            "description": project.get(
+                "full_description", project.get("description", "N/A")
+            ),
+            "skills_required": project.get("skills", []),
+            "budget_range": project.get("budget_detail", "N/A"),
+        }
+
+        # Extract current proposal data for the LLM context
+        current_proposal = project.get("proposal") or project.get("proposal_data")
+
+        prompt = self._render_prompt(
+            "refine.j2",
+            project_payload_json=json.dumps(project_payload, indent=2),
+            current_proposal_json=json.dumps(current_proposal, indent=2) if current_proposal else "{}",
+            user_feedback_observations=user_feedback_observations,
+        )
+
+        try:
+            # Override model with the user-specified one
+            original_model = self.model_id
+            self.model_id = model_id
+
+            logger.info(
+                f"🤖 Refinando propuesta con modelo: '{self.model_id}'"
+            )
+
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt
+            )
+
+            # Restore original model
+            self.model_id = original_model
+
+            if circuit_breaker:
+                circuit_breaker.record_success()
+
+            if response.text is None:
+                logger.warning("La IA no devolvió texto en el refinamiento de propuesta.")
+                return {"error": "No se pudo refinar la propuesta, la IA no devolvió contenido."}
+
+            text_response = response.text.strip()
+            match = re.search(r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL)
+            json_part = match.group(1) if match else text_response[text_response.find("{") : text_response.rfind("}") + 1]
+
+            refined_data: dict[str, Any] = json.loads(json_part)
+            return refined_data
+
+        except RemoteProtocolError as e:
+            logger.error(f"Conexión interrumpida durante refinamiento de propuesta: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("Servidor de IA interrumpido inesperadamente") from e
+        except google.genai.errors.APIError as e:
+            logger.error(f"Error en API de IA durante el refinamiento de propuesta: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError(f"La API de IA falló durante el refinamiento de propuesta: {e}") from e
+        except Exception as e:
+            logger.error(f"Error inesperado refinando propuesta: {e}")
+            return {"error": f"Error inesperado: {e}"}
+
     async def format_project_description(
         self, description: str, circuit_breaker: Optional["CircuitBreaker"] = None
     ) -> str:

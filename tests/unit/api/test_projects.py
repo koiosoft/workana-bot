@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch
+from copy import deepcopy
 
 from app.api.main import app
 
@@ -268,3 +269,314 @@ class TestUpdateProjectProposalVersion:
             data = response.json()
             assert data["detail"]["error"] == "Internal Server Error"
             assert "link_hash" in data["detail"]["message"]
+
+
+# ---------------------------------------------------------------------------
+# POST /api/proposals/{proposalId}/refine
+# ---------------------------------------------------------------------------
+
+class TestRefineProposal:
+    """Unit tests for the proposal refinement endpoint."""
+
+    SAMPLE_REFINED_RESPONSE = {
+        "refinement_justification": "Adjusted milestones based on feedback.",
+        "proposal": {
+            "proposal_header": "Greetings...",
+            "milestones": [],
+            "summary": {"total_hours": 100, "total_budget": 2500.0},
+            "technical_pitch": "...",
+            "questions_for_client": [],
+        },
+    }
+
+    SAMPLE_PROJECT = {
+        "_id": "6a034f37d8e430e05690091b",
+        "title": "Test Project",
+        "link_hash": "abc123hash",
+        "short_description": "A test project",
+        "skills": ["Python"],
+    }
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _setup_mocks(
+        mock_projects_repo,
+        mock_proposals_repo,
+        mock_intel,
+        *,
+        project: dict | None = None,
+        refined: dict | None = None,
+        intel_side_effect: Exception | None = None,
+    ) -> None:
+        """Configure the three mocks for a single test case."""
+        mock_projects = mock_projects_repo.return_value
+        mock_projects.get_project_by_id = AsyncMock(
+            return_value=project
+        )
+        mock_projects.populate_proposal_for_project = AsyncMock(
+            side_effect=lambda p: p
+        )
+
+        mock_proposals = mock_proposals_repo.return_value
+        mock_proposals.insert_version = AsyncMock()
+
+        if intel_side_effect:
+            mock_intel.side_effect = intel_side_effect
+        else:
+            # Deep-copy to prevent the endpoint's .pop() calls from
+            # mutating class-level test data shared across test cases.
+            mock_intel.return_value = deepcopy(refined) if refined else None
+
+    # ------------------------------------------------------------------
+    # Error cases
+    # ------------------------------------------------------------------
+
+    def test_invalid_id_returns_400(self):
+        """Invalid ObjectId format → 400 Bad Request."""
+        response = client.post(
+            "/api/proposals/not-an-objectid/refine",
+            json={
+                "llm_model_id": "openrouter/gpt-4",
+                "user_feedback_observations": "Add more detail.",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"]["error"] == "Bad Request"
+        assert "project ID" in response.json()["detail"]["message"]
+
+    def test_project_not_found_returns_404(self):
+        """Project does not exist → 404."""
+        with patch(
+            "app.api.routes.proposals.ProjectsRepository"
+        ) as mock_repo:
+            mock_repo.return_value.get_project_by_id = AsyncMock(
+                return_value=None
+            )
+
+            response = client.post(
+                "/api/proposals/6a034f37d8e430e05690091b/refine",
+                json={
+                    "llm_model_id": "openrouter/gpt-4",
+                    "user_feedback_observations": "...",
+                },
+            )
+
+            assert response.status_code == 404
+            assert response.json()["detail"] == "Project not found"
+
+    def test_missing_link_hash_returns_500(self):
+        """Project found but link_hash is missing → 500."""
+        project_no_hash = {**self.SAMPLE_PROJECT, "link_hash": None}
+        project_no_hash.pop("link_hash")  # deliberately absent
+
+        with patch(
+            "app.api.routes.proposals.ProjectsRepository"
+        ) as mock_projects_repo, patch(
+            "app.api.routes.proposals.ProposalVersionsRepository"
+        ) as mock_proposals_repo, patch(
+            "app.api.routes.proposals.refine_proposal_intel",
+            new_callable=AsyncMock,
+        ) as mock_intel:
+            self._setup_mocks(
+                mock_projects_repo,
+                mock_proposals_repo,
+                mock_intel,
+                project=project_no_hash,
+                refined=self.SAMPLE_REFINED_RESPONSE,
+            )
+
+            response = client.post(
+                "/api/proposals/6a034f37d8e430e05690091b/refine",
+                json={
+                    "llm_model_id": "openrouter/gpt-4",
+                    "user_feedback_observations": "...",
+                },
+            )
+
+            assert response.status_code == 500
+            data = response.json()
+            assert data["detail"]["error"] == "Internal Server Error"
+            assert "link_hash" in data["detail"]["message"]
+
+    def test_ai_service_error_returns_502(self):
+        """Intelligence layer raises → 502 Bad Gateway."""
+        with patch(
+            "app.api.routes.proposals.ProjectsRepository"
+        ) as mock_projects_repo, patch(
+            "app.api.routes.proposals.ProposalVersionsRepository"
+        ) as mock_proposals_repo, patch(
+            "app.api.routes.proposals.refine_proposal_intel",
+            new_callable=AsyncMock,
+        ) as mock_intel:
+            self._setup_mocks(
+                mock_projects_repo,
+                mock_proposals_repo,
+                mock_intel,
+                project=self.SAMPLE_PROJECT,
+                intel_side_effect=Exception("AI timeout"),
+            )
+
+            response = client.post(
+                "/api/proposals/6a034f37d8e430e05690091b/refine",
+                json={
+                    "llm_model_id": "openrouter/gpt-4",
+                    "user_feedback_observations": "...",
+                },
+            )
+
+            assert response.status_code == 502
+            data = response.json()
+            assert data["detail"]["error"] == "AI Service Error"
+
+    # ------------------------------------------------------------------
+    # Success cases
+    # ------------------------------------------------------------------
+
+    def test_successful_refinement_stores_version_and_returns_project(self):
+        """Happy path: LLM returns valid data → version stored, project returned."""
+        with patch(
+            "app.api.routes.proposals.ProjectsRepository"
+        ) as mock_projects_repo, patch(
+            "app.api.routes.proposals.ProposalVersionsRepository"
+        ) as mock_proposals_repo, patch(
+            "app.api.routes.proposals.refine_proposal_intel",
+            new_callable=AsyncMock,
+        ) as mock_intel:
+            self._setup_mocks(
+                mock_projects_repo,
+                mock_proposals_repo,
+                mock_intel,
+                project=self.SAMPLE_PROJECT,
+                refined=self.SAMPLE_REFINED_RESPONSE,
+            )
+
+            response = client.post(
+                "/api/proposals/6a034f37d8e430e05690091b/refine",
+                json={
+                    "llm_model_id": "openrouter/gpt-4",
+                    "user_feedback_observations": "Add more detail.",
+                },
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            # Response format matches get_project (includes _id, title, etc.)
+            assert data["_id"] == "6a034f37d8e430e05690091b"
+            assert data["title"] == "Test Project"
+
+            # Verify insert_version was called with correct params
+            mock_proposals = mock_proposals_repo.return_value
+            mock_proposals.insert_version.assert_awaited_once()
+            call_kwargs = mock_proposals.insert_version.call_args.kwargs
+            assert call_kwargs["project_id"] == "6a034f37d8e430e05690091b"
+            assert call_kwargs["link_hash"] == "abc123hash"
+            assert call_kwargs["source_of_changes"] == "IA"
+            # proposal_data must NOT contain refinement_justification
+            assert "refinement_justification" not in call_kwargs["proposal_data"]
+            # proposal_data must be the inner proposal object
+            assert call_kwargs["proposal_data"] == self.SAMPLE_REFINED_RESPONSE["proposal"]
+            # refinement_justification passed as separate top-level field
+            assert (
+                call_kwargs["refinement_justification"]
+                == self.SAMPLE_REFINED_RESPONSE["refinement_justification"]
+            )
+
+            # Verify intel was called with the right arguments
+            mock_intel.assert_awaited_once_with(
+                project=self.SAMPLE_PROJECT,
+                user_feedback_observations="Add more detail.",
+                model_id="openrouter/gpt-4",
+            )
+
+    def test_refinement_handles_missing_justification_gracefully(self):
+        """LLM response lacks refinement_justification → stored as None, no crash."""
+        refined_no_justification = {
+            "proposal": {
+                "proposal_header": "...",
+                "milestones": [],
+                "summary": {"total_hours": 50, "total_budget": 1250.0},
+                "technical_pitch": "...",
+                "questions_for_client": [],
+            },
+        }
+
+        with patch(
+            "app.api.routes.proposals.ProjectsRepository"
+        ) as mock_projects_repo, patch(
+            "app.api.routes.proposals.ProposalVersionsRepository"
+        ) as mock_proposals_repo, patch(
+            "app.api.routes.proposals.refine_proposal_intel",
+            new_callable=AsyncMock,
+        ) as mock_intel:
+            self._setup_mocks(
+                mock_projects_repo,
+                mock_proposals_repo,
+                mock_intel,
+                project=self.SAMPLE_PROJECT,
+                refined=refined_no_justification,
+            )
+
+            response = client.post(
+                "/api/proposals/6a034f37d8e430e05690091b/refine",
+                json={
+                    "llm_model_id": "openrouter/gpt-4",
+                    "user_feedback_observations": "...",
+                },
+            )
+
+            assert response.status_code == 200
+
+            # refinement_justification passed as None
+            call_kwargs = (
+                mock_proposals_repo.return_value.insert_version.call_args.kwargs
+            )
+            assert call_kwargs["refinement_justification"] is None
+            # proposal_data is still the inner proposal
+            assert call_kwargs["proposal_data"] == refined_no_justification["proposal"]
+
+    def test_refinement_handles_flat_response_without_proposal_key(self):
+        """LLM returns a flat dict without explicit 'proposal' key → entire
+        dict used as proposal_data (backward-compatible)."""
+        flat_refined = {
+            "proposal_header": "Greetings...",
+            "milestones": [],
+            "summary": {"total_hours": 80, "total_budget": 2000.0},
+            "technical_pitch": "...",
+            "questions_for_client": [],
+        }
+
+        with patch(
+            "app.api.routes.proposals.ProjectsRepository"
+        ) as mock_projects_repo, patch(
+            "app.api.routes.proposals.ProposalVersionsRepository"
+        ) as mock_proposals_repo, patch(
+            "app.api.routes.proposals.refine_proposal_intel",
+            new_callable=AsyncMock,
+        ) as mock_intel:
+            self._setup_mocks(
+                mock_projects_repo,
+                mock_proposals_repo,
+                mock_intel,
+                project=self.SAMPLE_PROJECT,
+                refined=flat_refined,
+            )
+
+            response = client.post(
+                "/api/proposals/6a034f37d8e430e05690091b/refine",
+                json={
+                    "llm_model_id": "openrouter/gpt-4",
+                    "user_feedback_observations": "...",
+                },
+            )
+
+            assert response.status_code == 200
+
+            call_kwargs = (
+                mock_proposals_repo.return_value.insert_version.call_args.kwargs
+            )
+            # When no explicit 'proposal' key, the fallback uses the whole dict
+            assert call_kwargs["proposal_data"] == flat_refined
+            assert call_kwargs["refinement_justification"] is None

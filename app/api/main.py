@@ -11,6 +11,7 @@ sys.path.insert(0, str(project_root))
 from app.api.routes import projects
 from app.api.routes import auth
 from app.api.routes import models
+from app.api.routes import proposals
 from app.database.mongo import connect_to_mongo, close_mongo_connection
 
 @asynccontextmanager
@@ -33,5 +34,6 @@ app.add_middleware(
 )
 
 app.include_router(projects.router, prefix="/api/projects")
+app.include_router(proposals.router, prefix="/api/proposals")
 app.include_router(auth.router)
 app.include_router(models.router, prefix="/api/models")

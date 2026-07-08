@@ -1,6 +1,5 @@
-import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -65,11 +64,63 @@ async def get_intelligence_service(
     Delegates to :func:`create_intelligence_service` on first call to
     initialise all three adapters from the database.  Subsequent calls
     return the previously cached instance immediately.
+
+    The returned adapter exposes :meth:`IntelligencePort.refine_proposal`
+    for refining proposals with a user-specified LLM model.
     """
     global _instances
     if "STANDARD" not in _instances:
         await create_intelligence_service(db)
     return _instances["STANDARD"]
+
+
+async def refine_proposal(
+    project: dict[str, Any],
+    user_feedback_observations: str,
+    model_id: str,
+    db: AsyncIOMotorDatabase | None = None,
+) -> dict[str, Any]:
+    """Refine a proposal using the correct intelligence adapter for the model.
+
+    Looks up the requested *model_id* in the ``models`` collection to
+    determine its provider, then routes the refinement request to the
+    appropriate adapter.  Falls back to the STANDARD adapter when the
+    model cannot be resolved (e.g. DB unavailable or model not found).
+
+    Args:
+        project: The project dict (must include title, description,
+            skills, budget_detail, and optionally the current proposal).
+        user_feedback_observations: Free-text feedback guiding the
+            refinement.
+        model_id: OpenRouter or Gemini model identifier to use for
+            generation.
+        db: Optional database handle forwarded to
+            :func:`get_intelligence_service`.
+
+    Returns:
+        The LLM-generated refined proposal as a dict.
+    """
+    # Determine which provider owns the requested model
+    provider_key = await _resolve_provider_for_model(model_id, db)
+
+    if provider_key:
+        adapter = await _get_adapter_for_provider(provider_key, db)
+        logger.info(
+            f"🔀 Routing refine_proposal(model='{model_id}') "
+            f"→ provider '{provider_key}'"
+        )
+    else:
+        logger.warning(
+            f"⚠️  Model '{model_id}' not found in DB — "
+            f"falling back to STANDARD adapter"
+        )
+        adapter = await get_intelligence_service(db)
+
+    return await adapter.refine_proposal(
+        project=project,
+        user_feedback_observations=user_feedback_observations,
+        model_id=model_id,
+    )
 
 
 def get_intelligence_adapters() -> dict[str, IntelligencePort] | None:
@@ -256,3 +307,77 @@ async def create_intelligence_service(
         f"FILTER [{standard_info.provider_key}]"
     )
     return _instances
+
+
+# ---------------------------------------------------------------------------
+# Provider-aware routing for refine_proposal
+# ---------------------------------------------------------------------------
+
+
+async def _resolve_provider_for_model(
+    model_id: str,
+    db: AsyncIOMotorDatabase | None = None,
+) -> str | None:
+    """Look up the provider key for a given *model_id* in the DB.
+
+    Returns ``None`` if the model is not found or the DB is unavailable.
+    """
+    if db is None:
+        db = get_database()
+
+    try:
+        model_doc = await db["models"].find_one(
+            {"model_id": model_id},
+            {"provider_key": 1},
+        )
+        if model_doc:
+            return model_doc.get("provider_key")
+        return None
+    except Exception as e:
+        logger.warning(f"Could not resolve provider for model '{model_id}': {e}")
+        return None
+
+
+async def _get_adapter_for_provider(
+    provider_key: str,
+    db: AsyncIOMotorDatabase | None = None,
+) -> IntelligencePort:
+    """Return a cached adapter for *provider_key*, creating one if needed.
+
+    Ensures the adapters cache is initialised first (via
+    :func:`create_intelligence_service`).  If the requested provider
+    happens to match an already-cached STANDARD/PREMIUM/FILTER adapter,
+    that instance is reused.  Otherwise, a new adapter is created and
+    cached under the provider key.
+    """
+    global _instances
+
+    # Ensure the cache is populated
+    if not _instances:
+        await create_intelligence_service(db)
+
+    # Check if we already cached an adapter for this exact provider_key
+    if provider_key in _instances:
+        return _instances[provider_key]
+
+    # Check if the STANDARD adapter already uses this provider
+    std_adapter = _instances.get("STANDARD")
+    if std_adapter is not None:
+        if (provider_key == "gemini" and isinstance(std_adapter, GeminiAdapter)) or \
+           (provider_key == "openrouter" and isinstance(std_adapter, OpenRouterAdapter)):
+            _instances[provider_key] = std_adapter
+            return std_adapter
+
+    # Also check PREMIUM adapter
+    prm_adapter = _instances.get("PREMIUM")
+    if prm_adapter is not None:
+        if (provider_key == "gemini" and isinstance(prm_adapter, GeminiAdapter)) or \
+           (provider_key == "openrouter" and isinstance(prm_adapter, OpenRouterAdapter)):
+            _instances[provider_key] = prm_adapter
+            return prm_adapter
+
+    # Create a new adapter for this provider
+    logger.info(f"🆕 Creating new adapter for provider '{provider_key}'")
+    adapter = _create_adapter(provider_key, None)
+    _instances[provider_key] = adapter
+    return adapter

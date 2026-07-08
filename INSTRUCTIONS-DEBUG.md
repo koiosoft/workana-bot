@@ -1,18 +1,8 @@
 ## Current Objective
-Fix the test failures related to invalid ObjectId usage and event loop closure in the application.
+Resolve the AI service error occurring during the proposal refinement process, which results in a 502 Bad Gateway response due to a 404 Not Found error from the AI API.
 
 ## Task List
-- [x] **Error in app/database/proposal_versions_repository.py:111**
-  - **Error:** bson.errors.InvalidId: 'version-1' is not a valid ObjectId, it must be a 12-byte input or a 24-character hex string
-  - **Context:** The test is trying to update a proposal version using a string 'version-1' as an ObjectId, which is invalid.
-  - **Action Required:** Modify the test setup to use a valid MongoDB ObjectId for the `_id` field in the mock data. Ensure that the `find_one` method returns a document with an `_id` that is a valid ObjectId (either as a string with 24 hex characters or as a bson.ObjectId instance).
-
-- [x] **Error in app/database/proposal_versions_repository.py:111**
-  - **Error:** bson.errors.InvalidId: 'version-custom' is not a valid ObjectId, it must be a 12-byte input or a 24-character hex string
-  - **Context:** Similar to the previous error, the test is using an invalid string 'version-custom' as an ObjectId.
-  - **Action Required:** Update the test to use a valid MongoDB ObjectId for the `_id` field in the mock data. Ensure that the `find_one` method returns a document with a valid `_id`.
-
-- [x] **Error in app/database/users_repository.py:138**
-  - **Error:** RuntimeError: Event loop is closed
-  - **Context:** The test is attempting to call `ensure_indexes` on a repository, which calls `create_index` on a collection, but the event loop is closed during this operation.
-  - **Action Required:** Investigate why the event loop is closed during the test execution. Ensure that the test is properly setting up and tearing down the event loop, and that all asynchronous operations are correctly awaited and handled within the test environment.
+- [x] **Error in app/intelligence/adapters/gemini.py:263**
+  - **Error:** Error en API de IA durante el refinamiento de propuesta: 404 Not Found. {'message': '', 'status': 'Not Found'}
+  - **Context:** The GeminiAdapter's `refine_proposal` method is attempting to call the AI API with a model ID that is not recognized or supported by the service, leading to a 404 error.
+  - **Action Required:** Investigate the model ID being passed to the AI API. Ensure that the model ID `deepseek/deepseek-v4-pro` is valid and supported by the AI service. Verify that the model ID is correctly configured in the database and that the intelligence service is correctly mapping the model ID to the appropriate AI API endpoint. Additionally, check for any missing or incorrect configuration in the AI service setup that might be causing the 404 error. Confirm that the AI service is accessible and that there are no network or authentication issues preventing the API call from succeeding.

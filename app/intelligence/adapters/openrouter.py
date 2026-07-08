@@ -321,6 +321,91 @@ class OpenRouterAdapter(IntelligencePort):
                 "Respuesta de OpenRouter no pudo ser interpretada"
             ) from e
 
+    async def refine_proposal(
+        self,
+        project: dict[str, Any],
+        user_feedback_observations: str,
+        model_id: str,
+        circuit_breaker: Optional["CircuitBreaker"] = None,
+    ) -> dict[str, Any]:
+        """Refine an existing proposal using user feedback and a specific LLM model.
+
+        Renders the ``refine.j2`` template, calls the specified model via
+        OpenRouter, and returns the parsed JSON response.
+        """
+        project_payload: dict[str, Any] = {
+            "title": project.get("title", "Proyecto sin título"),
+            "description": project.get(
+                "full_description", project.get("description", "N/A")
+            ),
+            "skills_required": project.get("skills", []),
+            "budget_range": project.get("budget_detail", "N/A"),
+        }
+
+        # Extract current proposal data for the LLM context
+        current_proposal = project.get("proposal") or project.get("proposal_data")
+
+        prompt = self._render_prompt(
+            "refine.j2",
+            project_payload_json=json.dumps(project_payload, indent=2),
+            current_proposal_json=json.dumps(current_proposal, indent=2) if current_proposal else "{}",
+            user_feedback_observations=user_feedback_observations,
+        )
+
+        try:
+            # Override model_id with the user-specified one
+            original_model = self.model_id
+            self.model_id = model_id
+
+            logger.info(
+                f"🤖 Refinando propuesta con modelo: '{self.model_id}'"
+            )
+
+            text_response = await self._chat_completion(prompt, circuit_breaker)
+
+            # Restore original model
+            self.model_id = original_model
+
+            if not text_response:
+                logger.warning(
+                    "La IA no devolvió texto en el refinamiento de propuesta."
+                )
+                return {
+                    "error": "No se pudo refinar la propuesta, la IA no devolvió contenido."
+                }
+
+            text_response = text_response.strip()
+            match = re.search(
+                r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL
+            )
+            json_part = (
+                match.group(1)
+                if match
+                else text_response[
+                    text_response.find("{") : text_response.rfind("}") + 1
+                ]
+            )
+
+            refined_data: dict[str, Any] = json.loads(json_part)
+            return refined_data
+
+        except (httpx.RemoteProtocolError, httpx.HTTPError) as e:
+            logger.error(
+                f"Error de red en refinamiento de propuesta via OpenRouter: {e}"
+            )
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError(
+                "Servidor de IA (OpenRouter) interrumpido inesperadamente"
+            ) from e
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Error parseando propuesta refinada: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError(
+                "Respuesta de OpenRouter no pudo ser interpretada"
+            ) from e
+
     async def format_project_description(
         self,
         description: str,

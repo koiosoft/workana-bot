@@ -28,6 +28,17 @@ class IntelligencePort(ABC):
         pass
 
     @abstractmethod
+    async def refine_proposal(
+        self,
+        project: dict[str, Any],
+        user_feedback_observations: str,
+        model_id: str,
+        circuit_breaker: Optional["CircuitBreaker"] = None,
+    ) -> dict[str, Any]:
+        """Refina una propuesta existente usando feedback del usuario."""
+        pass
+
+    @abstractmethod
     async def format_project_description(
         self, description: str, circuit_breaker: Optional["CircuitBreaker"] = None
     ) -> str:

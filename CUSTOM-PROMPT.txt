@@ -27,6 +27,16 @@ Now, based on the following objective and the code context provided in the `STRI
 
 REQUIREMENTS:
 
-- Correct the project update by ID in the API (patch: /api/projects/{projectId}), because it's using the "proposal" field in the "projects" collection. Instead, it should generate an entry in the "proposal_versions" collection, setting the "source_of_changes" field to "HUMAN".
-- Review, correct, and add the necessary unit tests.
-- Review, correct, and add the necessary integration tests.
+- An API endpoint needs to be created that performs a POST request to `/api/proposals/{:proposalId}/refine`.
+Within the endpoint, the following should be received:
+{
+"llm_model_id": The ID of the LLM model
+"user_feedback_observations": a string
+}
+And the successful response should follow the same protocol as `/api/projects/{projectId}`.
+- When the endpoint is executed, a prompt must be built for use with the selected model. Therefore:
+a) Define the adapter according to the model provider.
+b) Inject the data into the corresponding prompt template `app/intelligence/prompts/refine.j2`, just as when generating the proposal, but adding the observations.
+c) Once the proposal is received, add the new item to the `proposal_versions` collection, marking the `source_of_changes` field as "IA" as agreed. 
+- Generate corresponding unit tests.
+- Generate corresponding integration tests.

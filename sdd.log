@@ -1,128 +1,59 @@
-=================================== FAILURES ===================================
-____________ TestUpdateSourceOfChanges.test_updates_source_to_human ____________
+tests/integration/api/test_proposals.py F....                                                                                                                               [100%]
 
-self = <tests.unit.database.test_proposal_versions_repository.TestUpdateSourceOfChanges object at 0x10b468450>
+==================================================================================== FAILURES =====================================================================================
+___________________________________________________________ TestRefineProposalIntegration.test_refine_endpoint_success ____________________________________________________________
 
-    @pytest.mark.asyncio
-    async def test_updates_source_to_human(self):
-        """update_source_of_changes should set source_of_changes to 'HUMAN'."""
-        repo = ProposalVersionsRepository()
-    
-        with patch(
-            "app.database.proposal_versions_repository.get_database"
-        ) as mock_get_db:
-            mock_col = _make_mock_collection()
-            mock_get_db.return_value = {"proposal_versions": mock_col}
-    
-            # Simulate a latest version existing
-            mock_col.find_one.return_value = {
-                "_id": "version-1",
-                "project_id": "pid-1",
-                "version_number": 3,
-                "source_of_changes": "IA",
-            }
-            mock_col.update_one.return_value = MagicMock(modified_count=1)
-    
->           result = await repo.update_source_of_changes("pid-1")
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/unit/database/test_proposal_versions_repository.py:206: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-app/database/proposal_versions_repository.py:111: in update_source_of_changes
-    {"_id": ObjectId(version_id)},
-            ^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.11/site-packages/bson/objectid.py:116: in __init__
-    _raise_invalid_id(oid)
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-oid = 'version-1'
-
-    def _raise_invalid_id(oid: str) -> NoReturn:
->       raise InvalidId(
-            "%r is not a valid ObjectId, it must be a 12-byte input"
-            " or a 24-character hex string" % oid
-        )
-E       bson.errors.InvalidId: 'version-1' is not a valid ObjectId, it must be a 12-byte input or a 24-character hex string
-
-.venv/lib/python3.11/site-packages/bson/objectid.py:37: InvalidId
-______________ TestUpdateSourceOfChanges.test_custom_source_value ______________
-
-self = <tests.unit.database.test_proposal_versions_repository.TestUpdateSourceOfChanges object at 0x10b469450>
+self = <test_proposals.TestRefineProposalIntegration object at 0x10e2b7210>
+test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['ac-ktojd7p-shard-00-01.qu7h0p6.mongodb.net:27017', 'ac-ktojd7p-shard-...-xrqbkr-shard-0', tls=True, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
 
     @pytest.mark.asyncio
-    async def test_custom_source_value(self):
-        """Should accept a custom source value."""
-        repo = ProposalVersionsRepository()
-    
-        with patch(
-            "app.database.proposal_versions_repository.get_database"
-        ) as mock_get_db:
-            mock_col = _make_mock_collection()
-            mock_get_db.return_value = {"proposal_versions": mock_col}
-            mock_col.find_one.return_value = {
-                "_id": "version-custom",
-                "project_id": "pid-custom",
-            }
-            mock_col.update_one.return_value = MagicMock(modified_count=1)
-    
->           result = await repo.update_source_of_changes(
-                "pid-custom", source="CUSTOM"
+    @_skip_no_openrouter
+    async def test_refine_endpoint_success(
+        self,
+        test_db: AsyncIOMotorDatabase,
+    ) -> None:
+        """
+        Full refinement flow with real OpenRouter call:
+        1. POST /api/proposals/{id}/refine with valid feedback + model.
+        2. Assert 200 and response includes project fields.
+        3. Assert new version inserted in proposal_versions with
+           source_of_changes="IA".
+        4. Assert proposal_data does NOT contain refinement_justification.
+        5. Assert refinement_justification is stored as a top-level field.
+        """
+        seeds = await _seed_project_with_proposal(test_db)
+        project_id = seeds["project_id"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                f"/api/proposals/{project_id}/refine",
+                json={
+                    "llm_model_id": "deepseek/deepseek-v4-pro",
+                    "user_feedback_observations": (
+                        "Please reduce the total budget to under $1,500 "
+                        "and focus only on the backend API, no frontend."
+                    ),
+                },
             )
 
-tests/unit/database/test_proposal_versions_repository.py:248: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-app/database/proposal_versions_repository.py:111: in update_source_of_changes
-    {"_id": ObjectId(version_id)},
-            ^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.11/site-packages/bson/objectid.py:116: in __init__
-    _raise_invalid_id(oid)
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-oid = 'version-custom'
-
-    def _raise_invalid_id(oid: str) -> NoReturn:
->       raise InvalidId(
-            "%r is not a valid ObjectId, it must be a 12-byte input"
-            " or a 24-character hex string" % oid
+>       assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
         )
-E       bson.errors.InvalidId: 'version-custom' is not a valid ObjectId, it must be a 12-byte input or a 24-character hex string
+E       AssertionError: Expected 200, got 502: {"detail":{"error":"AI Service Error","message":"The intelligence service failed to refine the proposal.","details":"La API de IA falló durante el refinamiento de propuesta: 404 Not Found. {'message': '', 'status': 'Not Found'}"}}
+E       assert 502 == 200
+E        +  where 502 = <Response [502 Bad Gateway]>.status_code
 
-.venv/lib/python3.11/site-packages/bson/objectid.py:37: InvalidId
-____________ TestGetUserById.test_returns_none_for_invalid_objectid ____________
-
-self = <tests.unit.database.test_users_repository.TestGetUserById object at 0x10b49a950>
-
-    @pytest.mark.asyncio
-    async def test_returns_none_for_invalid_objectid(self):
-        repo = UsersRepository()
->       result = await repo.get_user_by_id("not-valid")
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/unit/database/test_users_repository.py:279: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-app/database/users_repository.py:138: in get_user_by_id
-    await self.ensure_indexes()
-app/database/users_repository.py:53: in ensure_indexes
-    await self.collection.create_index(
-.venv/lib/python3.11/site-packages/motor/metaprogramming.py:75: in method
-    return framework.run_on_executor(
-.venv/lib/python3.11/site-packages/motor/frameworks/asyncio/__init__.py:85: in run_on_executor
-    return loop.run_in_executor(_EXECUTOR, functools.partial(fn, *args, **kwargs))
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-../../../../.pyenv/versions/3.11.12/lib/python3.11/asyncio/base_events.py:817: in run_in_executor
-    self._check_closed()
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-self = <_UnixSelectorEventLoop running=False closed=True debug=False>
-
-    def _check_closed(self):
-        if self._closed:
->           raise RuntimeError('Event loop is closed')
-E           RuntimeError: Event loop is closed
-
-../../../../.pyenv/versions/3.11.12/lib/python3.11/asyncio/base_events.py:520: RuntimeError
-=========================== short test summary info ============================
-FAILED tests/unit/database/test_proposal_versions_repository.py::TestUpdateSourceOfChanges::test_updates_source_to_human
-FAILED tests/unit/database/test_proposal_versions_repository.py::TestUpdateSourceOfChanges::test_custom_source_value
-FAILED tests/unit/database/test_users_repository.py::TestGetUserById::test_returns_none_for_invalid_objectid
-======================== 3 failed, 327 passed in 5.50s =========================
+tests/integration/api/test_proposals.py:159: AssertionError
+------------------------------------------------------------------------------ Captured stderr call -------------------------------------------------------------------------------
+2026-07-07 19:49:48.340 | WARNING  | app.intelligence.factory:create_intelligence_service:266 - Missing default models in DB: STANDARD (is_default=True, is_premium=False), PREMIUM (is_default=True, is_premium=True) — falling back to hardcoded Gemini defaults
+2026-07-07 19:49:48.340 | INFO     | app.intelligence.adapters.gemini:__init__:43 - Instanciando el Adapter de GEMINI
+2026-07-07 19:49:48.387 | INFO     | app.intelligence.adapters.gemini:__init__:43 - Instanciando el Adapter de GEMINI
+2026-07-07 19:49:48.395 | INFO     | app.intelligence.adapters.gemini:__init__:43 - Instanciando el Adapter de GEMINI
+2026-07-07 19:49:48.402 | INFO     | app.intelligence.factory:create_intelligence_service:288 - ✅ Adapters initialised: STANDARD [gemini], PREMIUM [gemini], FILTER [gemini]
+2026-07-07 19:49:48.405 | INFO     | app.intelligence.adapters.gemini:refine_proposal:263 - 🤖 Refinando propuesta con modelo: 'deepseek/deepseek-v4-pro'
+2026-07-07 19:49:49.242 | ERROR    | app.intelligence.adapters.gemini:refine_proposal:295 - Error en API de IA durante el refinamiento de propuesta: 404 Not Found. {'message': '', 'status': 'Not Found'}
+2026-07-07 19:49:49.243 | ERROR    | app.api.routes.proposals:refine_proposal:89 - Refinement failed for project 6a4d909bba6406d14eed49d1: La API de IA falló durante el refinamiento de propuesta: 404 Not Found. {'message': '', 'status': 'Not Found'}
+============================================================================= short test summary info =============================================================================
+FAILED tests/integration/api/test_proposals.py::TestRefineProposalIntegration::test_refine_endpoint_success - AssertionError: Expected 200, got 502: {"detail":{"error":"AI Service Error","message":"The intelligence service failed to refine the proposal.","details":"La API de IA falló...
+========================================================================== 1 failed, 4 passed in 15.77s ===================================================================

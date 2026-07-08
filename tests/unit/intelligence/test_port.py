@@ -24,6 +24,7 @@ class TestInterfaceCompliance:
         expected = {
             "evaluate_projects",
             "generate_proposal",
+            "refine_proposal",
             "format_project_description",
         }
         assert IntelligencePort.__abstractmethods__ == expected
@@ -33,6 +34,7 @@ class TestInterfaceCompliance:
         method_names = [
             "evaluate_projects",
             "generate_proposal",
+            "refine_proposal",
             "format_project_description",
         ]
 
