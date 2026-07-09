@@ -1,0 +1,6 @@
+$kind: http-request
+description: Retrieve a single project with its latest proposal populated from `proposal_versions`.
+url: "{{base_url}}/api/projects/{{project_id}}"
+method: GET
+examples: ./.resources/Get Project by ID.resources/examples
+order: 2000

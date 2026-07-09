@@ -1,0 +1,26 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/proposals/{{project_id}}/refine"
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    type: text
+    content: |-
+      {
+        "llm_model_id": "deepseek/deepseek-v4-pro",
+        "user_feedback_observations": "Please reduce the total budget to under $1,500 and focus only on the backend API. Remove all frontend milestones."
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  body:
+    type: text
+    content: |-
+      {
+        "detail": {
+          "error": "Bad Request",
+          "message": "Invalid project ID format. Must be a valid MongoDB ObjectId."
+        }
+      }
+order: 2000

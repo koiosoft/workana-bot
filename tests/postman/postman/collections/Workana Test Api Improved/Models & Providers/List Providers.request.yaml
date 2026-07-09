@@ -1,0 +1,5 @@
+$kind: http-request
+description: List all registered AI model providers.
+url: "{{base_url}}/api/models/providers"
+method: GET
+order: 2000

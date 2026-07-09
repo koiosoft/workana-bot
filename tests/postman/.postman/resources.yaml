@@ -1,0 +1,8 @@
+workspace:
+  id: fdfc4bc5-fd79-47f8-bb38-429bb6060729
+cloudResources:
+  collections:
+    ../postman/collections/Workana Test Api Improved: 2172982-c0a1ef05-494c-4089-a5d1-6f45cc8b05f2
+  environments:
+    ../postman/environments/Workana Bot — Local.environment.yaml: 2172982-97448fb4-7b8a-47a2-9ef6-08e7a2ac19af
+    ../postman/environments/Workana Dashboard Tests.environment.yaml: 2172982-f3fe4c9c-6df4-41b6-b255-555902928ad3

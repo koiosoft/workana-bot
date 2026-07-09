@@ -1,0 +1,9 @@
+$kind: http-request
+description: List available LLM models enriched with provider brand info.
+url: "{{base_url}}/api/models?filter=standard"
+method: GET
+queryParams:
+  - key: filter
+    value: standard
+    description: standard | premium (omit for all)
+order: 1000

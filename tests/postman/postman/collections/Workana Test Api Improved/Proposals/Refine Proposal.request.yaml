@@ -1,0 +1,33 @@
+$kind: http-request
+description: |-
+  **NEW** — Refine an existing proposal using an LLM.
+
+  ### Request Body
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `llm_model_id` | string | OpenRouter/Gemini model ID (e.g. `qwen/qwen3-14b`, `deepseek/deepseek-v4-pro`) |
+  | `user_feedback_observations` | string | Free-text feedback guiding the refinement |
+
+  ### Behavior
+  1. Validates the project exists and has a `link_hash`
+  2. Loads the current proposal from `proposal_versions`
+  3. Calls the LLM via the intelligence adapter to generate a refined proposal
+  4. Stores the result in `proposal_versions` with `source_of_changes="IA"`
+  5. The `refinement_justification` is saved as a top-level field on the version document
+  6. Only the inner `proposal` object is stored as `proposal_data`
+
+  ### Response Format
+  Same as `GET /api/projects/{id}` — returns the project with the newly populated proposal.
+url: "{{base_url}}/api/proposals/{{project_id}}/refine"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "llm_model_id": "deepseek/deepseek-v4-pro",
+      "user_feedback_observations": "Please reduce the total budget to under $1,500 and focus only on the backend API. Remove all frontend milestones."
+    }
+examples: ./.resources/Refine Proposal.resources/examples
+order: 1000

@@ -1,0 +1,19 @@
+owner: "2172982"
+team: "2606119"
+lastUpdatedBy: "2172982"
+lastRevision: 1780932921000
+name: Workana Dashboard Tests
+color: null
+values:
+  - key: baseUrl
+    value: http://localhost:3000
+  - key: userEmail
+    value: admin@example.com
+  - key: userPassword
+    value: SecurePassword123!
+  - key: projectId
+    value: 507f1f77bcf86cd799439011
+  - key: authSession
+    value: ""
+createdAt: 2026-06-08T15:35:21.000Z
+updatedAt: 2026-06-08T15:35:21.000Z

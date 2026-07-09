@@ -1,0 +1,26 @@
+$kind: http-request
+description: Paginated list of projects with optional filters.
+url: "{{base_url}}/api/projects?status=all&staffAugmentationOnly=false&page=1&limit=10"
+method: GET
+headers:
+  - key: Authorization
+    value: Bearer {{access_token}}
+    disabled: true
+queryParams:
+  - key: status
+    value: all
+    description: "Filter: all | discarded | rejected | proposal_generated | ready_for_proposal | submited_to_workana"
+  - key: searchTerm
+    value: ""
+    disabled: true
+    description: Search in title and description
+  - key: staffAugmentationOnly
+    value: "false"
+    description: Filter by staff-augmentation contract type
+  - key: page
+    value: "1"
+    description: Page number (>= 1)
+  - key: limit
+    value: "10"
+    description: Items per page (1-100)
+order: 1000

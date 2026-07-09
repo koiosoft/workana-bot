@@ -1,0 +1,21 @@
+owner: "2172982"
+team: "2606119"
+lastUpdatedBy: "2172982"
+lastRevision: 1783466426000
+name: Workana Bot — Local
+color: null
+values:
+  - key: base_url
+    value: http://localhost:8000
+    enabled: true
+  - key: project_id
+    value: REPLACE_WITH_VALID_OBJECTID
+    enabled: true
+  - key: proposal_id
+    value: "{{project_id}}"
+    enabled: true
+  - key: access_token
+    value: ""
+    enabled: true
+createdAt: 2026-07-07T23:20:26.000Z
+updatedAt: 2026-07-07T23:20:26.000Z

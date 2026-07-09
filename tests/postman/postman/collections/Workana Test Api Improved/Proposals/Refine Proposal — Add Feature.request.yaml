@@ -1,0 +1,14 @@
+$kind: http-request
+description: Refine with scope expansion — adds mobile milestones and verifies QA/AppStore steps.
+url: "{{base_url}}/api/proposals/{{project_id}}/refine"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "llm_model_id": "deepseek/deepseek-v4-pro",
+      "user_feedback_observations": "The client now wants a React Native mobile app in addition to the web app. Add mobile development milestones with proper QA and App Store deployment."
+    }
+order: 3000

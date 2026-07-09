@@ -1,0 +1,14 @@
+$kind: http-request
+description: Refine with tight budget constraints — tests the anti-underestimation heuristics in the prompt.
+url: "{{base_url}}/api/proposals/{{project_id}}/refine"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "llm_model_id": "qwen/qwen3-14b",
+      "user_feedback_observations": "The client wants a smaller scope. Only do the database design and API skeleton. Keep it under 40 hours and $1,000."
+    }
+order: 2000

@@ -1,0 +1,10 @@
+$kind: collection
+description: |-
+  Collection of endpoints for the Workana Bot API.
+
+  Includes the new **Proposal Refinement** endpoint:
+  `POST /api/proposals/{projectId}/refine`
+variables:
+  base_url: http://localhost:8000
+  project_id: "{{project_id}}"
+  access_token: ""

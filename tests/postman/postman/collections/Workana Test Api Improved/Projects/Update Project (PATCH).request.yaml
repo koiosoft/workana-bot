@@ -1,0 +1,19 @@
+$kind: http-request
+description: Patch a project. If `proposal` is included, a new version is stored in `proposal_versions` with `source_of_changes="HUMAN"`.
+url: "{{base_url}}/api/projects/{{project_id}}"
+method: PATCH
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "title": "Updated Title",
+      "proposal_status": "proposal_generated",
+      "proposal": {
+        "proposal_header": "Manual edit",
+        "milestones": [],
+        "summary": { "total_hours": 100, "total_budget": 2500.0 }
+      }
+    }
+order: 3000

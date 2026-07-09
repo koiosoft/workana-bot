@@ -1,0 +1,14 @@
+$kind: http-request
+description: Authenticate and receive a JWT access token.
+url: "{{base_url}}/api/auth/login"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "email": "admin@example.com",
+      "password": "SecurePassword123!"
+    }
+order: 1000

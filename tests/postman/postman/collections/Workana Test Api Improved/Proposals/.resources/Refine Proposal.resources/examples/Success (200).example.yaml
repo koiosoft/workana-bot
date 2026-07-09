@@ -1,0 +1,48 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/proposals/{{project_id}}/refine"
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    type: text
+    content: |-
+      {
+        "llm_model_id": "deepseek/deepseek-v4-pro",
+        "user_feedback_observations": "Please reduce the total budget to under $1,500 and focus only on the backend API. Remove all frontend milestones."
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  body:
+    type: text
+    content: |-
+      {
+        "_id": "6a034f37d8e430e05690091b",
+        "title": "Test Project",
+        "budget": "$500",
+        "proposal_status": "proposal_generated",
+        "proposal": {
+          "proposal_header": "Saludo de Arquitecto Senior...",
+          "milestones": [
+            {
+              "step": 1,
+              "name": "Backend API Development",
+              "tasks": { ... },
+              "hours_with_overhead": 60,
+              "subtotal": 1500.0
+            }
+          ],
+          "summary": {
+            "total_hours": 60,
+            "total_budget": 1500.0,
+            "delivery_time_weeks": 3.0,
+            "hourly_rate_applied": 25
+          },
+          "technical_pitch": "...",
+          "questions_for_client": []
+        },
+        "proposal_version_number": 3,
+        "proposal_version_created_at": "2026-07-07T19:00:00"
+      }
+order: 1000

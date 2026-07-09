@@ -1,0 +1,25 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/projects/{{project_id}}"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  body:
+    type: text
+    content: |-
+      {
+        "_id": "6a034f37d8e430e05690091b",
+        "title": "Test Project",
+        "budget": "$500",
+        "link": "https://workana.com/project/123",
+        "proposal_status": "proposal_generated",
+        "proposal": {
+          "proposal_header": "...",
+          "milestones": [...],
+          "summary": { "total_hours": 80, "total_budget": 2000.0 }
+        },
+        "proposal_version_number": 2,
+        "proposal_version_created_at": "2026-01-01T00:00:00"
+      }
+order: 1000
