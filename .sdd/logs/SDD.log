@@ -1,0 +1,80 @@
+___________________________________________________________ TestRefineProposalContractType.test_refine_staff_augmentation_uses_refine_staffing_template ____________________________________________________________
+
+self = <test_proposals.TestRefineProposalContractType object at 0x10bd9c950>
+test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['ac-ktojd7p-shard-00-01.qu7h0p6.mongodb.net:27017', 'ac-ktojd7p-shard-...-xrqbkr-shard-0', tls=True, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
+
+    @pytest.mark.asyncio
+    @_skip_no_openrouter
+    async def test_refine_staff_augmentation_uses_refine_staffing_template(
+        self,
+        test_db: AsyncIOMotorDatabase,
+    ) -> None:
+        """When refining a staff_augmentation project with the same
+        contract_type, the response should contain staffing-specific fields
+        (cover_letter, budget_summary) indicating refine-staffing.j2 was used."""
+        # Create a project with staff_augmentation contract_type
+        project_doc = {
+            "title": "Staff Aug Project",
+            "budget": "$1,000 – $2,500",
+            "link": "https://www.workana.com/job/staff-integration-test",
+            "published": "hace 2 horas",
+            "short_description": "Need a senior Python dev for staff augmentation",
+            "bids": "3",
+            "source": "workana",
+            "proposal_status": "proposal_generated",
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
+            "link_hash": "intg-refine-staff-hash-001",
+            "skills": ["Python", "Django", "PostgreSQL"],
+            "ai_score": 8,
+            "contract_type": "staff_augmentation",
+        }
+        result = await test_db.projects.insert_one(project_doc)
+        project_id = str(result.inserted_id)
+
+        # Insert an existing staffing proposal version
+        current_proposal = {
+            "cover_letter": "Dear client, I am a senior Python dev...",
+            "budget_summary": {
+                "hourly_rate": 25,
+                "suggested_hours_per_week": 20,
+                "estimated_monthly_budget": 2000,
+            },
+            "questions_for_client": ["What's the team size?"],
+        }
+        await test_db.proposal_versions.insert_one({
+            "project_id": project_id,
+            "link_hash": "intg-refine-staff-hash-001",
+            "version_number": 1,
+            "proposal_data": current_proposal,
+            "created_at": datetime.now(timezone.utc),
+            "source_of_changes": "IA",
+        })
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                f"/api/proposals/{project_id}/refine",
+                json={
+                    "llm_model_id": "deepseek/deepseek-v4-pro",
+                    "user_feedback_observations": (
+                        "Increase the suggested hours per week to 30 "
+                        "and emphasise React Native experience."
+                    ),
+                    "contract_type": "staff_augmentation",
+                },
+            )
+
+>       assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+E       AssertionError: Expected 200, got 502: {"detail":{"error":"AI Service Error","message":"The intelligence service failed to refine the proposal.","details":"La API de IA falló durante el refinamiento de propuesta: 404 Not Found. {'message': '', 'status': 'Not Found'}"}}
+E       assert 502 == 200
+E        +  where 502 = <Response [502 Bad Gateway]>.status_code
+
+tests/integration/api/test_proposals.py:436: AssertionError
+----------------------------------------------------------------------------------------------- Captured stderr call -----------------------------------------------------------------------------------------------
+2026-07-09 09:13:08.881 | WARNING  | app.intelligence.factory:refine_proposal:154 - ⚠️  Model 'deepseek/deepseek-v4-pro' not found in DB — falling back to STANDARD adapter
+2026-07-09 09:13:08.882 | INFO     | app.intelligence.adapters.gemini:refine_proposal:284 - 🔁 Staff augmentation refinement → using refine-staffing.j2
+2026-07-09 09:13:08.889 | INFO     | app.intelligence.adapters.gemini:refine_proposal:308 - 🤖 Refinando propuesta con modelo: 'deepseek/deepseek-v4-pro'
+2026-07-09 09:13:08.990 | ERROR    | app.intelligence.adapters.gemini:refine_proposal:340 - Error en API de IA durante el refinamiento de propuesta: 404 Not Found. {'message': '', 'status': 'Not Found'}
+2026-07-09 09:13:08.990 | ERROR    | app.api.routes.proposals:refine_proposal:124 - Refinement failed for project 6a4f9e64f1ebc6a8f407c278: La API de IA falló durante el refinamiento de propuesta: 404 Not Found.
