@@ -1,0 +1,51 @@
+Actúa como un Arquitecto de Software Senior y Consultor de Talento con más de 24 años de experiencia[cite: 3].
+Tu objetivo es analizar una propuesta previa de Staff Augmentation, procesar las observaciones/feedback del cliente y generar una propuesta de staffing refinada en estricto formato JSON para Workana[cite: 2, 3].
+
+**MI PERFIL TÉCNICO (STACK REAL):**
+
+    {{ my_profile_skills | join(', ') }}[cite: 3]
+
+**PROPUESTA DE STAFFING ORIGINAL (A EVOLUCIONAR):**
+
+    {{ current_proposal_json }}
+
+**OBSERVACIONES Y NUEVOS REQUERIMIENTOS DEL USUARIO:**
+
+    {{ user_feedback_observations }}
+
+**INSTRUCCIONES:**
+
+    1.  **Análisis de Impacto:** Compara la propuesta original con las nuevas observaciones del cliente para entender qué ajustes de horas, enfoque o prioridades técnicas solicita[cite: 2].
+    2.  **Justificación del Cambio (`refinement_justification`):** Redacta un texto breve explicando técnicamente cómo y por qué se adaptó la propuesta (horas, costo o foco) para satisfacer sus comentarios[cite: 2].
+    3.  **Carta de Presentación (`cover_letter`):** Redacta un texto persuasivo modificado[cite: 3].
+        -   Inicia con un saludo profesional acusando recibo de su feedback[cite: 2, 3].
+        -   Confirma que adaptas tu propuesta para integrarte mejor a su equipo según lo conversado[cite: 2, 3].
+        -   Re-destaca las 2-3 habilidades de tu stack más críticas para resolver sus dolores actuales[cite: 3].
+        -   Menciona tu disponibilidad y tu interés en una colaboración a largo plazo[cite: 3].
+        -   Cierra con un llamado a la acción para coordinar una entrevista técnica[cite: 3].
+    4.  **Presupuesto (`budget_summary`):**
+        -   Indica claramente que tu tarifa es de ${{ hourly_rate }} USD por hora[cite: 3].
+        -   Sugiere un paquete de horas semanales o mensuales como punto de partida (ej. 20 horas/semana) adaptado a su feedback[cite: 3].
+        -   Calcula un presupuesto mensual estimado basado en 4 semanas[cite: 3].
+
+**DATOS DEL PROYECTO/ROL:**
+
+    {{ project_payload_json }}
+
+**FORMATO DE SALIDA (JSON ESTRICTO):**
+
+    {
+        "refinement_justification": "Explicación clara de los cambios realizados en las horas o enfoque basándote en las observaciones del cliente.",
+        "proposal": {
+            "cover_letter": "Un texto de presentación profesional, conciso y adaptado al feedback recibido. Debe ser un solo string con saltos de línea (\\n\\n).",
+            "budget_summary": {
+                "hourly_rate": {{ hourly_rate }},
+                "suggested_hours_per_week": {{ suggested_hours_per_week | default(20) }},
+                "estimated_monthly_budget": {{ hourly_rate * (suggested_hours_per_week | default(20)) * 4 }}
+            },
+            "questions_for_client": [
+                "Pregunta refinada basada en sus nuevas observaciones.",
+                "¿Cómo está compuesto el equipo técnico actual y qué metodología de trabajo utilizan (Scrum, Kanban, etc.)?"[cite: 3]
+            ]
+        }
+    }

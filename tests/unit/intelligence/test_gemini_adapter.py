@@ -307,3 +307,108 @@ async def test_generate_proposal_returns_error_on_no_text(mock_genai_client, moc
     result = await adapter.generate_proposal(project_data, circuit_breaker=mock_circuit_breaker)
 
     assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# refine_proposal — template selection
+# ---------------------------------------------------------------------------
+
+
+class TestRefineProposalTemplateSelection:
+    """Validate that ``refine_proposal`` selects the correct template based
+    on ``contract_type`` and ``use_initial_template`` flags."""
+
+    @pytest.fixture
+    def mock_genai_client(self):
+        with patch('app.intelligence.adapters.gemini.genai.Client') as mock_client_constructor:
+            mock_client_instance = MagicMock()
+            mock_client_constructor.return_value = mock_client_instance
+            yield mock_client_instance
+
+    @pytest.mark.asyncio
+    async def test_refine_uses_refine_j2_for_project_fixed(
+        self, mock_genai_client,
+    ) -> None:
+        """Default: project_fixed should render refine.j2."""
+        adapter = GeminiAdapter()
+        mock_genai_client.models.generate_content.return_value.text = '{"proposal":"ok"}'
+
+        with patch.object(adapter, "_render_prompt") as mock_render:
+            mock_render.return_value = "prompt string"
+
+            await adapter.refine_proposal(
+                project={"title": "Test", "contract_type": "project_fixed"},
+                user_feedback_observations="Feedback",
+                model_id="test/model",
+            )
+
+            template_name = mock_render.call_args[0][0]
+            assert template_name == "refine.j2"
+
+    @pytest.mark.asyncio
+    async def test_refine_uses_refine_staffing_j2_for_staff_augmentation(
+        self, mock_genai_client,
+    ) -> None:
+        """When contract_type is staff_augmentation (no initial template),
+        should render refine-staffing.j2."""
+        adapter = GeminiAdapter()
+        mock_genai_client.models.generate_content.return_value.text = '{"proposal":"ok"}'
+
+        with patch.object(adapter, "_render_prompt") as mock_render:
+            mock_render.return_value = "prompt string"
+
+            await adapter.refine_proposal(
+                project={"title": "Test"},
+                user_feedback_observations="Feedback",
+                model_id="test/model",
+                contract_type="staff_augmentation",
+            )
+
+            template_name = mock_render.call_args[0][0]
+            assert template_name == "refine-staffing.j2"
+
+    @pytest.mark.asyncio
+    async def test_refine_uses_proposal_j2_when_contract_type_changes_to_fixed(
+        self, mock_genai_client,
+    ) -> None:
+        """When use_initial_template=True and contract_type is project_fixed,
+        should render proposal.j2."""
+        adapter = GeminiAdapter()
+        mock_genai_client.models.generate_content.return_value.text = '{"proposal":"ok"}'
+
+        with patch.object(adapter, "_render_prompt") as mock_render:
+            mock_render.return_value = "prompt string"
+
+            await adapter.refine_proposal(
+                project={"title": "Test"},
+                user_feedback_observations="Feedback",
+                model_id="test/model",
+                contract_type="project_fixed",
+                use_initial_template=True,
+            )
+
+            template_name = mock_render.call_args[0][0]
+            assert template_name == "proposal.j2"
+
+    @pytest.mark.asyncio
+    async def test_refine_uses_proposal_staffing_j2_when_contract_type_changes_to_staffing(
+        self, mock_genai_client,
+    ) -> None:
+        """When use_initial_template=True and contract_type is
+        staff_augmentation, should render proposal_staffing.j2."""
+        adapter = GeminiAdapter()
+        mock_genai_client.models.generate_content.return_value.text = '{"cover_letter":"ok"}'
+
+        with patch.object(adapter, "_render_prompt") as mock_render:
+            mock_render.return_value = "prompt string"
+
+            await adapter.refine_proposal(
+                project={"title": "Test"},
+                user_feedback_observations="Feedback",
+                model_id="test/model",
+                contract_type="staff_augmentation",
+                use_initial_template=True,
+            )
+
+            template_name = mock_render.call_args[0][0]
+            assert template_name == "proposal_staffing.j2"

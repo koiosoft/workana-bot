@@ -16,12 +16,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 import pytest
+import pytest_asyncio
 from bson import ObjectId
 from httpx import ASGITransport, AsyncClient
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.api.main import app
-from app.database.mongo import get_database
+from app.database.mongo import get_database, ensure_models_collection
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("MONGO_URI"),
@@ -52,6 +53,45 @@ def override_db_dependency(test_db: AsyncIOMotorDatabase) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+@pytest_asyncio.fixture(scope="function", autouse=False)
+async def seed_models_for_refine(test_db: AsyncIOMotorDatabase) -> None:
+    """Seed the models collection with the model used by refine tests.
+
+    The refine endpoint resolves ``llm_model_id`` against the ``models``
+    collection to determine which provider/adapter to use.  Without this
+    seed the lookup fails and the factory falls back to the STANDARD
+    adapter, which may be incompatible with the requested model_id.
+    """
+    await ensure_models_collection()
+
+    # Clean up from previous runs first
+    await test_db["models"].delete_many(
+        {"model_id": {"$in": ["deepseek/deepseek-v4-pro"]}}
+    )
+    await test_db["providers"].delete_many({"key": "openrouter"})
+
+    await test_db["providers"].insert_one({
+        "key": "openrouter",
+        "name": "OpenRouter",
+        "url": "https://openrouter.ai/api/v1",
+    })
+
+    await test_db["models"].insert_one({
+        "model_id": "deepseek/deepseek-v4-pro",
+        "provider_key": "openrouter",
+        "name": "DeepSeek V4 Pro",
+        "is_default": False,
+        "is_premium": False,
+    })
+
+    yield
+
+    await test_db["models"].delete_many(
+        {"model_id": {"$in": ["deepseek/deepseek-v4-pro"]}}
+    )
+    await test_db["providers"].delete_many({"key": "openrouter"})
+
 
 async def _seed_project_with_proposal(
     test_db: AsyncIOMotorDatabase,
@@ -127,6 +167,7 @@ class TestRefineProposalIntegration:
 
     @pytest.mark.asyncio
     @_skip_no_openrouter
+    @pytest.mark.usefixtures("seed_models_for_refine")
     async def test_refine_endpoint_success(
         self,
         test_db: AsyncIOMotorDatabase,
@@ -299,3 +340,170 @@ class TestRefineProposalIntegration:
                 json={},
             )
             assert response.status_code == 422
+
+
+class TestRefineProposalContractType:
+    """Integration tests for the contract_type field in the refine endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_refine_invalid_contract_type_returns_422(
+        self,
+        test_db: AsyncIOMotorDatabase,
+    ) -> None:
+        """Providing an unsupported contract_type value must return 422."""
+        seeds = await _seed_project_with_proposal(test_db)
+        project_id = seeds["project_id"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                f"/api/proposals/{project_id}/refine",
+                json={
+                    "llm_model_id": "any/model",
+                    "user_feedback_observations": "Feedback",
+                    "contract_type": "invalid_type",
+                },
+            )
+
+        assert response.status_code == 422
+        data = response.json()
+        # The error should mention the invalid value
+        assert "invalid_type" in str(data).lower() or "contract_type" in str(data).lower()
+
+    @pytest.mark.asyncio
+    async def test_refine_contract_type_change_deletes_existing_versions(
+        self,
+        test_db: AsyncIOMotorDatabase,
+    ) -> None:
+        """When contract_type changes, all existing proposal versions must be
+        deleted BEFORE the AI call.
+
+        The AI call may succeed (200) if a valid fallback model is available,
+        or fail (502) if not.  In either case the original versions must be
+        deleted first."""
+        seeds = await _seed_project_with_proposal(test_db)
+        project_id = seeds["project_id"]
+
+        # Verify we have at least one version before the request
+        count_before = await test_db.proposal_versions.count_documents(
+            {"project_id": project_id}
+        )
+        assert count_before == 1, "Seed must create one proposal version"
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                f"/api/proposals/{project_id}/refine",
+                json={
+                    "llm_model_id": "nonexistent/model",
+                    "user_feedback_observations": "Switch to staffing",
+                    "contract_type": "staff_augmentation",
+                },
+            )
+
+        count_after = await test_db.proposal_versions.count_documents(
+            {"project_id": project_id}
+        )
+
+        if response.status_code == 200:
+            # AI call succeeded via fallback adapter → a new refined version
+            # was inserted after the original was deleted.
+            assert count_after == 1, (
+                f"Expected 1 refined version after successful AI call, "
+                f"found {count_after}"
+            )
+        else:
+            assert response.status_code == 502
+            assert count_after == 0, (
+                f"Expected 0 versions after failed AI call, found {count_after}"
+            )
+
+    @pytest.mark.asyncio
+    @_skip_no_openrouter
+    @pytest.mark.usefixtures("seed_models_for_refine")
+    async def test_refine_staff_augmentation_uses_refine_staffing_template(
+        self,
+        test_db: AsyncIOMotorDatabase,
+    ) -> None:
+        """When refining a staff_augmentation project with the same
+        contract_type, the response should contain staffing-specific fields
+        (cover_letter, budget_summary) indicating refine-staffing.j2 was used."""
+        # Create a project with staff_augmentation contract_type
+        project_doc = {
+            "title": "Staff Aug Project",
+            "budget": "$1,000 – $2,500",
+            "link": "https://www.workana.com/job/staff-integration-test",
+            "published": "hace 2 horas",
+            "short_description": "Need a senior Python dev for staff augmentation",
+            "bids": "3",
+            "source": "workana",
+            "proposal_status": "proposal_generated",
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
+            "link_hash": "intg-refine-staff-hash-001",
+            "skills": ["Python", "Django", "PostgreSQL"],
+            "ai_score": 8,
+            "contract_type": "staff_augmentation",
+        }
+        result = await test_db.projects.insert_one(project_doc)
+        project_id = str(result.inserted_id)
+
+        # Insert an existing staffing proposal version
+        current_proposal = {
+            "cover_letter": "Dear client, I am a senior Python dev...",
+            "budget_summary": {
+                "hourly_rate": 25,
+                "suggested_hours_per_week": 20,
+                "estimated_monthly_budget": 2000,
+            },
+            "questions_for_client": ["What's the team size?"],
+        }
+        await test_db.proposal_versions.insert_one({
+            "project_id": project_id,
+            "link_hash": "intg-refine-staff-hash-001",
+            "version_number": 1,
+            "proposal_data": current_proposal,
+            "created_at": datetime.now(timezone.utc),
+            "source_of_changes": "IA",
+        })
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                f"/api/proposals/{project_id}/refine",
+                json={
+                    "llm_model_id": "deepseek/deepseek-v4-pro",
+                    "user_feedback_observations": (
+                        "Increase the suggested hours per week to 30 "
+                        "and emphasise React Native experience."
+                    ),
+                    "contract_type": "staff_augmentation",
+                },
+            )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert data["_id"] == project_id
+
+        # Verify a new version was created
+        versions = await (
+            test_db.proposal_versions.find({"project_id": project_id})
+            .sort("version_number", -1)
+            .to_list(length=None)
+        )
+        assert len(versions) >= 2
+        latest = versions[0]
+        assert latest["source_of_changes"] == "IA"
+
+        # Verify the proposal_data has staffing-specific fields
+        proposal_data = latest["proposal_data"]
+        assert "cover_letter" in proposal_data, (
+            "Staff augmentation refinement must produce a cover_letter field"
+        )
+        assert "budget_summary" in proposal_data, (
+            "Staff augmentation refinement must produce a budget_summary field"
+        )
+        assert "refinement_justification" in latest, (
+            "refinement_justification must be stored as top-level field"
+        )

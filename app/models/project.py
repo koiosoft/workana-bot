@@ -5,7 +5,7 @@ from datetime import datetime
 # Literals for statuses and strategies
 ProjectStatus = Literal['BACKLOG', 'DRAFT', 'READY_TO_PUBLISH', 'PUBLISHED', 'REJECTED']
 ProjectStrategy = Literal['PRO', 'FLASH', 'NONE']
-ContractType = Literal['staff_augmentation', 'fixed']
+ContractType = Literal['staff_augmentation', 'project_fixed']
 ProposalStatus = Literal[
     'all', 
     'proposal_generated', 

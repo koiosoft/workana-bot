@@ -74,10 +74,26 @@ async def get_intelligence_service(
     return _instances["STANDARD"]
 
 
+def select_initial_proposal_template(contract_type: str) -> str:
+    """Return the initial proposal template name for a given contract type.
+
+    Args:
+        contract_type: Either ``"project_fixed"`` or ``"staff_augmentation"``.
+
+    Returns:
+        ``"proposal.j2"`` for project-fixed, ``"proposal_staffing.j2"`` for
+        staff augmentation.
+    """
+    if contract_type == "staff_augmentation":
+        return "proposal_staffing.j2"
+    return "proposal.j2"
+
+
 async def refine_proposal(
     project: dict[str, Any],
     user_feedback_observations: str,
     model_id: str,
+    contract_type: str | None = None,
     db: AsyncIOMotorDatabase | None = None,
 ) -> dict[str, Any]:
     """Refine a proposal using the correct intelligence adapter for the model.
@@ -87,6 +103,12 @@ async def refine_proposal(
     appropriate adapter.  Falls back to the STANDARD adapter when the
     model cannot be resolved (e.g. DB unavailable or model not found).
 
+    When *contract_type* differs from the project's existing
+    ``contract_type`` field, the adapter is instructed to use the
+    initial proposal template instead of the refinement template,
+    effectively regenerating the proposal from scratch with the new
+    contract type.
+
     Args:
         project: The project dict (must include title, description,
             skills, budget_detail, and optionally the current proposal).
@@ -94,12 +116,31 @@ async def refine_proposal(
             refinement.
         model_id: OpenRouter or Gemini model identifier to use for
             generation.
+        contract_type: Optional contract type override.  When provided
+            and different from the project's existing value, the
+            adapter uses the initial proposal template.
         db: Optional database handle forwarded to
             :func:`get_intelligence_service`.
 
     Returns:
         The LLM-generated refined proposal as a dict.
     """
+    # -- Determine if contract type changed --------------------------------
+    existing_contract_type: str = project.get("contract_type", "project_fixed")
+    effective_contract_type: str = (
+        contract_type if contract_type is not None else existing_contract_type
+    )
+    use_initial_template: bool = (
+        contract_type is not None and contract_type != existing_contract_type
+    )
+
+    if use_initial_template:
+        logger.info(
+            f"🔄 Contract type change detected: "
+            f"'{existing_contract_type}' → '{contract_type}' — "
+            f"using initial proposal template"
+        )
+
     # Determine which provider owns the requested model
     provider_key = await _resolve_provider_for_model(model_id, db)
 
@@ -112,14 +153,17 @@ async def refine_proposal(
     else:
         logger.warning(
             f"⚠️  Model '{model_id}' not found in DB — "
-            f"falling back to STANDARD adapter"
+            f"falling back to STANDARD adapter with its default model"
         )
         adapter = await get_intelligence_service(db)
+        model_id = ""  # Let the adapter use its own default model
 
     return await adapter.refine_proposal(
         project=project,
         user_feedback_observations=user_feedback_observations,
         model_id=model_id,
+        contract_type=effective_contract_type,
+        use_initial_template=use_initial_template,
     )
 
 

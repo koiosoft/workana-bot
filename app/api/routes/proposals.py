@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Path, Body, HTTPException
-from typing import Dict, Any
-from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field, field_validator
 from bson import ObjectId
 from bson.errors import InvalidId
 from app.database.projects_repository import ProjectsRepository
@@ -15,11 +15,28 @@ router = APIRouter(tags=["proposals"])
 # Request model
 # ---------------------------------------------------------------------------
 
+ALLOWED_CONTRACT_TYPES = {"project_fixed", "staff_augmentation"}
+
+
 class RefineProposalRequest(BaseModel):
     llm_model_id: str = Field(..., description="The LLM model ID to use for refinement")
     user_feedback_observations: str = Field(
         ..., description="User feedback/observations to guide the refinement"
     )
+    contract_type: Optional[str] = Field(
+        None,
+        description="Optional contract type override: 'project_fixed' or 'staff_augmentation'",
+    )
+
+    @field_validator("contract_type")
+    @classmethod
+    def validate_contract_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ALLOWED_CONTRACT_TYPES:
+            raise ValueError(
+                f"Invalid contract_type '{v}'. "
+                f"Allowed values: {', '.join(sorted(ALLOWED_CONTRACT_TYPES))}"
+            )
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -78,12 +95,30 @@ async def refine_proposal(
             },
         )
 
+    # -- Handle contract type change ----------------------------------------
+    requested_contract_type = body.contract_type
+    existing_contract_type = project.get("contract_type", "project_fixed")
+    contract_type_changed = (
+        requested_contract_type is not None
+        and requested_contract_type != existing_contract_type
+    )
+
+    if contract_type_changed:
+        proposals_repo = ProposalVersionsRepository()
+        deleted_count = await proposals_repo.delete_versions_for_project(projectId)
+        logger.info(
+            f"Contract type changed from '{existing_contract_type}' to "
+            f"'{requested_contract_type}' for project {projectId}. "
+            f"Deleted {deleted_count} proposal versions."
+        )
+
     # -- Generate refined proposal via the intelligence layer ----------------
     try:
         refined = await refine_proposal_intel(
             project=project,
             user_feedback_observations=body.user_feedback_observations,
             model_id=body.llm_model_id,
+            contract_type=requested_contract_type,
         )
     except Exception as e:
         logger.error(f"Refinement failed for project {projectId}: {str(e)}")

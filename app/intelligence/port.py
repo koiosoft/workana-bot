@@ -33,6 +33,8 @@ class IntelligencePort(ABC):
         project: dict[str, Any],
         user_feedback_observations: str,
         model_id: str,
+        contract_type: str = "project_fixed",
+        use_initial_template: bool = False,
         circuit_breaker: Optional["CircuitBreaker"] = None,
     ) -> dict[str, Any]:
         """Refina una propuesta existente usando feedback del usuario."""

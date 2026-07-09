@@ -479,3 +479,143 @@ class TestGetIntelligenceAdapters:
             adapters = factory.get_intelligence_adapters()
             assert isinstance(adapters, dict)
             assert set(adapters.keys()) == {"STANDARD", "PREMIUM", "FILTER"}
+
+
+# ---------------------------------------------------------------------------
+# select_initial_proposal_template
+# ---------------------------------------------------------------------------
+
+
+class TestSelectInitialProposalTemplate:
+    """Tests for ``select_initial_proposal_template``."""
+
+    def test_returns_proposal_j2_for_project_fixed(self) -> None:
+        result = factory.select_initial_proposal_template("project_fixed")
+        assert result == "proposal.j2"
+
+    def test_returns_proposal_staffing_j2_for_staff_augmentation(self) -> None:
+        result = factory.select_initial_proposal_template("staff_augmentation")
+        assert result == "proposal_staffing.j2"
+
+    def test_defaults_to_proposal_j2_for_unknown_type(self) -> None:
+        """Any unrecognized contract type falls back to proposal.j2."""
+        result = factory.select_initial_proposal_template("unknown_type")
+        assert result == "proposal.j2"
+
+
+# ---------------------------------------------------------------------------
+# refine_proposal (factory-level) — contract_type routing
+# ---------------------------------------------------------------------------
+
+
+class TestRefineProposalContractTypeRouting:
+    """Tests for the factory-level ``refine_proposal`` function that validate
+    correct routing of ``contract_type`` and ``use_initial_template`` to the
+    underlying adapter."""
+
+    @pytest.mark.asyncio
+    async def test_passes_use_initial_template_true_when_contract_type_changes(
+        self, patch_gemini_client: None, mock_db_with_models: None,
+    ) -> None:
+        """When contract_type differs from the project's existing value,
+        ``use_initial_template=True`` must be passed to the adapter."""
+        project = {"title": "Test", "contract_type": "project_fixed"}
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy"}):
+            # Ensure adapters are initialised
+            await factory.create_intelligence_service()
+
+        adapter = factory._instances["STANDARD"]
+        with patch.object(adapter, "refine_proposal", new_callable=AsyncMock) as mock_refine:
+            mock_refine.return_value = {"proposal": "refined"}
+
+            await factory.refine_proposal(
+                project=project,
+                user_feedback_observations="Make it better",
+                model_id="test/model",
+                contract_type="staff_augmentation",
+            )
+
+            mock_refine.assert_awaited_once()
+            call_kwargs = mock_refine.call_args.kwargs
+            assert call_kwargs["contract_type"] == "staff_augmentation"
+            assert call_kwargs["use_initial_template"] is True
+
+    @pytest.mark.asyncio
+    async def test_passes_use_initial_template_false_when_same_contract_type(
+        self, patch_gemini_client: None, mock_db_with_models: None,
+    ) -> None:
+        """When contract_type matches the project's existing value,
+        ``use_initial_template=False`` must be passed."""
+        project = {"title": "Test", "contract_type": "staff_augmentation"}
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy"}):
+            await factory.create_intelligence_service()
+
+        adapter = factory._instances["STANDARD"]
+        with patch.object(adapter, "refine_proposal", new_callable=AsyncMock) as mock_refine:
+            mock_refine.return_value = {"proposal": "refined"}
+
+            await factory.refine_proposal(
+                project=project,
+                user_feedback_observations="Adjust hours",
+                model_id="test/model",
+                contract_type="staff_augmentation",
+            )
+
+            mock_refine.assert_awaited_once()
+            call_kwargs = mock_refine.call_args.kwargs
+            assert call_kwargs["contract_type"] == "staff_augmentation"
+            assert call_kwargs["use_initial_template"] is False
+
+    @pytest.mark.asyncio
+    async def test_passes_use_initial_template_false_when_contract_type_none(
+        self, patch_gemini_client: None, mock_db_with_models: None,
+    ) -> None:
+        """When no contract_type is provided (None), ``use_initial_template``
+        must be False and the existing contract_type is used."""
+        project = {"title": "Test", "contract_type": "project_fixed"}
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy"}):
+            await factory.create_intelligence_service()
+
+        adapter = factory._instances["STANDARD"]
+        with patch.object(adapter, "refine_proposal", new_callable=AsyncMock) as mock_refine:
+            mock_refine.return_value = {"proposal": "refined"}
+
+            await factory.refine_proposal(
+                project=project,
+                user_feedback_observations="Refine",
+                model_id="test/model",
+            )
+
+            mock_refine.assert_awaited_once()
+            call_kwargs = mock_refine.call_args.kwargs
+            assert call_kwargs["contract_type"] == "project_fixed"
+            assert call_kwargs["use_initial_template"] is False
+
+    @pytest.mark.asyncio
+    async def test_defaults_to_project_fixed_when_contract_type_missing_from_project(
+        self, patch_gemini_client: None, mock_db_with_models: None,
+    ) -> None:
+        """When a project has no contract_type field, default to
+        ``project_fixed``."""
+        project = {"title": "Test"}  # no contract_type
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy"}):
+            await factory.create_intelligence_service()
+
+        adapter = factory._instances["STANDARD"]
+        with patch.object(adapter, "refine_proposal", new_callable=AsyncMock) as mock_refine:
+            mock_refine.return_value = {"proposal": "refined"}
+
+            await factory.refine_proposal(
+                project=project,
+                user_feedback_observations="Refine",
+                model_id="test/model",
+            )
+
+            mock_refine.assert_awaited_once()
+            call_kwargs = mock_refine.call_args.kwargs
+            assert call_kwargs["contract_type"] == "project_fixed"
+            assert call_kwargs["use_initial_template"] is False

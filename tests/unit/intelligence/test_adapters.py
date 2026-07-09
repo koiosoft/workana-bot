@@ -310,6 +310,108 @@ class TestOpenRouterAdapterModelOverrides:
 
 
 # ------------------------------------------------------------------
+#  refine_proposal — template selection
+# ------------------------------------------------------------------
+
+
+class TestRefineProposalTemplateSelection:
+    """Validate that ``refine_proposal`` selects the correct Jinja2 template
+    based on ``contract_type`` and ``use_initial_template`` flags."""
+
+    @pytest.fixture
+    def adapter(self) -> OpenRouterAdapter:
+        """Create an OpenRouterAdapter with a dummy API key."""
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "dummy-key"}):
+            return OpenRouterAdapter()
+
+    @pytest.mark.asyncio
+    async def test_refine_uses_refine_j2_for_project_fixed(
+        self, adapter: OpenRouterAdapter,
+    ) -> None:
+        """Default: project_fixed contract_type with no template override
+        should render refine.j2."""
+        with patch.object(
+            adapter, "_chat_completion", AsyncMock(return_value='{"proposal":"ok"}')
+        ), patch.object(adapter, "_render_prompt") as mock_render:
+            mock_render.return_value = "prompt string"
+
+            await adapter.refine_proposal(
+                project={"title": "Test", "contract_type": "project_fixed"},
+                user_feedback_observations="Feedback",
+                model_id="test/model",
+            )
+
+            # First positional arg is the template name
+            template_name = mock_render.call_args[0][0]
+            assert template_name == "refine.j2"
+
+    @pytest.mark.asyncio
+    async def test_refine_uses_refine_staffing_j2_for_staff_augmentation(
+        self, adapter: OpenRouterAdapter,
+    ) -> None:
+        """When contract_type is staff_augmentation and not an initial
+        template, should render refine-staffing.j2."""
+        with patch.object(
+            adapter, "_chat_completion", AsyncMock(return_value='{"proposal":"ok"}')
+        ), patch.object(adapter, "_render_prompt") as mock_render:
+            mock_render.return_value = "prompt string"
+
+            await adapter.refine_proposal(
+                project={"title": "Test"},
+                user_feedback_observations="Feedback",
+                model_id="test/model",
+                contract_type="staff_augmentation",
+            )
+
+            template_name = mock_render.call_args[0][0]
+            assert template_name == "refine-staffing.j2"
+
+    @pytest.mark.asyncio
+    async def test_refine_uses_proposal_j2_when_contract_type_changes_to_fixed(
+        self, adapter: OpenRouterAdapter,
+    ) -> None:
+        """When use_initial_template=True and contract_type is project_fixed,
+        should render proposal.j2."""
+        with patch.object(
+            adapter, "_chat_completion", AsyncMock(return_value='{"proposal":"ok"}')
+        ), patch.object(adapter, "_render_prompt") as mock_render:
+            mock_render.return_value = "prompt string"
+
+            await adapter.refine_proposal(
+                project={"title": "Test"},
+                user_feedback_observations="Feedback",
+                model_id="test/model",
+                contract_type="project_fixed",
+                use_initial_template=True,
+            )
+
+            template_name = mock_render.call_args[0][0]
+            assert template_name == "proposal.j2"
+
+    @pytest.mark.asyncio
+    async def test_refine_uses_proposal_staffing_j2_when_contract_type_changes_to_staffing(
+        self, adapter: OpenRouterAdapter,
+    ) -> None:
+        """When use_initial_template=True and contract_type is
+        staff_augmentation, should render proposal_staffing.j2."""
+        with patch.object(
+            adapter, "_chat_completion", AsyncMock(return_value='{"cover_letter":"ok"}')
+        ), patch.object(adapter, "_render_prompt") as mock_render:
+            mock_render.return_value = "prompt string"
+
+            await adapter.refine_proposal(
+                project={"title": "Test"},
+                user_feedback_observations="Feedback",
+                model_id="test/model",
+                contract_type="staff_augmentation",
+                use_initial_template=True,
+            )
+
+            template_name = mock_render.call_args[0][0]
+            assert template_name == "proposal_staffing.j2"
+
+
+# ------------------------------------------------------------------
 #  Database-driven model override tests (GeminiAdapter)
 # ------------------------------------------------------------------
 

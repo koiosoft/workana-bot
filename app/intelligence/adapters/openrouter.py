@@ -326,13 +326,26 @@ class OpenRouterAdapter(IntelligencePort):
         project: dict[str, Any],
         user_feedback_observations: str,
         model_id: str,
+        contract_type: str = "project_fixed",
+        use_initial_template: bool = False,
         circuit_breaker: Optional["CircuitBreaker"] = None,
     ) -> dict[str, Any]:
         """Refine an existing proposal using user feedback and a specific LLM model.
 
-        Renders the ``refine.j2`` template, calls the specified model via
-        OpenRouter, and returns the parsed JSON response.
+        When *use_initial_template* is True (contract type changed), the initial
+        proposal template is used instead of the refinement template.
+
+        When *contract_type* is ``"staff_augmentation"``, the
+        ``refine-staffing.j2`` template is selected.
         """
+        hourly_rate = int(os.getenv("HOURLY_RATE", "25"))
+        my_skills = [
+            "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
+            "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
+            "SQL", "MySQL", "PostgreSQL", "MongoDB", "GIT", "Swift", "C#", "Docker",
+            "UML Diagram", "DB Design (E-R)", "REST & GraphQL APIs",
+        ]
+
         project_payload: dict[str, Any] = {
             "title": project.get("title", "Proyecto sin título"),
             "description": project.get(
@@ -344,18 +357,50 @@ class OpenRouterAdapter(IntelligencePort):
 
         # Extract current proposal data for the LLM context
         current_proposal = project.get("proposal") or project.get("proposal_data")
-
-        prompt = self._render_prompt(
-            "refine.j2",
-            project_payload_json=json.dumps(project_payload, indent=2),
-            current_proposal_json=json.dumps(current_proposal, indent=2) if current_proposal else "{}",
-            user_feedback_observations=user_feedback_observations,
+        current_proposal_json = (
+            json.dumps(current_proposal, indent=2) if current_proposal else "{}"
         )
 
+        # -- Template selection ----------------------------------------------
+        if use_initial_template:
+            template_name = (
+                "proposal_staffing.j2" if contract_type == "staff_augmentation"
+                else "proposal.j2"
+            )
+            logger.info(
+                f"🔄 Contract type changed → using initial template '{template_name}'"
+            )
+            prompt = self._render_prompt(
+                template_name,
+                my_profile_skills=my_skills,
+                hourly_rate=hourly_rate,
+                project_payload_json=json.dumps(project_payload, indent=2),
+            )
+        elif contract_type == "staff_augmentation":
+            logger.info("🔁 Staff augmentation refinement → using refine-staffing.j2")
+            prompt = self._render_prompt(
+                "refine-staffing.j2",
+                my_profile_skills=my_skills,
+                hourly_rate=hourly_rate,
+                suggested_hours_per_week=20,
+                project_payload_json=json.dumps(project_payload, indent=2),
+                current_proposal_json=current_proposal_json,
+                user_feedback_observations=user_feedback_observations,
+            )
+        else:
+            logger.info("🔁 Project-fixed refinement → using refine.j2")
+            prompt = self._render_prompt(
+                "refine.j2",
+                project_payload_json=json.dumps(project_payload, indent=2),
+                current_proposal_json=current_proposal_json,
+                user_feedback_observations=user_feedback_observations,
+            )
+
         try:
-            # Override model_id with the user-specified one
+            # Override model_id with the user-specified one (if provided)
             original_model = self.model_id
-            self.model_id = model_id
+            if model_id:
+                self.model_id = model_id
 
             logger.info(
                 f"🤖 Refinando propuesta con modelo: '{self.model_id}'"

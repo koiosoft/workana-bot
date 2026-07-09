@@ -489,6 +489,7 @@ class TestRefineProposal:
                 project=self.SAMPLE_PROJECT,
                 user_feedback_observations="Add more detail.",
                 model_id="openrouter/gpt-4",
+                contract_type=None,
             )
 
     def test_refinement_handles_missing_justification_gracefully(self):
