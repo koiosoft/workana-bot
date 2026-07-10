@@ -5,6 +5,12 @@ import bcrypt
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.config.database import get_mongo_config
 
+# database.py loads .env + .env.local at import time, which may
+# clobber values set by pytest-dotenv from .env.test.
+# Re-apply .env.test with override=True so it always wins for tests.
+from dotenv import load_dotenv
+load_dotenv(".env.test", override=True)
+
 # Skip all integration tests if MONGO_URI is not set, adhering to CONVENTIONS.md
 pytestmark = pytest.mark.skipif(
     not os.getenv("MONGO_URI"),

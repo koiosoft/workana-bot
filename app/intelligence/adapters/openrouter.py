@@ -2,6 +2,7 @@ import os
 import re
 import json
 from typing import Any, cast, Optional
+import asyncio
 import httpx
 from jinja2 import Environment, FileSystemLoader
 from loguru import logger
@@ -96,6 +97,10 @@ class OpenRouterAdapter(IntelligencePort):
 
         return self.delay_model
 
+    # Retry configuration for transient network errors
+    _MAX_RETRIES: int = 3
+    _RETRY_BACKOFF_BASE: float = 2.0  # seconds, doubled each attempt
+
     async def _chat_completion(
         self,
         prompt: str,
@@ -104,6 +109,9 @@ class OpenRouterAdapter(IntelligencePort):
         """
         Realiza una llamada POST al endpoint de chat completions de OpenRouter
         y devuelve el texto de la respuesta. Lanza AIConnectionError si falla.
+
+        Incluye lógica de reintentos con backoff exponencial para errores
+        transitorios de red (RemoteProtocolError, TimeoutException).
         """
         headers: dict[str, str] = {
             "Authorization": f"Bearer {self.api_key}",
@@ -115,34 +123,77 @@ class OpenRouterAdapter(IntelligencePort):
             "messages": [{"role": "user", "content": prompt}],
         }
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
-            response = await client.post(
-                f"{OPENROUTER_BASE_URL}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
+        last_error: Exception | None = None
 
-        if response.status_code != 200:
-            logger.error(
-                f"OpenRouter API error {response.status_code}: {response.text}"
-            )
-            if circuit_breaker:
-                circuit_breaker.record_failure()
-            raise AIConnectionError(
-                f"OpenRouter API error {response.status_code}"
-            )
+        for attempt in range(self._MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(90.0, connect=15.0)
+                ) as client:
+                    response = await client.post(
+                        f"{OPENROUTER_BASE_URL}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
 
-        if circuit_breaker:
-            circuit_breaker.record_success()
+                if response.status_code != 200:
+                    logger.error(
+                        f"OpenRouter API error {response.status_code}: {response.text}"
+                    )
+                    if circuit_breaker:
+                        circuit_breaker.record_failure()
+                    raise AIConnectionError(
+                        f"OpenRouter API error {response.status_code}"
+                    )
 
-        data: dict[str, Any] = response.json()
-        choices: list[dict[str, Any]] = data.get("choices", [])
+                if circuit_breaker:
+                    circuit_breaker.record_success()
 
-        if not choices:
-            logger.warning("OpenRouter no devolvió choices en la respuesta.")
-            return ""
+                data: dict[str, Any] = response.json()
+                choices: list[dict[str, Any]] = data.get("choices", [])
 
-        return choices[0].get("message", {}).get("content", "")
+                if not choices:
+                    logger.warning("OpenRouter no devolvió choices en la respuesta.")
+                    return ""
+
+                return choices[0].get("message", {}).get("content", "")
+
+            except (httpx.RemoteProtocolError, httpx.TimeoutException) as e:
+                last_error = e
+                logger.warning(
+                    f"Intento {attempt + 1}/{self._MAX_RETRIES + 1} "
+                    f"falló con error transitorio: {type(e).__name__}: {e}"
+                )
+                if circuit_breaker:
+                    circuit_breaker.record_failure()
+
+                if attempt < self._MAX_RETRIES:
+                    backoff = self._RETRY_BACKOFF_BASE ** (attempt + 1)
+                    logger.info(f"Reintentando en {backoff:.1f}s...")
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.error(
+                        f"Se agotaron los {self._MAX_RETRIES + 1} intentos. "
+                        f"Último error: {e}"
+                    )
+                    raise AIConnectionError(
+                        "Servidor de IA (OpenRouter) interrumpido inesperadamente "
+                        f"tras {self._MAX_RETRIES + 1} intentos"
+                    ) from e
+
+            except httpx.HTTPError as e:
+                # Non-retryable HTTP errors
+                logger.error(
+                    f"Error HTTP no recuperable en OpenRouter: {type(e).__name__}: {e}"
+                )
+                if circuit_breaker:
+                    circuit_breaker.record_failure()
+                raise AIConnectionError(
+                    f"Error HTTP en OpenRouter: {type(e).__name__}"
+                ) from e
+
+        # Should never reach here; satisfy type checker
+        raise AIConnectionError("Unexpected: retry loop exhausted")
 
     # ------------------------------------------------------------------
     # Métodos de la interfaz IntelligencePort
