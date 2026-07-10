@@ -326,10 +326,21 @@ class GeminiAdapter(IntelligencePort):
                 return {"error": "No se pudo refinar la propuesta, la IA no devolvió contenido."}
 
             text_response = response.text.strip()
+            logger.debug(
+                f"[DEBUG gemini refine] Raw LLM response (len={len(text_response)}): "
+                f"{text_response[:500]}...{text_response[-200:] if len(text_response) > 700 else ''}"
+            )
             match = re.search(r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL)
             json_part = match.group(1) if match else text_response[text_response.find("{") : text_response.rfind("}") + 1]
+            logger.debug(
+                f"[DEBUG gemini refine] Extracted json_part (len={len(json_part)}): "
+                f"{json_part[:300]}..."
+            )
 
             refined_data: dict[str, Any] = json.loads(json_part)
+            logger.debug(
+                f"[DEBUG gemini refine] Parsed refined_data keys: {list(refined_data.keys())}"
+            )
             return refined_data
 
         except RemoteProtocolError as e:

@@ -420,6 +420,10 @@ class OpenRouterAdapter(IntelligencePort):
                 }
 
             text_response = text_response.strip()
+            logger.debug(
+                f"[DEBUG openrouter refine] Raw LLM response (len={len(text_response)}): "
+                f"{text_response[:500]}...{text_response[-200:] if len(text_response) > 700 else ''}"
+            )
             match = re.search(
                 r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL
             )
@@ -430,8 +434,15 @@ class OpenRouterAdapter(IntelligencePort):
                     text_response.find("{") : text_response.rfind("}") + 1
                 ]
             )
+            logger.debug(
+                f"[DEBUG openrouter refine] Extracted json_part (len={len(json_part)}): "
+                f"{json_part[:300]}..."
+            )
 
             refined_data: dict[str, Any] = json.loads(json_part)
+            logger.debug(
+                f"[DEBUG openrouter refine] Parsed refined_data keys: {list(refined_data.keys())}"
+            )
             return refined_data
 
         except (httpx.RemoteProtocolError, httpx.HTTPError) as e:

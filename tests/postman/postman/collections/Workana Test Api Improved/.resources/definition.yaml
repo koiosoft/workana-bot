@@ -1,4 +1,5 @@
 $kind: collection
+name: Workana Test Api Improved
 description: |-
   Collection of endpoints for the Workana Bot API.
 

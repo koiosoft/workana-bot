@@ -61,7 +61,16 @@ class ProposalVersionsRepository:
         """Insert a new proposal version with auto-incremented version_number.
 
         Returns the string representation of the inserted document's _id.
+
+        Raises:
+            ValueError: if *proposal_data* is empty or not a dict.
         """
+        if not isinstance(proposal_data, dict) or not proposal_data:
+            raise ValueError(
+                f"proposal_data must be a non-empty dict, got "
+                f"{type(proposal_data).__name__}: {proposal_data!r}"
+            )
+
         await self.ensure_indexes()
 
         # Determine the next version number

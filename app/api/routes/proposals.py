@@ -120,6 +120,25 @@ async def refine_proposal(
             model_id=body.llm_model_id,
             contract_type=requested_contract_type,
         )
+        logger.debug(
+            f"[DEBUG refine] refine_proposal_intel returned | "
+            f"keys={list(refined.keys()) if isinstance(refined, dict) else type(refined).__name__}"
+        )
+        # Guard: the adapter may return an error dict that would silently
+        # flow through to proposal_data storage.
+        if isinstance(refined, dict) and "error" in refined:
+            logger.error(
+                f"Intelligence service returned an error for project {projectId}: "
+                f"{refined['error']}"
+            )
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "error": "AI Service Error",
+                    "message": "The intelligence service failed to refine the proposal.",
+                    "details": refined["error"],
+                },
+            )
     except Exception as e:
         logger.error(f"Refinement failed for project {projectId}: {str(e)}")
         raise HTTPException(
@@ -136,8 +155,38 @@ async def refine_proposal(
     # "proposal" keys.  They must be stored separately: justification as a
     # top-level field on the proposal_versions document, and the inner
     # proposal object as proposal_data (without the justification inside it).
+    logger.debug(
+        f"[DEBUG refine] Raw refined keys: {list(refined.keys()) if isinstance(refined, dict) else type(refined).__name__} | "
+        f"has_error_key={'error' in refined if isinstance(refined, dict) else 'N/A'} | "
+        f"type={type(refined).__name__}"
+    )
     refinement_justification = refined.pop("refinement_justification", None)
     inner_proposal = refined.pop("proposal", refined)
+    logger.debug(
+        f"[DEBUG refine] inner_proposal keys: {list(inner_proposal.keys()) if isinstance(inner_proposal, dict) else type(inner_proposal).__name__} | "
+        f"is_empty={not inner_proposal if isinstance(inner_proposal, dict) else 'N/A'} | "
+        f"refinement_justification_len={len(refinement_justification) if refinement_justification else 0}"
+    )
+
+    # Guard: the LLM sometimes returns only refinement_justification
+    # without the "proposal" key, leaving inner_proposal as an empty dict.
+    # Reject early so we never store empty proposal_data.
+    if not isinstance(inner_proposal, dict) or not inner_proposal:
+        logger.error(
+            f"Refined proposal data is empty for project {projectId}. "
+            f"LLM returned keys: {list(refined.keys()) if isinstance(refined, dict) else 'N/A'} "
+            f"after popping refinement_justification."
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "AI Service Error",
+                "message": (
+                    "The intelligence service returned a response without proposal content. "
+                    "Please retry the refinement."
+                ),
+            },
+        )
 
     # -- Store the refined proposal as a new version -------------------------
     proposals_repo = ProposalVersionsRepository()

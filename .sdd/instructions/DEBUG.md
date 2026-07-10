@@ -1,21 +1,18 @@
 ## Current Objective
-Debug and resolve the 502 Bad Gateway error encountered during the refinement of a staff augmentation proposal, which originates from a 404 Not Found error in the AI service.
+Resolve the issue where the `proposal_data` field in the `proposal_versions` collection remains empty after refining a proposal via the `/api/proposals/{project_id}/refine` endpoint.
 
 ## Task List
-- [x] **Error in app/api/routes/proposals.py:124**
-  - **Error:** Refinement failed for project 6a4f9e64f1ebc6a8f407c278: La API de IA falló durante el refinamiento de propuesta: 404 Not Found.
-  - **Context:** The error occurs when calling the intelligence service to refine a proposal, which results in a 404 Not Found error from the AI API.
-  - **Action Required:** Investigate the `refine_proposal_intel` function call to ensure the correct model ID and contract type are passed. Confirm that the intelligence adapter is correctly initialized and that the model ID "deepseek/deepseek-v4-pro" exists in the database or is supported by the adapter. Additionally, verify that the contract type "staff_augmentation" is properly handled by the adapter's refine method.
+- [x] **Error in app/api/routes/proposals.py:78**
+  - **Error:** `KeyError: 'proposal'`
+  - **Context:** The code attempts to extract `inner_proposal` using `refined.pop("proposal", refined)`, but the LLM response lacks the expected `proposal` key, leading to an empty `proposal_data` in the database.
+  - **Action Required:** 
+    1. Inspect the `refine.j2` template in `app/intelligence/prompts/` to ensure it explicitly instructs the LLM to return a `proposal` object with the required structure.
+    2. Validate that the LLM response includes a `proposal` key with valid content before attempting to extract it.
+    3. Add error handling in `refine_proposal` to log or raise an exception if the `proposal` key is missing, preventing empty `proposal_data` from being stored.
 
-- [x] **Error in app/intelligence/factory.py:154**
-  - **Error:** ⚠️ Model 'deepseek/deepseek-v4-pro' not found in DB — falling back to STANDARD adapter
-  - **Context:** The model ID "deepseek/deepseek-v4-pro" is not found in the `models` collection, so the fallback to the STANDARD adapter is triggered.
-  - **Action Required:** Check the `models` collection in the database to confirm that the model "deepseek/deepseek-v4-pro" is correctly registered with the appropriate provider key. If it is not present, either add the model to the database or ensure the test environment includes this model for the test to pass.
-
-- [x] **Error in app/intelligence/adapters/gemini:refine_proposal:340**
-  - **Error:** Error en API de IA durante el refinamiento de propuesta: 404 Not Found.
-  - **Context:** The AI service returns a 404 Not Found error when attempting to refine the proposal using the fallback STANDARD adapter.
-  - **Action Required:** Verify that the STANDARD adapter is correctly configured and that the model it uses is accessible. Confirm that the adapter's API endpoint is reachable and that the model ID used by the STANDARD adapter is valid and properly registered in the database. Additionally, ensure that the adapter's refine method is correctly handling the contract type and proposal data.
-
-- [x] Check unit tests and fix them if thear errors.
-- [x] Check integration tests and fix them if thear errors.
+- [x] **Error in app/database/proposal_versions_repository.py:42**
+  - **Error:** `InvalidDocument: Document must contain a field: 'proposal_data'`
+  - **Context:** The `insert_version` method requires `proposal_data` to be present, but the refinement process produces an empty dictionary due to the missing `proposal` key in the LLM response.
+  - **Action Required:** 
+    1. Modify the `insert_version` method to include validation that `proposal_data` is non-empty before attempting to insert into the database.
+    2. Ensure that the `refine_proposal_intel` function guarantees the presence of `proposal_data` by enforcing the LLM to return structured content, potentially by adjusting the prompt template or adding fallback logic.

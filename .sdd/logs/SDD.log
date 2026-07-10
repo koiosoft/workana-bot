@@ -1,80 +1,282 @@
-___________________________________________________________ TestRefineProposalContractType.test_refine_staff_augmentation_uses_refine_staffing_template ____________________________________________________________
+============================= test session starts ==============================
+platform darwin -- Python 3.11.12, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/Workana-Bot
+configfile: pytest.ini
+plugins: mock-3.15.1, cov-7.1.0, asyncio-1.4.0, dotenv-0.5.2, anyio-4.13.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 69 items
 
-self = <test_proposals.TestRefineProposalContractType object at 0x10bd9c950>
-test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['ac-ktojd7p-shard-00-01.qu7h0p6.mongodb.net:27017', 'ac-ktojd7p-shard-...-xrqbkr-shard-0', tls=True, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
+tests/integration/api/test_proposals.py ........                         [ 11%]
+tests/integration/intelligence/test_factory.py .........                 [ 24%]
+tests/integration/test_auth_integration.py .......                       [ 34%]
+tests/integration/test_models_endpoints.py ........                      [ 46%]
+tests/integration/test_models_integration.py ........E..............     [ 79%]
+tests/integration/test_projects_integration.py ..........                [ 94%]
+tests/integration/test_proposal_versions.py ....                         [100%]
 
-    @pytest.mark.asyncio
-    @_skip_no_openrouter
-    async def test_refine_staff_augmentation_uses_refine_staffing_template(
+==================================== ERRORS ====================================
+______________ ERROR at setup of test_create_model_empty_model_id ______________
+
+self = Connection(<pymongo.network_layer.NetworkingInterface object at 0x10b256850>) CLOSED at 4481972560
+dbname = 'workana_bot_test'
+spec = {'$clusterTime': {'clusterTime': Timestamp(1783643804, 1), 'signature': {'hash': b'ehi\x8b\xcd\xec\x16\xbc7\x04\x883\x...s', 'indexes': [{'key': {'model_id': 1, 'provider_key': 1}, 'name': 'model_id_1_provider_key_1', 'unique': True}], ...}
+read_preference = Primary()
+codec_options = CodecOptions(document_class=dict, tz_aware=False, uuid_representation=UuidRepresentation.UNSPECIFIED, unicode_decode_e...ne, type_registry=TypeRegistry(type_codecs=[], fallback_encoder=None), datetime_conversion=DatetimeConversion.DATETIME)
+check = True, allowable_errors = None, read_concern = None
+write_concern = WriteConcern(), parse_write_concern_error = True
+collation = None
+session = <pymongo.synchronous.client_session.ClientSession object at 0x10b256c90>
+client = MongoClient(host=['ac-ktojd7p-shard-00-00.qu7h0p6.mongodb.net:27017', 'ac-ktojd7p-shard-00-02.qu7h0p6.mongodb.net:2701...in', replicaset='atlas-xrqbkr-shard-0', tls=True, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio'))
+retryable_write = False, publish_events = True, user_fields = None
+exhaust_allowed = False
+
+    @_handle_reauth
+    def command(
         self,
-        test_db: AsyncIOMotorDatabase,
-    ) -> None:
-        """When refining a staff_augmentation project with the same
-        contract_type, the response should contain staffing-specific fields
-        (cover_letter, budget_summary) indicating refine-staffing.j2 was used."""
-        # Create a project with staff_augmentation contract_type
-        project_doc = {
-            "title": "Staff Aug Project",
-            "budget": "$1,000 – $2,500",
-            "link": "https://www.workana.com/job/staff-integration-test",
-            "published": "hace 2 horas",
-            "short_description": "Need a senior Python dev for staff augmentation",
-            "bids": "3",
-            "source": "workana",
-            "proposal_status": "proposal_generated",
-            "scraped_at": datetime.now(timezone.utc).isoformat(),
-            "link_hash": "intg-refine-staff-hash-001",
-            "skills": ["Python", "Django", "PostgreSQL"],
-            "ai_score": 8,
-            "contract_type": "staff_augmentation",
-        }
-        result = await test_db.projects.insert_one(project_doc)
-        project_id = str(result.inserted_id)
-
-        # Insert an existing staffing proposal version
-        current_proposal = {
-            "cover_letter": "Dear client, I am a senior Python dev...",
-            "budget_summary": {
-                "hourly_rate": 25,
-                "suggested_hours_per_week": 20,
-                "estimated_monthly_budget": 2000,
-            },
-            "questions_for_client": ["What's the team size?"],
-        }
-        await test_db.proposal_versions.insert_one({
-            "project_id": project_id,
-            "link_hash": "intg-refine-staff-hash-001",
-            "version_number": 1,
-            "proposal_data": current_proposal,
-            "created_at": datetime.now(timezone.utc),
-            "source_of_changes": "IA",
-        })
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            response = await ac.post(
-                f"/api/proposals/{project_id}/refine",
-                json={
-                    "llm_model_id": "deepseek/deepseek-v4-pro",
-                    "user_feedback_observations": (
-                        "Increase the suggested hours per week to 30 "
-                        "and emphasise React Native experience."
-                    ),
-                    "contract_type": "staff_augmentation",
-                },
+        dbname: str,
+        spec: MutableMapping[str, Any],
+        read_preference: _ServerMode = ReadPreference.PRIMARY,
+        codec_options: CodecOptions[Mapping[str, Any]] = DEFAULT_CODEC_OPTIONS,  # type: ignore[assignment]
+        check: bool = True,
+        allowable_errors: Optional[Sequence[Union[str, int]]] = None,
+        read_concern: Optional[ReadConcern] = None,
+        write_concern: Optional[WriteConcern] = None,
+        parse_write_concern_error: bool = False,
+        collation: Optional[_CollationIn] = None,
+        session: Optional[ClientSession] = None,
+        client: Optional[MongoClient[Any]] = None,
+        retryable_write: bool = False,
+        publish_events: bool = True,
+        user_fields: Optional[Mapping[str, Any]] = None,
+        exhaust_allowed: bool = False,
+    ) -> dict[str, Any]:
+        """Execute a command or raise an error.
+    
+        :param dbname: name of the database on which to run the command
+        :param spec: a command document as a dict, SON, or mapping object
+        :param read_preference: a read preference
+        :param codec_options: a CodecOptions instance
+        :param check: raise OperationFailure if there are errors
+        :param allowable_errors: errors to ignore if `check` is True
+        :param read_concern: The read concern for this command.
+        :param write_concern: The write concern for this command.
+        :param parse_write_concern_error: Whether to parse the
+            ``writeConcernError`` field in the command response.
+        :param collation: The collation for this command.
+        :param session: optional ClientSession instance.
+        :param client: optional MongoClient for gossipping $clusterTime.
+        :param retryable_write: True if this command is a retryable write.
+        :param publish_events: Should we publish events for this command?
+        :param user_fields: Response fields that should be decoded
+            using the TypeDecoders from codec_options, passed to
+            bson._decode_all_selective.
+        """
+        self.validate_session(client, session)
+        session = _validate_session_write_concern(session, write_concern)
+    
+        # Ensure command name remains in first place.
+        if not isinstance(spec, ORDERED_TYPES):  # type:ignore[arg-type]
+            spec = dict(spec)
+    
+        if not (write_concern is None or write_concern.acknowledged or collation is None):
+            raise ConfigurationError("Collation is unsupported for unacknowledged writes.")
+    
+        self.add_server_api(spec)
+        if session:
+            session._apply_to(spec, retryable_write, read_preference, self)
+        self.send_cluster_time(spec, session, client)
+        listeners = self.listeners if publish_events else None
+        unacknowledged = bool(write_concern and not write_concern.acknowledged)
+        if self.op_msg_enabled:
+            self._raise_if_not_writable(unacknowledged)
+        try:
+>           return command(
+                self,
+                dbname,
+                spec,
+                self.is_mongos,
+                read_preference,
+                codec_options,  # type: ignore[arg-type]
+                session,
+                client,
+                check,
+                allowable_errors,
+                self.address,
+                listeners,
+                self.max_bson_size,
+                read_concern,
+                parse_write_concern_error=parse_write_concern_error,
+                collation=collation,
+                compression_ctx=self.compression_context,
+                use_op_msg=self.op_msg_enabled,
+                unacknowledged=unacknowledged,
+                user_fields=user_fields,
+                exhaust_allowed=exhaust_allowed,
+                write_concern=write_concern,
             )
 
->       assert response.status_code == 200, (
-            f"Expected 200, got {response.status_code}: {response.text}"
-        )
-E       AssertionError: Expected 200, got 502: {"detail":{"error":"AI Service Error","message":"The intelligence service failed to refine the proposal.","details":"La API de IA falló durante el refinamiento de propuesta: 404 Not Found. {'message': '', 'status': 'Not Found'}"}}
-E       assert 502 == 200
-E        +  where 502 = <Response [502 Bad Gateway]>.status_code
+.venv/lib/python3.11/site-packages/pymongo/synchronous/pool.py:403: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.11/site-packages/pymongo/synchronous/network.py:198: in command
+    reply = receive_message(conn, request_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/network_layer.py:759: in receive_message
+    length, _, response_to, op_code = _UNPACK_HEADER(receive_data(conn, 16, deadline))
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-tests/integration/api/test_proposals.py:436: AssertionError
------------------------------------------------------------------------------------------------ Captured stderr call -----------------------------------------------------------------------------------------------
-2026-07-09 09:13:08.881 | WARNING  | app.intelligence.factory:refine_proposal:154 - ⚠️  Model 'deepseek/deepseek-v4-pro' not found in DB — falling back to STANDARD adapter
-2026-07-09 09:13:08.882 | INFO     | app.intelligence.adapters.gemini:refine_proposal:284 - 🔁 Staff augmentation refinement → using refine-staffing.j2
-2026-07-09 09:13:08.889 | INFO     | app.intelligence.adapters.gemini:refine_proposal:308 - 🤖 Refinando propuesta con modelo: 'deepseek/deepseek-v4-pro'
-2026-07-09 09:13:08.990 | ERROR    | app.intelligence.adapters.gemini:refine_proposal:340 - Error en API de IA durante el refinamiento de propuesta: 404 Not Found. {'message': '', 'status': 'Not Found'}
-2026-07-09 09:13:08.990 | ERROR    | app.api.routes.proposals:refine_proposal:124 - Refinement failed for project 6a4f9e64f1ebc6a8f407c278: La API de IA falló durante el refinamiento de propuesta: 404 Not Found.
+conn = Connection(<pymongo.network_layer.NetworkingInterface object at 0x10b256850>) CLOSED at 4481972560
+length = 16, deadline = None
+
+    def receive_data(conn: Connection, length: int, deadline: Optional[float]) -> memoryview:
+        buf = bytearray(length)
+        mv = memoryview(buf)
+        bytes_read = 0
+        # To support cancelling a network read, we shorten the socket timeout and
+        # check for the cancellation signal after each timeout. Alternatively we
+        # could close the socket but that does not reliably cancel recv() calls
+        # on all OSes.
+        # When the timeout has expired we perform one final non-blocking recv.
+        # This helps avoid spurious timeouts when the response is actually already
+        # buffered on the client.
+        orig_timeout = conn.conn.gettimeout()
+        try:
+            while bytes_read < length:
+                try:
+                    # Use the legacy wait_for_read cancellation approach on PyPy due to PYTHON-5011.
+                    # also use it on Windows due to PYTHON-5405
+                    if _PYPY or _WINDOWS:
+                        wait_for_read(conn, deadline)
+                        if _csot.get_timeout() and deadline is not None:
+                            conn.set_conn_timeout(max(deadline - time.monotonic(), 0))
+                    else:
+                        if deadline is not None:
+                            short_timeout = min(max(deadline - time.monotonic(), 0), _POLL_TIMEOUT)
+                        else:
+                            short_timeout = _POLL_TIMEOUT
+                        conn.set_conn_timeout(short_timeout)
+    
+                    chunk_length = conn.conn.recv_into(mv[bytes_read:])
+                except BLOCKING_IO_ERRORS:
+                    if conn.cancel_context.cancelled:
+                        raise _OperationCancelled("operation cancelled") from None
+                    # We reached the true deadline.
+                    raise socket.timeout("timed out") from None
+                except socket.timeout:
+                    if conn.cancel_context.cancelled:
+                        raise _OperationCancelled("operation cancelled") from None
+                    if (
+                        _PYPY
+                        or _WINDOWS
+                        or not conn.is_sdam
+                        and deadline is not None
+                        and deadline - time.monotonic() < 0
+                    ):
+                        # We reached the true deadline.
+                        raise
+                    continue
+                except OSError as exc:
+                    if conn.cancel_context.cancelled:
+                        raise _OperationCancelled("operation cancelled") from None
+                    if _errno_from_exception(exc) == errno.EINTR:
+                        continue
+                    raise
+                if chunk_length == 0:
+>                   raise OSError("connection closed")
+E                   OSError: connection closed
+
+.venv/lib/python3.11/site-packages/pymongo/network_layer.py:379: OSError
+
+The above exception was the direct cause of the following exception:
+
+test_db = AsyncIOMotorDatabase(Database(MongoClient(host=['ac-ktojd7p-shard-00-00.qu7h0p6.mongodb.net:27017', 'ac-ktojd7p-shard-...-xrqbkr-shard-0', tls=True, driver=DriverInfo(name='Motor', version='3.7.1', platform='asyncio')), 'workana_bot_test'))
+
+    @pytest_asyncio.fixture
+    async def ensure_collections(test_db: AsyncIOMotorDatabase) -> None:
+        """Ensure the providers and models collections exist with indexes."""
+        from app.database.mongo import ensure_providers_collection, ensure_models_collection
+    
+        await ensure_providers_collection()
+>       await ensure_models_collection()
+
+tests/integration/test_models_integration.py:58: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/database/mongo.py:113: in ensure_models_collection
+    await db["models"].create_index([("model_id", 1), ("provider_key", 1)], unique=True)
+../../../../.pyenv/versions/3.11.12/lib/python3.11/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/collection.py:2391: in create_index
+    return (self._create_indexes([index], session, **cmd_options))[0]
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/_csot.py:125: in csot_wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/collection.py:2273: in _create_indexes
+    return self.database.client._retryable_write(False, inner, session, _Op.CREATE_INDEXES)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/mongo_client.py:2113: in _retryable_write
+    return self._retry_with_session(retryable, func, s, bulk, operation, operation_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/mongo_client.py:1986: in _retry_with_session
+    return self._retry_internal(
+.venv/lib/python3.11/site-packages/pymongo/_csot.py:125: in csot_wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/mongo_client.py:2038: in _retry_internal
+    ).run()
+      ^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/mongo_client.py:2811: in run
+    res = self._read() if self._is_read else self._write()
+                                             ^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/mongo_client.py:3014: in _write
+    return self._func(self._session, conn, self._retryable)  # type: ignore
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/collection.py:2263: in inner
+    self._command(
+.venv/lib/python3.11/site-packages/pymongo/synchronous/collection.py:615: in _command
+    return conn.command(
+.venv/lib/python3.11/site-packages/pymongo/synchronous/helpers.py:53: in inner
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.11/site-packages/pymongo/synchronous/pool.py:431: in command
+    self._raise_connection_failure(error)
+.venv/lib/python3.11/site-packages/pymongo/synchronous/pool.py:633: in _raise_connection_failure
+    _raise_connection_failure(self.address, error, timeout_details=details)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+address = ('ac-ktojd7p-shard-00-02.qu7h0p6.mongodb.net', 27017)
+error = OSError('connection closed'), msg_prefix = None
+timeout_details = {'connectTimeoutMS': 20000.0}
+
+    def _raise_connection_failure(
+        address: Any,
+        error: Exception,
+        msg_prefix: Optional[str] = None,
+        timeout_details: Optional[dict[str, float]] = None,
+    ) -> NoReturn:
+        """Convert a socket.error to ConnectionFailure and raise it."""
+        host, port = address
+        # If connecting to a Unix socket, port will be None.
+        if port is not None:
+            msg = "%s:%d: %s" % (host, port, error)
+        else:
+            msg = f"{host}: {error}"
+        if msg_prefix:
+            msg = msg_prefix + msg
+        if "configured timeouts" not in msg:
+            msg += format_timeout_details(timeout_details)
+        if (
+            isinstance(error, socket.timeout)
+            or isinstance(error, SSLErrors)
+            and "timed out" in str(error)
+        ):
+            raise NetworkTimeout(msg) from error
+        else:
+>           raise AutoReconnect(msg) from error
+E           pymongo.errors.AutoReconnect: ac-ktojd7p-shard-00-02.qu7h0p6.mongodb.net:27017: connection closed (configured timeouts: connectTimeoutMS: 20000.0ms)
+
+.venv/lib/python3.11/site-packages/pymongo/pool_shared.py:148: AutoReconnect
+=========================== short test summary info ============================
+ERROR tests/integration/test_models_integration.py::test_create_model_empty_model_id
+=================== 68 passed, 1 error in 436.73s (0:07:16) ====================
