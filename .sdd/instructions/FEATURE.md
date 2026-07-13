@@ -1,27 +1,22 @@
 ## Current Objective
-Update the refine_proposal endpoint to support an optional `contract_type` field with validation and logic to handle contract type changes by discarding previous proposal history and using initial proposal templates.
+Update the API endpoint for listing projects to correctly support pagination and ensure the unit and integration tests validate this functionality.
 
 ## Key Artifacts (to focus on)
 - **Files**: 
-  - `app/api/routes/proposals.py`
-  - `app/models/project.py`
-  - `app/database/proposal_versions_repository.py`
-  - `app/intelligence/factory.py`
+  - `app/api/routes/projects.py`
+  - `tests/unit/test_projects.py`
+  - `tests/integration/test_projects.py`
 - **Classes/Interfaces**: 
-  - `RefineProposalRequest`
-  - `ProposalVersionsRepository`
-  - `IntelligencePort`
-  - `Project`
-- **Configuration**: None
+  - `ProjectsRepository` class in `app/database/projects_repository.py`
+  - `list_projects` function in `app/api/routes/projects.py`
+- **Configuration**: 
+  - `MONGO_URI` environment variable for MongoDB connection
 
 ## Task List
-- [ ] Read `app/api/routes/proposals.py` to understand the existing `RefineProposalRequest` model and `refine_proposal` endpoint logic, then modify the `RefineProposalRequest` class to add an optional `contract_type` field with validation for allowed values `"project_fixed"` and `"staff_augmentation"` (raising an error if unsupported). Update the `refine_proposal` function to check if the provided `contract_type` differs from the project's existing field; if it differs, delete all existing proposal versions using `ProposalVersionsRepository` and always call `refine_proposal_intel` passing the new `contract_type`.
-- [ ] Examine `app/models/project.py` to confirm the `contract_type` field exists as a `ContractType` Literal, ensuring validation compatibility with the API route.
-- [ ] Read `app/database/proposal_versions_repository.py` to understand how proposal versions are stored, then add a new method `delete_versions_for_project` to this class that deletes all proposal versions for a given `project_id` using MongoDB's `delete_many` operation.
-- [ ] Examine `app/intelligence/factory.py` and implement a `select_initial_proposal_template` function that returns `proposal.j2` for "project_fixed" or `proposal_staffing.j2` for "staff_augmentation". Modify `refine_proposal_intel` to apply the following conditional template logic:
-  1. If `contract_type` has changed, bypass the refinement templates and use the new template selector to load the correct initial template instead (rendering `proposal_staffing.j2` if switching to "staff_augmentation").
-  2. If `contract_type` is missing or has not changed, proceed with the standard refinement process: use the existing refinement template (`refine.j2`) for `"project_fixed"`, and implement the new staffing refinement branch using `app/intelligence/prompts/refine-staffing.j2` when the contract type is `"staff_augmentation"`.
-- [ ] **Run and improve Unit Tests:** Review existing unit tests for the factory and repository layers. Add or upgrade test cases to verify the `select_initial_proposal_template` logic, the conditional template routing inside `refine_proposal_intel`, and the correct behavior of `delete_versions_for_project` in the repository.
-- [ ] **Run and improve Integration Tests:** Review and run API integration tests for the proposal endpoints. Add test cases to cover the full workflow of the updated `POST /api/proposals/{project_id}/refine` endpoint, verifying validation errors for invalid contract types, successful workflow resets when `contract_type` changes, and proper template generation for the new staffing refinement branch using `refine-staffing.j2`.
+- [x] Review `app/api/routes/projects.py` to understand how the `list_projects` endpoint is currently implemented, then modify the `list_projects` function to correctly handle pagination by passing `page` and `limit` parameters to the `ProjectsRepository.get_projects` method and ensuring that the repository method returns the correct subset of projects for the given page and limit.
+- [x] Examine `app/database/projects_repository.py` and modify the `get_projects` method to correctly implement pagination by using the `skip` and `limit` parameters based on the `page` and `limit` values, ensuring that the correct number of projects is returned for each page.
+- [x] Create or update `tests/unit/test_projects.py` to include unit tests for the `list_projects` endpoint, simulating different `page` and `limit` values to ensure that the endpoint returns the correct subset of projects for each request.
+- [x] Create or update `tests/integration/test_projects.py` to include integration tests for the `list_projects` endpoint, making actual API requests with different `page` and `limit` values to ensure that the endpoint returns the correct subset of projects for each request and validates that the data is correctly paginated.
+- [x] Ensure that the `list_projects` function in `app/api/routes/projects.py` correctly handles the `page` and `limit` parameters, and that the `ProjectsRepository.get_projects` method uses these parameters to implement pagination correctly, ensuring that the API returns different data for different pages.
 
 ## End Task List

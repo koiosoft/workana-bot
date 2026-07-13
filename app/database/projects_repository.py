@@ -524,7 +524,12 @@ class ProjectsRepository:
         for p in projects:
             p["_id"] = str(p["_id"])
 
+        page_count = (total + limit - 1) // limit if total > 0 else 1
+
         return {
             "projects": projects,
-            "total": total
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": page_count
         }

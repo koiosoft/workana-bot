@@ -35,7 +35,8 @@ def override_db_dependency(test_db: AsyncIOMotorDatabase):
 async def test_get_projects_success_structure(test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]) -> None:
     """
     Test successful retrieval of projects with valid structure.
-    Asserts 200 status code and response body containing 'projects' array and 'total' count.
+    Asserts 200 status code and response body containing 'projects' array, 'total' count,
+    and full pagination metadata (page, limit, total_pages).
     """
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -51,6 +52,48 @@ async def test_get_projects_success_structure(test_db: AsyncIOMotorDatabase, see
         assert isinstance(data["projects"], list)
         assert "total" in data
         assert isinstance(data["total"], int)
+        assert "page" in data
+        assert data["page"] == 1
+        assert "limit" in data
+        assert data["limit"] == 10
+        assert "total_pages" in data
+        assert isinstance(data["total_pages"], int)
+
+@pytest.mark.asyncio
+async def test_get_projects_pagination_distinct_pages(test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]) -> None:
+    """
+    Test that different pages return distinct subsets of projects.
+    Asserts that page 1 and page 2 have zero overlapping project IDs,
+    pagination metadata is consistent, and projects per page respect the limit.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Fetch page 1
+        r1 = await ac.get("/api/projects", params={"page": 1, "limit": 10})
+        assert r1.status_code == 200
+        d1 = r1.json()
+
+        # Fetch page 2
+        r2 = await ac.get("/api/projects", params={"page": 2, "limit": 10})
+        assert r2.status_code == 200
+        d2 = r2.json()
+
+        # Pagination metadata consistency
+        assert d1["page"] == 1
+        assert d2["page"] == 2
+        assert d1["total"] == d2["total"], "Total should be same across pages"
+        assert d1["total_pages"] == d2["total_pages"]
+        assert d1["limit"] == d2["limit"] == 10
+
+        # Verify each page respects the limit (unless total < limit)
+        assert len(d1["projects"]) <= 10
+        assert len(d2["projects"]) <= 10
+
+        # Extract IDs and verify no overlap between pages
+        ids1 = {p["_id"] for p in d1["projects"]}
+        ids2 = {p["_id"] for p in d2["projects"]}
+        overlap = ids1 & ids2
+        assert overlap == set(), f"Pages must be disjoint, but found overlap: {overlap}"
 
 @pytest.mark.asyncio
 async def test_get_projects_success_filters(test_db: AsyncIOMotorDatabase, seed_test_data: Dict[str, Any]) -> None:

@@ -26,13 +26,24 @@ def mock_repo():
 
 def test_list_projects_default_params(mock_repo):
     """Prueba que el endpoint responde correctamente con los parámetros por defecto."""
-    # Configurar el mock para devolver una respuesta simulada
-    mock_repo.get_projects.return_value = {"projects": [], "total": 0}
+    # Configurar el mock para devolver una respuesta simulada con metadatos de paginación
+    mock_repo.get_projects.return_value = {
+        "projects": [],
+        "total": 0,
+        "page": 1,
+        "limit": 10,
+        "total_pages": 1
+    }
     
     response = client.get("/api/projects")
     
     assert response.status_code == 200
-    assert response.json() == {"projects": [], "total": 0}
+    json_data = response.json()
+    assert json_data["projects"] == []
+    assert json_data["total"] == 0
+    assert json_data["page"] == 1
+    assert json_data["limit"] == 10
+    assert json_data["total_pages"] == 1
     
     # Verificar que el repositorio fue llamado con los valores por defecto
     mock_repo.get_projects.assert_called_once_with(
@@ -46,13 +57,16 @@ def test_list_projects_default_params(mock_repo):
 def test_list_projects_with_custom_params(mock_repo):
     """Prueba que el endpoint pasa correctamente los query parameters al repositorio."""
     mock_data = {
-        "projects": [{"_id": "123", "title": "Proyecto React"}], 
-        "total": 1
+        "projects": [{"_id": "123", "title": "Proyecto React"}],
+        "total": 1,
+        "page": 2,
+        "limit": 5,
+        "total_pages": 1
     }
     mock_repo.get_projects.return_value = mock_data
     
     response = client.get(
-        "/api/projects", 
+        "/api/projects",
         params={
             "status": "discarded",
             "searchTerm": "react",
