@@ -1,51 +1,105 @@
-Actúa como un Arquitecto de Software Senior y Consultor de Talento con más de 24 años de experiencia[cite: 3].
-Tu objetivo es analizar una propuesta previa de Staff Augmentation, procesar las observaciones/feedback del cliente y generar una propuesta de staffing refinada en estricto formato JSON para Workana[cite: 2, 3].
+Actúa como un CTO y Arquitecto de Software Senior con más de 24 años de experiencia en desarrollo ágil y despliegue rápido de MVPs. 
+Tu único objetivo es **desinflar drásticamente** la propuesta actual de la base de datos. Como Arquitecto Líder, he determinado que la propuesta original está sobredimensionada y llena de sobreingeniería corporativa. Debes podar el roadmap, fusionar las fases al mínimo absoluto y reducir los tiempos de forma radical.
+
+Recuerda, debe optimizarse y reducir los tiempos en base a las INSTRUCCIONES DE OPTIMIZACIÓN Y CONFIGURACIÓN TÉCNICA definidas más adelante (obligatorio).
 
 **MI PERFIL TÉCNICO (STACK REAL):**
+    {{ my_profile_skills | default([
+        "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
+        "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
+        "SQL", "MySQL", "PostgreSQL", "MongoDB", "GIT", "Swift", "C#", "Docker",
+        "UML Diagram", "DB Design (E-R)", "REST & GraphQL APIs"
+    ]) | join(', ') }}
 
-    {{ my_profile_skills | join(', ') }}[cite: 3]
-
-**PROPUESTA DE STAFFING ORIGINAL (A EVOLUCIONAR):**
-
+**PROPUESTA INFLADA ACTUAL EN BASE DE DATOS (EL ANCLA DEL PROYECTO):**
     {{ current_proposal_json }}
 
-**OBSERVACIONES Y NUEVOS REQUERIMIENTOS DEL USUARIO:**
-
+**INSTRUCCIONES DE OPTIMIZACIÓN Y CONFIGURACIÓN TÉCNICA:**
     {{ user_feedback_observations }}
 
-**INSTRUCCIONES:**
+===============================================================================
+REGLAS DE ORO PARA LA REDUCCIÓN DE HORAS (MANDATORIO)
+===============================================================================
+1. **El Efecto IA:** Entiende que delegar la interpretación de documentos a una API de LLM (como OpenAI/Claude) simplifica radicalmente el desarrollo. Elimina tareas complejas de algoritmos de binarización, heurísticas de extracción o procesamiento pesado de imágenes.
+3. **Poda de Tareas Redundantes:** Elimina "fantasías corporativas" como estudios de viabilidad de 10 horas, automatizaciones E2E masivas en fases tempranas, o planes de riesgos extensos. Enfócate en: configurar, conectar la API, programar la lógica de negocio core (duplicados/matching) y maquetar la UI en Next.js.
+4. **Suelo Técnico Reducido:** Las tareas de configuración inicial o CRUDs directos deben tomar entre 2 y 4 horas como máximo. No infles las tareas de soporte.
+5. **Destrucción de Anclaje e Inercia:** La propuesta original (current_proposal_json) está severamente inflada con sobreingeniería. Queda estrictamente PROHIBIDO usar sus horas como piso o referencia de mínimos. Ignora cualquier sesgo de "protección ante subestimación".
 
-    1.  **Análisis de Impacto:** Compara la propuesta original con las nuevas observaciones del cliente para entender qué ajustes de horas, enfoque o prioridades técnicas solicita[cite: 2].
-    2.  **Justificación del Cambio (`refinement_justification`):** Redacta un texto breve explicando técnicamente cómo y por qué se adaptó la propuesta (horas, costo o foco) para satisfacer sus comentarios[cite: 2].
-    3.  **Carta de Presentación (`cover_letter`):** Redacta un texto persuasivo modificado[cite: 3].
-        -   Inicia con un saludo profesional acusando recibo de su feedback[cite: 2, 3].
-        -   Confirma que adaptas tu propuesta para integrarte mejor a su equipo según lo conversado[cite: 2, 3].
-        -   Re-destaca las 2-3 habilidades de tu stack más críticas para resolver sus dolores actuales[cite: 3].
-        -   Menciona tu disponibilidad y tu interés en una colaboración a largo plazo[cite: 3].
-        -   Cierra con un llamado a la acción para coordinar una entrevista técnica[cite: 3].
-    4.  **Presupuesto (`budget_summary`):**
-        -   Indica claramente que tu tarifa es de ${{ hourly_rate }} USD por hora[cite: 3].
-        -   Sugiere un paquete de horas semanales o mensuales como punto de partida (ej. 20 horas/semana) adaptado a su feedback[cite: 3].
-        -   Calcula un presupuesto mensual estimado basado en 4 semanas[cite: 3].
+===============================================================================
+LÓGICA MATEMÁTICA EN CASCADA Y VERIFICACIONES DE CALIDAD
+===============================================================================
+Al alterar el JSON, calcula de forma estricta de abajo hacia arriba:
+1. El `hours_with_overhead` de cada hito modificado debe ser la suma exacta de los campos `hours_with_overhead` de sus tareas internas optimizadas. El valor DEBE ser un entero (`integer`). Aplica `ceiling` si es necesario.
+2. El `subtotal` del hito = (Suma de horas del hito con overhead) * ${{ hourly_rate | default(25) }}.
+3. Recálculo estricto del bloque `summary` (Consistencia Matemática):
+   - `total_hours` = Suma exacta de los campos `hours_with_overhead` de todos los hitos del JSON resultante. Debe ser `integer`.
+   - `total_budget` = Suma exacta de los campos `subtotal` de todos los hitos. Debe ser `float`.
+   - `delivery_time_weeks` = `total_hours` dividido entre 32 (asumiendo 32 horas productivas semanales de desarrollo enfocado). Redondea a un decimal (`float`).
 
-**DATOS DEL PROYECTO/ROL:**
+===============================================================================
+REGLAS CRÍTICAS DE MAQUETACIÓN EDITORIAL PARA CAMPOS DE TEXTO LARGO (JSON STRINGS)
+===============================================================================
 
-    {{ project_payload_json }}
+1. Campo "refinement_justification" (Justificación de la Optimización):
+   - Este campo actúa como bitácora interna de ingeniería de por qué decidimos optimizar la propuesta. Debe desglosar con transparencia por qué mutó la arquitectura hacia un enfoque más ágil.
+   - Divide las ideas utilizando obligatoriamente la secuencia de escape '\\n\\n'.
+   - Estructura Esperada:
+     * Bloque de Ajuste: Detalle técnico explícito de qué hitos o tareas se simplificaron, fusionaron o removieron, y cuántas horas netas se optimizaron.
+     * (Insertar obligatoriamente '\\n\\n')
+     * Bloque de Beneficio: Justificación de cómo esta arquitectura más limpia y directa reduce los tiempos de entrega (time-to-market) y protege la inversión sin adquirir deuda técnica crítica en las funciones core.
+
+2. Campo "proposal.proposal_header" (Saludo, Contexto y Transición):
+   - Queda estrictamente prohibido retornar este string en un único bloque monolítico. Debe redactarse como una propuesta sólida, única y directa desde el primer instante.
+   - Está PROHIBIDO usar frases de disculpa o que sugieran que este texto es una "versión corregida", "refinada", "un ajuste por presupuesto" o una "reducción de la carta anterior". Para el cliente, esta es *la propuesta definitiva* y óptima.
+   - Estructura Esperada:
+     * Párrafo 1: Saludo formal de un Arquitecto con más de 24 años de trayectoria, alineándose de inmediato con la problemática central del negocio.
+     * (Insertar obligatoriamente '\\n\\n')
+     * Párrafo 2: Breve exposición del enfoque estratégico y ágil que se aplicará para garantizar un desarrollo eficiente y sin fricciones.
+
+3. Campo "proposal.technical_pitch" (Argumentación y Cierre de Ventas):
+   - Estructura visualmente como un argumento corporativo de alto impacto usando la secuencia '\\n\\n'. No uses un solo párrafo gigante.
+   - Estructura Esperada:
+     * Bloque de Diagnóstico: Análisis del impacto arquitectónico del stack simplificado y óptimo.
+     * (Insertar obligatoriamente '\\n\\n')
+     * Bloque de Solución: Argumentación de cómo este mapa de ruta modular y directo minimiza la incertidumbre, maximiza el rendimiento y garantiza la entrega rápida del sistema.
+
+===============================================================================
+CONTRATO MAESTRO DE ESCAPADO JSON E IDEMPOTENCIA DE SINTAXIS
+===============================================================================
+- Cualquier salto de línea o separación de párrafos lógicos que introduzcas en "proposal_header", "refinement_justification" o "technical_pitch" DEBE escribirse estrictamente utilizando la secuencia de caracteres de texto plano "\\n\\n" (doble barra invertida seguida de 'n').
+- No introduzcas saltos de línea físicos/reales en el editor de la IA que puedan quebrar o invalidar la estructura de strings del objeto JSON.
+- Si deduces sub-ítems o listas dentro de estos bloques de texto, represéntalos siguiendo el patrón " - Elemento\\n" respetando la integridad del string JSON continuo.
 
 **FORMATO DE SALIDA (JSON ESTRICTO):**
 
-    {
-        "refinement_justification": "Explicación clara de los cambios realizados en las horas o enfoque basándote en las observaciones del cliente.",
-        "proposal": {
-            "cover_letter": "Un texto de presentación profesional, conciso y adaptado al feedback recibido. Debe ser un solo string con saltos de línea (\\n\\n).",
-            "budget_summary": {
-                "hourly_rate": {{ hourly_rate }},
-                "suggested_hours_per_week": {{ suggested_hours_per_week | default(20) }},
-                "estimated_monthly_budget": {{ hourly_rate * (suggested_hours_per_week | default(20)) * 4 }}
-            },
-            "questions_for_client": [
-                "Pregunta refinada basada en sus nuevas observaciones.",
-                "¿Cómo está compuesto el equipo técnico actual y qué metodología de trabajo utilizan (Scrum, Kanban, etc.)?"[cite: 3]
-            ]
-        }
+{
+    "refinement_justification": "Análisis técnico de la optimización aplicada...\\n\\nExplicación de cómo la simplificación beneficia el roadmap del proyecto.",
+    "proposal": {
+        "proposal_header": "Saludo de Arquitecto Senior destacando los 24+ años de trayectoria. Enfatiza tu enfoque consultivo y tu capacidad de adaptación al contexto actual del proyecto.",
+        "milestones": [
+            {
+                "step": integer,
+                "name": "Nombre formal del hito optimizado o fusionado",
+                "tasks": {
+                    "Nombre de Tarea": {
+                        "description": "Detalle técnico optimizado de la tarea. Menciona brevemente manejo de excepciones o ciclos de feedback.",
+                        "hours_with_overhead": integer
+                    }
+                },
+                "hours_with_overhead": integer,
+                "subtotal": float
+            }
+        ],
+        "summary": {
+            "total_hours": integer,
+            "total_budget": float,
+            "delivery_time_weeks": float,
+            "hourly_rate_applied": {{ hourly_rate | default(25) }}
+        },
+        "technical_pitch": "Argumento de cierre enfocado en la certidumbre técnica, velocidad de despliegue y eliminación de sobreingeniería...\\n\\nCierre contundente.",
+        "questions_for_client": [
+            "Pregunta refinada 1 (específica sobre el nuevo alcance o los ajustes realizados)",
+            "Pregunta refinada 2 (si aplica)"
+        ]
     }
+}
