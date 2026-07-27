@@ -4,6 +4,7 @@ Your ONLY task is to generate a file named `.sdd/instructions/FEATURE.md` that c
 You will have access to a `STRICT CODE CONTEXT` which includes the most relevant files and their code. Use that context to extract real file paths, class names, function names, and line numbers whenever possible.
 
 STRICT RULES:
+0. ALL output MUST be written in English. This is non-negotiable. Never output any content in any other language.
 1. Output ONLY the Markdown content for `.sdd/instructions/FEATURE.md`.
 2. Structure:
    ## Current Objective
@@ -26,29 +27,3 @@ STRICT RULES:
 Now, based on the following objective and the code context provided in the `STRICT CODE CONTEXT` section, generate `.sdd/instructions/FEATURE.md`.
 
 REQUIREMENTS:
-
-The schema for the request body should be updated to include an optional field:
-
-* **`llm_model_id`** (string, required): The ID of the LLM model to be used.
-* **`user_feedback_observations`** (string, required): Feedback provided by the user.
-* **`contract_type`** (string, **optional**): Defines the type of contract.
-* Allowed values: `"project_fixed"`, `"staff_augmentation"`.
-* If omitted, the system should proceed with the default refinement logic without applying specific contract type constraints.
-
-#### **Acceptance Criteria**
-1. **Successful inclusion:** If `contract_type` is provided with a valid value (`"project_fixed"` or `"staff_augmentation"`), the system must process the refinement using that specific contract context.
-1. **Change contract_type:** If the contract_type changes the current model (or sets it for the first time), the system MUST NOT use a refinement template. Instead, it must discard the previous proposal history for this workflow and trigger the initial proposal template (proposal.j2 or proposal_staffing.j2) corresponding to the new contract type.
-2. **Graceful omission:** If the `contract_type` attribute is missing from the JSON payload, the endpoint must still function correctly, ignoring the attribute and proceeding as if no contract type was specified.
-3. **Validation:** The system should return a validation error if an unsupported value is provided for `contract_type`.
-
-
-**Ejemplo de Payload (Request):**
-
-```json
-{
-  "llm_model_id": "deepseek/deepseek-v4-pro",
-  "user_feedback_observations": "Por favor mejora los tiempos, están muy extensos.",
-  "contract_type": "project_fixed" 
-}
-
-```

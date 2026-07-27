@@ -1,22 +1,26 @@
 ## Current Objective
-Update the API endpoint for listing projects to correctly support pagination and ensure the unit and integration tests validate this functionality.
+Implement new features for the Agent Instructor to support the initialization of protocol directories, the removal of a deprecated flag, and the addition of new command-line options for copying protocol and PI-related files.
 
 ## Key Artifacts (to focus on)
-- **Files**: 
-  - `app/api/routes/projects.py`
-  - `tests/unit/test_projects.py`
-  - `tests/integration/test_projects.py`
-- **Classes/Interfaces**: 
-  - `ProjectsRepository` class in `app/database/projects_repository.py`
-  - `list_projects` function in `app/api/routes/projects.py`
-- **Configuration**: 
-  - `MONGO_URI` environment variable for MongoDB connection
+- **Files**:
+  - `.sdd/instructions/FEATURE.md` (this file)
+  - `instructor.py`
+  - `.sdd/protocols/MCP.md`
+  - `.sdd/protocols/mcp/disabled/.gitkeep`
+  - `.sdd/protocols/mcp/enabled/.gitkeep`
+  - `.pi/` (directory to be copied)
+  - `config.json`
+- **Classes/Interfaces**: None (script-based functionality)
+- **Configuration**: `config.json` (for RAG parameters, though not directly involved in this feature)
 
 ## Task List
-- [x] Review `app/api/routes/projects.py` to understand how the `list_projects` endpoint is currently implemented, then modify the `list_projects` function to correctly handle pagination by passing `page` and `limit` parameters to the `ProjectsRepository.get_projects` method and ensuring that the repository method returns the correct subset of projects for the given page and limit.
-- [x] Examine `app/database/projects_repository.py` and modify the `get_projects` method to correctly implement pagination by using the `skip` and `limit` parameters based on the `page` and `limit` values, ensuring that the correct number of projects is returned for each page.
-- [x] Create or update `tests/unit/test_projects.py` to include unit tests for the `list_projects` endpoint, simulating different `page` and `limit` values to ensure that the endpoint returns the correct subset of projects for each request.
-- [x] Create or update `tests/integration/test_projects.py` to include integration tests for the `list_projects` endpoint, making actual API requests with different `page` and `limit` values to ensure that the endpoint returns the correct subset of projects for each request and validates that the data is correctly paginated.
-- [x] Ensure that the `list_projects` function in `app/api/routes/projects.py` correctly handles the `page` and `limit` parameters, and that the `ProjectsRepository.get_projects` method uses these parameters to implement pagination correctly, ensuring that the API returns different data for different pages.
+- [x] Read the existing `instructor.py` file to understand the current command-line argument parsing logic, then modify the `main()` function to remove the `--test` argument and add new arguments `--init`, `--pi-commands`, and `--enabled-mcp` with appropriate help messages and functionality.
+- [x] Copy the .sdd/protocols/MCP.md file (with its content) and then create the empty directories .sdd/protocols/mcp/disabled and .sdd/protocols/mcp/enabled (each with its respective .gitkeep file, leaving their content to be generated later), when copying the .sdd folder upon executing the --init argument.
+- [x] Create empty directories `.sdd/protocols/mcp/disabled` and `.sdd/protocols/mcp/enabled` inside the destination directory when the `--init` argument is used, and add a `.gitkeep` file in each of them to ensure they are tracked by Git.
+- [x] Read the current implementation of the `--init` functionality in `instructor.py`, then modify it to include the copying of the `.sdd/protocols/mcp` directory structure and the `.sdd/protocols/MCP.md` file when the `--init` argument is used.
+- [x] Read the `.pi/` directory and its contents, then add a new command-line argument `--pi-commands` to the `instructor.py` script that copies the `.pi/` directory and all its contents into the destination directory when executed.
+- [x] Add a new command-line argument `--enabled-mcp` to the `instructor.py` script that allows the user to specify which enabled MCP file (e.g., `CODE_BASE_MEMORY.md`) to copy from `.sdd/protocols/mcp/enabled/` to the destination directory when executed.
+- [x] Modify the `instructor.py` script to handle the new command-line arguments `--init`, `--pi-commands`, and `--enabled-mcp` by implementing the logic for copying the respective files and directories to the destination directory.
+- [x] Update the `instructor.py` script's help message to reflect the new command-line arguments and their descriptions when the user runs the script with the `--help` flag.
 
 ## End Task List

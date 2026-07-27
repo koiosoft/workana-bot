@@ -1,0 +1,710 @@
+=== FABRIC AI MODEL ===
+OpenRouter / qwen/qwen3-14b
+
+=== SYSTEM PROMPT ===
+# SOFTWARE DESIGN DOCUMENT (SDD) - AGENT INSTRUCTOR
+
+## 1. SYSTEM OBJECTIVE
+
+### 1.1 Purpose Statement
+The primary objective of **Agent Instructor** is to automate the generation of detailed, context-aware development instructions. It functions as a command-line orchestrator that analyzes a local codebase to identify relevant files for a given task (either a new feature or a bug fix) and then uses an external AI tool (`fabric-ai`) to compile a comprehensive `INSTRUCTIONS.md` file.
+
+### 1.2 High-Level Technical Objectives
+*   **Context-Aware Code Analysis:** Implement a local Retrieval-Augmented Generation (RAG) pipeline to dynamically identify and rank source code files based on their semantic relevance to a user-provided task description.
+*   **Declarative Configuration:** Allow fine-grained control over the analysis process (file inclusion/exclusion, model selection, etc.) through a simple `config.json` file.
+*   **External AI Integration:** Interface with the `fabric-ai` command-line tool, passing it a structured context containing project conventions, relevant code snippets, and the specific task objective.
+*   **Stateless, Deterministic Operation:** Operate as a pure command-line utility that reads from the local file system, executes its logic, and writes a single output file (`INSTRUCTIONS.md`) without maintaining any persistent state or requiring a database.
+*   **Mode-Based Instruction Generation:** Support distinct operational modes for `'feature'` development and `'bug'` fixing, using different input prompts and context for each scenario.
+
+---
+
+## 2. ARCHITECTURE AND DESIGN RULES
+
+The system is designed as a **stateless command-line orchestration script**. Its architecture is simple and functional, prioritizing a clear, sequential flow over complex patterns like DDD or Hexagonal Architecture, which are not necessary for this use case.
+
+```
+       [User via CLI]
+              |
+              v
++-----------------------------+
+|   agent-instructor (Bash)   |
++-----------------------------+
+              |
+              v
++-----------------------------+
+|    instructor.py (Python)   |
+|  (Orchestration & RAG Core) |
++-----------------------------+
+              |
+              v
+|---------------------------------|
+| 1. Load config.json             |
+| 2. Load CONVENTIONS.md          |
+| 3. Run RAG to find files        |
+| 4. Read relevant file content   |
+| 5. Prepare payload              |
+|---------------------------------|
+              |
+              v
++-----------------------------+
+|      fabric-ai (Ext. CLI)     |
++-----------------------------+
+              |
+              v
+    [INSTRUCTIONS.md (Output)]
+```
+
+### 2.1 Dependency and Environment
+1.  **Python Core & Virtual Environment:** The main logic resides in `instructor.py`. It requires Python 3.8+ and specific libraries (`sentence-transformers`, `numpy`). To keep dependencies isolated, the orchestrator is designed to run within a local virtual environment (`.venv`). The launcher script (`agent-instructor`) is self-aware and automatically prioritizes execution via `.venv/bin/python` if it exists.
+2.  **External CLI Tool:** The system has a hard dependency on the `fabric-ai` CLI tool, which must be installed (e.g., via `pipx`) and available in the system's PATH. The script verifies its presence on startup.
+3.  **Local AI Models:** The RAG process downloads and uses a `sentence-transformers` model locally. The model name is specified in `config.json`.
+4.  **Global Execution Setup:** To run the orchestrator system-wide, the installation folder can be added to the user's shell PATH (e.g., in `.bashrc` or `.zshrc`):
+    ```bash
+    export PATH="/Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/agent-instructor:$PATH"
+    ```
+5.  **File-Based Contracts:** The orchestrator relies on the presence of specific files in the root directory to function:
+    *   `CONVENTIONS.md`: Contains project-wide coding standards.
+    *   `CUSTOM-PROMPT.txt`: System prompt for 'feature' mode.
+    *   `CUSTOM-PROMPT-LOG.txt`: System prompt for 'bug' mode.
+    *   `sdd.log`: Optional file containing error logs for 'bug' mode.
+
+### 2.2 Project Topology and Directory Structure
+The file hierarchy is minimal and centered around the main script and its configuration.
+
+```
+.
+├── agent-instructor         # Bash script to launch the orchestrator.
+├── instructor.py            # Main Python orchestration script with RAG logic.
+├── config.json              # Declarative configuration for the RAG process.
+├── CONVENTIONS.md           # (Required) Project coding and design rules.
+├── CUSTOM-PROMPT.txt        # (Required) System prompt for feature generation.
+├── CUSTOM-PROMPT-LOG.txt    # (Required) System prompt for bug fixing.
+├── INSTRUCTIONS.md          # (Output) The generated instruction file.
+└── sdd.log                  # (Optional) Log file used as context in bug-fixing mode.
+```
+
+---
+
+## 3. DATA DESIGN AND PERSISTENCE
+
+This system is **stateless** and does not use a database. All data is handled in-memory during a single execution or read from/written to the local filesystem.
+
+*   **Configuration (`config.json`):** A JSON file defines the parameters for the RAG process. A default, fallback configuration is hardcoded in `instructor.py` in case this file is missing.
+*   **Input Context:** All context (conventions, prompts, relevant code) is read from files and aggregated into a single payload for the `fabric-ai` tool.
+*   **Output (`INSTRUCTIONS.md`):** The final output is written to a single markdown file, overwriting any previous content.
+*   **Logging:** The script logs its a summary of its payload to a timestamped file in a `logs/` directory for debugging and traceability.
+
+---
+
+## 4. CORE COMPONENTS
+
+### 4.1 RAG Localization (`run_rag_localization`)
+*   **Purpose:** To find the most relevant files in the codebase for a given task.
+*   **Engine:** Uses the `sentence-transformers` library to calculate the cosine similarity between the task description (the "problem text") and the content of each file in the project.
+*   **Process:**
+    1.  Recursively finds all files matching the `include_extensions` from `config.json`, while respecting `exclude_dirs` and `exclude_extensions`.
+    2.  Encodes the user's task description into a vector embedding.
+    3.  Encodes the content of each file into vector embeddings.
+    4.  Compares the task embedding with all file embeddings to find the `top_n` files with the highest similarity score.
+    5.  Returns a list of relative paths to these top files.
+
+### 4.2 Fabric Integration (`call_fabric`)
+*   **Purpose:** To generate the final `INSTRUCTIONS.md` using the `fabric-ai` tool.
+*   **Process:**
+    1.  Constructs a dynamic `system_prompt` and a `user_payload`. The payload contains the project conventions, the content of the relevant code files identified by the RAG process, and the specific objective.
+    2.  Invokes the `fabric` CLI as a subprocess.
+    3.  Pipes the `user_payload` to the subprocess's `stdin`.
+    4.  Captures the `stdout` from `fabric`, which contains the generated markdown instructions.
+    5.  Handles any errors from the subprocess.
+
+### 4.3 Main Orchestrator (`main`)
+*   **Purpose:** To control the end-to-end workflow.
+*   **Process:**
+    1.  Parses command-line arguments (`--mode`).
+    2.  Loads the `rag_config` and `CONVENTIONS.md`.
+    3.  Verifies the `fabric` CLI is available.
+    4.  Determines the "problem text" based on the mode (`feature` or `bug`).
+    5.  Calls `run_rag_localization` to get the list of relevant files.
+    6.  Assembles the code context from those files.
+    7.  Calls `call_fabric` with the complete context to get the final instructions.
+    8.  Writes the result to `INSTRUCTIONS.md`.
+
+---
+
+## 5. CODING AND QUALITY STANDARDS
+
+### 5.1 Code Quality and Style
+*   **Typing:** The code uses Python type annotations (`pathlib.Path`, `str`, etc.) for function signatures to improve clarity.
+*   **Style:** The code follows general PEP 8 standards for formatting and naming.
+*   **Modularity:** The script is broken down into distinct functions with clear responsibilities (e.g., `load_rag_config`, `verify_fabric`, `run_rag_localization`).
+*   **User Feedback:** The script provides clear, color-coded feedback to the user's console for each step of the process (`print_step`, `print_success`, `print_error`).
+
+### 5.2 Error Handling
+*   The script performs critical pre-flight checks, such as verifying the existence of `fabric-ai` and `CONVENTIONS.md`, exiting gracefully with an informative error message if a check fails.
+*   JSON parsing errors in `config.json` are caught and reported.
+*   Errors from the `fabric` subprocess are captured from `stderr` and displayed to the user.
+### 5.2 instructor.py Implementation Details
+
+The `instructor.py` script serves as the core orchestration engine, implementing the following key functionalities:
+
+1. **RAG Localization Module**
+   - Dynamically identifies and ranks source code files based on semantic relevance to a task description.
+   - Uses `sentence-transformers` for vector embeddings and cosine similarity calculations.
+   - Respects inclusion/exclusion rules specified in `config.json`.
+
+2. **Fabric CLI Integration**
+   - Interfaces with `fabric-ai` to generate `INSTRUCTIONS.md`.
+   - Assembles a dynamic `system_prompt` and `user_payload` containing project conventions, relevant code snippets, and task objectives.
+
+3. **Main Orchestrator Logic**
+   - Parses command-line arguments (`--feature`, `--bug`, `--bootstrap`, `--init`).
+   - Loads configuration from `config.json` and project conventions from `CONVENTIONS.md`.
+   - Validates dependencies like `fabric-ai` and required input files.
+   - Executes the workflow to generate instructions in the appropriate mode.
+
+4. **Stateless Execution Model**
+   - Operates without persistent state or databases.
+   - Produces a single output file (`INSTRUCTIONS.md`) by writing to the filesystem.
+
+5. **Error Handling and Feedback**
+   - Provides color-coded console feedback for each step.
+   - Gracefully exits with informative error messages on failures.
+
+6. **File Structure and Configuration**
+   - Relies on `config.json` for RAG parameters.
+   - Requires `CONVENTIONS.md`, `CUSTOM-PROMPT.txt`, and `CUSTOM-PROMPT-LOG.txt` for context.
+   - Optionally uses `sdd.log` for debugging in bug-fix mode.
+
+The script is designed for extensibility, with clear separation of concerns between configuration loading, RAG processing, CLI integration, and orchestrator control flow.
+
+
+# DEVELOPMENT AND CODING CONVENTIONS - AGENT INSTRUCTOR
+
+## 1. PYTHON LANGUAGE STANDARDS & TYPING
+
+*   **PEP 8 Compliance:** All code must adhere to PEP 8 style guidelines for readability and consistency.
+*   **Strict Type Hinting:** Every function and method signature must include explicit type hints for all arguments and return values, using the `typing` module and standard types (e.g., `str`, `Path`, `list`). This is crucial for code clarity and static analysis.
+*   **Prohibition of `Any`:** The use of `typing.Any` should be avoided. Use specific types wherever possible.
+*   **Naming Conventions:**
+    *   `snake_case`: For all variables, functions, and methods (e.g., `run_rag_localization`).
+    *   `PascalCase`: For all classes (if any are added).
+    *   `UPPER_SNAKE_CASE`: For all global constants (e.g., `ROOT_DIR`, `DEFAULT_CONFIG`).
+
+## 2. ARCHITECTURE AND CODE STRUCTURE
+
+*   **Functional Modularity:** The orchestrator is a single script, but logic must be separated into distinct functions with clear, single responsibilities. For example, keep configuration loading, RAG processing, and external CLI calls in separate, well-named functions.
+*   **No Infrastructure Leakage:** Core logic functions should not be cluttered with presentation details. For instance, the RAG logic in `run_rag_localization` should return data structures (like a list of file paths), and a different function should handle printing that output to the console.
+*   **Configuration in `config.json`:** All configurable parameters for the RAG process (file paths, model names, thresholds) must be defined in `config.json`. Avoid hardcoding these values directly in the `instructor.py` script. A `DEFAULT_CONFIG` dictionary should only be used as a fallback.
+
+## 3. DEPENDENCY MANAGEMENT & ENVIRONMENT
+
+*   **Virtual Environment Isolation:** To prevent library conflicts and keep system environments clean, a local Python virtual environment (`.venv`) must always be used for development and runtime execution.
+*   **Self-Aware Launcher:** The execution launcher `agent-instructor` must be used to run the application, as it automatically detects and targets the local `.venv` Python interpreter without requiring manual shell activation.
+*   **Python Libraries:** Core dependencies like `sentence-transformers` and `numpy` are managed via `requirements.txt` and installed via `pip` within the `.venv`. Any new library additions must be justified, documented, and appended to `requirements.txt`.
+*   **External CLI Tools:** The project depends on `fabric-ai` being globally available. This is a critical dependency. The installation requirement (`pipx install fabric-ai`) must be checked for and clearly communicated in error messages if the tool is missing.
+
+## 4. LOGGING AND ERROR HANDLING
+
+*   **Console Output via Helpers:** All console output must be routed through the provided helper functions: `print_step()`, `print_success()`, `print_warning()`, and `print_error()`. The use of the standard `print()` function directly within the main application logic is forbidden to ensure consistent, color-coded user feedback.
+*   **Pre-flight Checks:** The script must perform checks for critical dependencies and files at startup (e.g., `fabric` CLI, `CONVENTIONS.md`). If a check fails, the script must exit immediately using `sys.exit(1)` after printing a clear error message via `print_error()`.
+*   **Handle External Process Failures:** When calling external processes like `fabric`, always check the return code. If the process returns a non-zero exit code, capture `stderr`, log it using `print_error()`, and terminate the script. Do not allow the script to continue with potentially corrupted or incomplete data.
+*   **Explicit Exception Handling:** Avoid broad `except Exception:` clauses. Catch specific, expected exceptions (e.g., `json.JSONDecodeError`, `FileNotFoundError`) and provide a specific, helpful error message.
+
+## 5. FILE-BASED CONTRACTS
+
+*   The system's operation is dependent on a set of files in the project root (`CONVENTIONS.md`, `CUSTOM-PROMPT.txt`, etc.). These are considered part of the system's "API."
+*   Any function reading these files should assume they exist. The initial check in `main()` is the designated gatekeeper for their presence.
+*   All file I/O must explicitly specify `encoding="utf-8"` to ensure cross-platform compatibility.
+
+
+Act as a Senior Software Architect specialized in creating executable plans for AI coding assistants (like Aider).
+
+Your ONLY task is to generate a file named `.sdd/instructions/FEATURE.md` that contains a step‑by‑step plan to achieve the given objective.  
+You will have access to a `STRICT CODE CONTEXT` which includes the most relevant files and their code. Use that context to extract real file paths, class names, function names, and line numbers whenever possible.
+
+STRICT RULES:
+0. ALL output MUST be written in English. This is non-negotiable. Never output any content in any other language.
+1. Output ONLY the Markdown content for `.sdd/instructions/FEATURE.md`.
+2. Structure:
+   ## Current Objective
+   [A concise statement of the goal]
+
+   ## Key Artifacts (to focus on)
+   - **Files**: [list exact paths of existing files that need to be read or modified, and new files to create]
+   - **Classes/Interfaces**: [names of key classes, interfaces, or functions]
+   - **Configuration**: [environment variables, config files, etc.]
+
+   ## Task List
+   - [ ] [Each task MUST combine reading existing files with creating or modifying files in a single bullet point. Tasks that only say "Read..." or "Analyze..." without a subsequent code-generating action are FORBIDDEN. Correct example: "Read `app/intelligence/adapters/gemini.py` to understand how it implements `IntelligencePort`, then create `app/intelligence/adapters/openrouter.py` with an `OpenRouterAdapter` class following the same pattern." Another example: "Examine `app/intelligence/factory.py` and modify the `get_intelligence_service` function to include the 'openrouter' provider." Use natural language, no shell commands. Do not write code.]
+
+   ## End Task List
+3. Do NOT write code, diffs, or patches.
+4. Do NOT include any extra text outside the structure.
+5. When you reference a file, class, or function, use the exact names found in the provided code context.
+6. The task list must NOT contain items that are purely analysis. All analysis must be embedded inside the task that produces a change in the repository.
+
+Now, based on the following objective and the code context provided in the `STRICT CODE CONTEXT` section, generate `.sdd/instructions/FEATURE.md`.
+
+REQUIREMENTS:
+
+=== USER PAYLOAD ===
+GLOBAL SPECIFICATIONS:
+# SOFTWARE DESIGN DOCUMENT (SDD) - AGENT INSTRUCTOR
+
+## 1. SYSTEM OBJECTIVE
+
+### 1.1 Purpose Statement
+The primary objective of **Agent Instructor** is to automate the generation of detailed, context-aware development instructions. It functions as a command-line orchestrator that analyzes a local codebase to identify relevant files for a given task (either a new feature or a bug fix) and then uses an external AI tool (`fabric-ai`) to compile a comprehensive `INSTRUCTIONS.md` file.
+
+### 1.2 High-Level Technical Objectives
+*   **Context-Aware Code Analysis:** Implement a local Retrieval-Augmented Generation (RAG) pipeline to dynamically identify and rank source code files based on their semantic relevance to a user-provided task description.
+*   **Declarative Configuration:** Allow fine-grained control over the analysis process (file inclusion/exclusion, model selection, etc.) through a simple `config.json` file.
+*   **External AI Integration:** Interface with the `fabric-ai` command-line tool, passing it a structured context containing project conventions, relevant code snippets, and the specific task objective.
+*   **Stateless, Deterministic Operation:** Operate as a pure command-line utility that reads from the local file system, executes its logic, and writes a single output file (`INSTRUCTIONS.md`) without maintaining any persistent state or requiring a database.
+*   **Mode-Based Instruction Generation:** Support distinct operational modes for `'feature'` development and `'bug'` fixing, using different input prompts and context for each scenario.
+
+---
+
+## 2. ARCHITECTURE AND DESIGN RULES
+
+The system is designed as a **stateless command-line orchestration script**. Its architecture is simple and functional, prioritizing a clear, sequential flow over complex patterns like DDD or Hexagonal Architecture, which are not necessary for this use case.
+
+```
+       [User via CLI]
+              |
+              v
++-----------------------------+
+|   agent-instructor (Bash)   |
++-----------------------------+
+              |
+              v
++-----------------------------+
+|    instructor.py (Python)   |
+|  (Orchestration & RAG Core) |
++-----------------------------+
+              |
+              v
+|---------------------------------|
+| 1. Load config.json             |
+| 2. Load CONVENTIONS.md          |
+| 3. Run RAG to find files        |
+| 4. Read relevant file content   |
+| 5. Prepare payload              |
+|---------------------------------|
+              |
+              v
++-----------------------------+
+|      fabric-ai (Ext. CLI)     |
++-----------------------------+
+              |
+              v
+    [INSTRUCTIONS.md (Output)]
+```
+
+### 2.1 Dependency and Environment
+1.  **Python Core & Virtual Environment:** The main logic resides in `instructor.py`. It requires Python 3.8+ and specific libraries (`sentence-transformers`, `numpy`). To keep dependencies isolated, the orchestrator is designed to run within a local virtual environment (`.venv`). The launcher script (`agent-instructor`) is self-aware and automatically prioritizes execution via `.venv/bin/python` if it exists.
+2.  **External CLI Tool:** The system has a hard dependency on the `fabric-ai` CLI tool, which must be installed (e.g., via `pipx`) and available in the system's PATH. The script verifies its presence on startup.
+3.  **Local AI Models:** The RAG process downloads and uses a `sentence-transformers` model locally. The model name is specified in `config.json`.
+4.  **Global Execution Setup:** To run the orchestrator system-wide, the installation folder can be added to the user's shell PATH (e.g., in `.bashrc` or `.zshrc`):
+    ```bash
+    export PATH="/Volumes/ExtDrive/Home/rzavala/Documents/Projects/Koiosoft/agent-instructor:$PATH"
+    ```
+5.  **File-Based Contracts:** The orchestrator relies on the presence of specific files in the root directory to function:
+    *   `CONVENTIONS.md`: Contains project-wide coding standards.
+    *   `CUSTOM-PROMPT.txt`: System prompt for 'feature' mode.
+    *   `CUSTOM-PROMPT-LOG.txt`: System prompt for 'bug' mode.
+    *   `sdd.log`: Optional file containing error logs for 'bug' mode.
+
+### 2.2 Project Topology and Directory Structure
+The file hierarchy is minimal and centered around the main script and its configuration.
+
+```
+.
+├── agent-instructor         # Bash script to launch the orchestrator.
+├── instructor.py            # Main Python orchestration script with RAG logic.
+├── config.json              # Declarative configuration for the RAG process.
+├── CONVENTIONS.md           # (Required) Project coding and design rules.
+├── CUSTOM-PROMPT.txt        # (Required) System prompt for feature generation.
+├── CUSTOM-PROMPT-LOG.txt    # (Required) System prompt for bug fixing.
+├── INSTRUCTIONS.md          # (Output) The generated instruction file.
+└── sdd.log                  # (Optional) Log file used as context in bug-fixing mode.
+```
+
+---
+
+## 3. DATA DESIGN AND PERSISTENCE
+
+This system is **stateless** and does not use a database. All data is handled in-memory during a single execution or read from/written to the local filesystem.
+
+*   **Configuration (`config.json`):** A JSON file defines the parameters for the RAG process. A default, fallback configuration is hardcoded in `instructor.py` in case this file is missing.
+*   **Input Context:** All context (conventions, prompts, relevant code) is read from files and aggregated into a single payload for the `fabric-ai` tool.
+*   **Output (`INSTRUCTIONS.md`):** The final output is written to a single markdown file, overwriting any previous content.
+*   **Logging:** The script logs its a summary of its payload to a timestamped file in a `logs/` directory for debugging and traceability.
+
+---
+
+## 4. CORE COMPONENTS
+
+### 4.1 RAG Localization (`run_rag_localization`)
+*   **Purpose:** To find the most relevant files in the codebase for a given task.
+*   **Engine:** Uses the `sentence-transformers` library to calculate the cosine similarity between the task description (the "problem text") and the content of each file in the project.
+*   **Process:**
+    1.  Recursively finds all files matching the `include_extensions` from `config.json`, while respecting `exclude_dirs` and `exclude_extensions`.
+    2.  Encodes the user's task description into a vector embedding.
+    3.  Encodes the content of each file into vector embeddings.
+    4.  Compares the task embedding with all file embeddings to find the `top_n` files with the highest similarity score.
+    5.  Returns a list of relative paths to these top files.
+
+### 4.2 Fabric Integration (`call_fabric`)
+*   **Purpose:** To generate the final `INSTRUCTIONS.md` using the `fabric-ai` tool.
+*   **Process:**
+    1.  Constructs a dynamic `system_prompt` and a `user_payload`. The payload contains the project conventions, the content of the relevant code files identified by the RAG process, and the specific objective.
+    2.  Invokes the `fabric` CLI as a subprocess.
+    3.  Pipes the `user_payload` to the subprocess's `stdin`.
+    4.  Captures the `stdout` from `fabric`, which contains the generated markdown instructions.
+    5.  Handles any errors from the subprocess.
+
+### 4.3 Main Orchestrator (`main`)
+*   **Purpose:** To control the end-to-end workflow.
+*   **Process:**
+    1.  Parses command-line arguments (`--mode`).
+    2.  Loads the `rag_config` and `CONVENTIONS.md`.
+    3.  Verifies the `fabric` CLI is available.
+    4.  Determines the "problem text" based on the mode (`feature` or `bug`).
+    5.  Calls `run_rag_localization` to get the list of relevant files.
+    6.  Assembles the code context from those files.
+    7.  Calls `call_fabric` with the complete context to get the final instructions.
+    8.  Writes the result to `INSTRUCTIONS.md`.
+
+---
+
+## 5. CODING AND QUALITY STANDARDS
+
+### 5.1 Code Quality and Style
+*   **Typing:** The code uses Python type annotations (`pathlib.Path`, `str`, etc.) for function signatures to improve clarity.
+*   **Style:** The code follows general PEP 8 standards for formatting and naming.
+*   **Modularity:** The script is broken down into distinct functions with clear responsibilities (e.g., `load_rag_config`, `verify_fabric`, `run_rag_localization`).
+*   **User Feedback:** The script provides clear, color-coded feedback to the user's console for each step of the process (`print_step`, `print_success`, `print_error`).
+
+### 5.2 Error Handling
+*   The script performs critical pre-flight checks, such as verifying the existence of `fabric-ai` and `CONVENTIONS.md`, exiting gracefully with an informative error message if a check fails.
+*   JSON parsing errors in `config.json` are caught and reported.
+*   Errors from the `fabric` subprocess are captured from `stderr` and displayed to the user.
+### 5.2 instructor.py Implementation Details
+
+The `instructor.py` script serves as the core orchestration engine, implementing the following key functionalities:
+
+1. **RAG Localization Module**
+   - Dynamically identifies and ranks source code files based on semantic relevance to a task description.
+   - Uses `sentence-transformers` for vector embeddings and cosine similarity calculations.
+   - Respects inclusion/exclusion rules specified in `config.json`.
+
+2. **Fabric CLI Integration**
+   - Interfaces with `fabric-ai` to generate `INSTRUCTIONS.md`.
+   - Assembles a dynamic `system_prompt` and `user_payload` containing project conventions, relevant code snippets, and task objectives.
+
+3. **Main Orchestrator Logic**
+   - Parses command-line arguments (`--feature`, `--bug`, `--bootstrap`, `--init`).
+   - Loads configuration from `config.json` and project conventions from `CONVENTIONS.md`.
+   - Validates dependencies like `fabric-ai` and required input files.
+   - Executes the workflow to generate instructions in the appropriate mode.
+
+4. **Stateless Execution Model**
+   - Operates without persistent state or databases.
+   - Produces a single output file (`INSTRUCTIONS.md`) by writing to the filesystem.
+
+5. **Error Handling and Feedback**
+   - Provides color-coded console feedback for each step.
+   - Gracefully exits with informative error messages on failures.
+
+6. **File Structure and Configuration**
+   - Relies on `config.json` for RAG parameters.
+   - Requires `CONVENTIONS.md`, `CUSTOM-PROMPT.txt`, and `CUSTOM-PROMPT-LOG.txt` for context.
+   - Optionally uses `sdd.log` for debugging in bug-fix mode.
+
+The script is designed for extensibility, with clear separation of concerns between configuration loading, RAG processing, CLI integration, and orchestrator control flow.
+
+
+# DEVELOPMENT AND CODING CONVENTIONS - AGENT INSTRUCTOR
+
+## 1. PYTHON LANGUAGE STANDARDS & TYPING
+
+*   **PEP 8 Compliance:** All code must adhere to PEP 8 style guidelines for readability and consistency.
+*   **Strict Type Hinting:** Every function and method signature must include explicit type hints for all arguments and return values, using the `typing` module and standard types (e.g., `str`, `Path`, `list`). This is crucial for code clarity and static analysis.
+*   **Prohibition of `Any`:** The use of `typing.Any` should be avoided. Use specific types wherever possible.
+*   **Naming Conventions:**
+    *   `snake_case`: For all variables, functions, and methods (e.g., `run_rag_localization`).
+    *   `PascalCase`: For all classes (if any are added).
+    *   `UPPER_SNAKE_CASE`: For all global constants (e.g., `ROOT_DIR`, `DEFAULT_CONFIG`).
+
+## 2. ARCHITECTURE AND CODE STRUCTURE
+
+*   **Functional Modularity:** The orchestrator is a single script, but logic must be separated into distinct functions with clear, single responsibilities. For example, keep configuration loading, RAG processing, and external CLI calls in separate, well-named functions.
+*   **No Infrastructure Leakage:** Core logic functions should not be cluttered with presentation details. For instance, the RAG logic in `run_rag_localization` should return data structures (like a list of file paths), and a different function should handle printing that output to the console.
+*   **Configuration in `config.json`:** All configurable parameters for the RAG process (file paths, model names, thresholds) must be defined in `config.json`. Avoid hardcoding these values directly in the `instructor.py` script. A `DEFAULT_CONFIG` dictionary should only be used as a fallback.
+
+## 3. DEPENDENCY MANAGEMENT & ENVIRONMENT
+
+*   **Virtual Environment Isolation:** To prevent library conflicts and keep system environments clean, a local Python virtual environment (`.venv`) must always be used for development and runtime execution.
+*   **Self-Aware Launcher:** The execution launcher `agent-instructor` must be used to run the application, as it automatically detects and targets the local `.venv` Python interpreter without requiring manual shell activation.
+*   **Python Libraries:** Core dependencies like `sentence-transformers` and `numpy` are managed via `requirements.txt` and installed via `pip` within the `.venv`. Any new library additions must be justified, documented, and appended to `requirements.txt`.
+*   **External CLI Tools:** The project depends on `fabric-ai` being globally available. This is a critical dependency. The installation requirement (`pipx install fabric-ai`) must be checked for and clearly communicated in error messages if the tool is missing.
+
+## 4. LOGGING AND ERROR HANDLING
+
+*   **Console Output via Helpers:** All console output must be routed through the provided helper functions: `print_step()`, `print_success()`, `print_warning()`, and `print_error()`. The use of the standard `print()` function directly within the main application logic is forbidden to ensure consistent, color-coded user feedback.
+*   **Pre-flight Checks:** The script must perform checks for critical dependencies and files at startup (e.g., `fabric` CLI, `CONVENTIONS.md`). If a check fails, the script must exit immediately using `sys.exit(1)` after printing a clear error message via `print_error()`.
+*   **Handle External Process Failures:** When calling external processes like `fabric`, always check the return code. If the process returns a non-zero exit code, capture `stderr`, log it using `print_error()`, and terminate the script. Do not allow the script to continue with potentially corrupted or incomplete data.
+*   **Explicit Exception Handling:** Avoid broad `except Exception:` clauses. Catch specific, expected exceptions (e.g., `json.JSONDecodeError`, `FileNotFoundError`) and provide a specific, helpful error message.
+
+## 5. FILE-BASED CONTRACTS
+
+*   The system's operation is dependent on a set of files in the project root (`CONVENTIONS.md`, `CUSTOM-PROMPT.txt`, etc.). These are considered part of the system's "API."
+*   Any function reading these files should assume they exist. The initial check in `main()` is the designated gatekeeper for their presence.
+*   All file I/O must explicitly specify `encoding="utf-8"` to ensure cross-platform compatibility.
+
+
+STRICT CODE CONTEXT:
+
+--- FILE: instructor.py ---
+#!/usr/bin/env python3
+"""
+Orquestador Context-Aware de Arquitectura Plana e Independiente.
+Utiliza RAG local para indexar archivos de código relevantes según el escenario 
+(feature/bug) y compila las instrucciones de desarrollo mediante Fabric CLI.
+"""
+
+import datetime
+import os
+import sys
+import json
+import tempfile
+import shutil
+import argparse
+import subprocess
+from pathlib import Path
+
+import numpy as np  # type: ignore
+from fastembed import TextEmbedding  # type: ignore
+from rank_bm25 import BM25Okapi  # type: ignore
+
+# --- CONFIGURACIÓN DE RUTAS ---
+ORCHESTRATOR_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path.cwd() 
+
+SPEC_DOC_PATH = ROOT_DIR / ".sdd/core/SPEC.md"
+CONVENTIONS_DOC_PATH = ROOT_DIR / ".sdd/core/CONVENTIONS.md"
+FEATURE_PROMPT_PATH = ROOT_DIR / ".sdd/inputs/templates/FEATURE.md"
+SPECS_DIR = ROOT_DIR / ".sdd/core/specs"
+BUG_PROMPT_PATH = ROOT_DIR / ".sdd/inputs/templates/DEBUG.md"
+REQUIREMENTS_PROMPT_PATH = ROOT_DIR / ".sdd/inputs/REQUIREMENTS.md"
+BOOTSTRAP_PROMPT_PATH = ROOT_DIR / ".sdd/inputs/templates/BOOTSTRAP.md"
+LOG_PATH = ROOT_DIR / ".sdd/inputs/LOGS.md"
+ISSUES_PATH = ROOT_DIR / ".sdd/inputs/ISSUES.md"
+# --- CONSTANTE GLOBAL DE FALLBACK SEGURO (MÍNIMO) ---
+DEFAULT_CONFIG = {
+    "include_extensions": [".py", ".js", ".ts", ".json", ".md"],
+    "exclude_extensions": [],
+    "exclude_dirs": ["node_modules", ".git", "venv", "dist", "build", "__pycache__"],
+    "max_file_size_bytes": 1048576,        # 1 MB
+    "max_chars_for_embedding": 1500,
+    "top_n_files": 5,
+    "embedding_model": "all-MiniLM-L6-v2",
+    "fabric_context_lines": 500
+}
+
+def print_step(msg): print(f"\n[\033[94m*\033[0m] {msg}...")
+def print_success(msg): print(f"[\033[92m✓\033[0m] {msg}")
+def print_warning(msg): print(f"[\033[93m!\033[0m] {msg}")
+def print_error(msg): print(f"\n[\033[91mERROR\033[0m] {msg}", file=sys.stderr)
+
+def load_rag_config():
+    """Carga la configuración declarativa externa para la indexación."""
+    config_path = os.environ.get("RAG_CONFIG_PATH")
+    if not config_path:
+        config_path = ORCHESTRATOR_DIR / "config.json"
+    
+    config_file = Path(config_path)
+    if config_file.exists():
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            print_error(f"El archivo de configuración {config_file} contiene errores de sintaxis JSON: {e}")
+            sys.exit(1)
+            
+    print_warning(f"No se localizó '{config_file.name}'. Operando bajo modo de contingencia con parámetros base.")
+    return DEFAULT_CONFIG
+
+def verify_fabric():
+    """Garantiza la presencia de Fabric CLI en el PATH del sistema."""
+    if not shutil.which("fabric"):
+        print_error("Fabric CLI no está disponible globalmente en el sistema.")
+        print("👉 Instálalo con: pipx install fabric-ai")
+        sys.exit(1)
+    result = subprocess.run(["fabric", "--help"], capture_output=True, text=True, encoding="utf-8")
+    if "pattern" not in result.stdout.lower() and "system" not in result.stdout.lower():
+        print_error("Conflicto detectado: El comando 'fabric' pertenece a la herramienta SSH clásica.")
+        sys.exit(1)
+
+def run_rag_localization(problem_text, config):
+    """Indexa dinámicamente el repositorio usando un método híbrido:
+    búsqueda léxica (BM25) + búsqueda semántica (fastembed) con Reciprocal Rank Fusion."""
+    include_ext = config.get("include_extensions", DEFAULT_CONFIG["include_extensions"])
+    exclude_ext = set(config.get("exclude_extensions", DEFAULT_CONFIG["exclude_extensions"]))
+    exclude_dirs = set(config.get("exclude_dirs", DEFAULT_CONFIG["exclude_dirs"]))
+    max_size = config.get("max_file_size_bytes", DEFAULT_CONFIG["max_file_size_bytes"])
+    max_chars = config.get("max_chars_for_embedding", DEFAULT_CONFIG["max_chars_for_embedding"])
+    top_n = config.get("top_n_files", DEFAULT_CONFIG["top_n_files"])
+    model_name = config.get("embedding_model", DEFAULT_CONFIG["embedding_model"])
+
+    print(f"DEBUG: exclude_dirs = {exclude_dirs}")
+
+    files = []
+    for ext in include_ext:
+        if ext in exclude_ext:
+            continue
+        for p in ROOT_DIR.rglob(f"*{ext}"):
+            # Obtener las partes de la ruta relativa respecto a ROOT_DIR para evitar la raíz '/'
+            rel_parts = p.relative_to(ROOT_DIR).parts
+            # Verificar si alguna parte está en exclude_dirs o empieza con '.'
+            if any(part in exclude_dirs or part.startswith('.') for part in rel_parts):
+                continue
+            if p.is_file() and p.stat().st_size <= max_size:
+                files.append(p)
+
+    if not files:
+        print_error("La búsqueda RAG no interceptó ningún archivo válido con los criterios proporcionados.")
+        return []
+
+    print(f"ROOT_DIR used for RAG: {ROOT_DIR.resolve()}")
+    print(f"Possibles archivos indexados: {len(files)}")
+    print(f"Ejemplo: {[str(f.relative_to(ROOT_DIR)) for f in files[:5]]}")
+
+    # --- Fase 1: Búsqueda Léxica (BM25) ---
+    print(f"Indexando {len(files)} archivos con BM25 (búsqueda léxica)...")
+    file_texts = []
+    for f in files:
+        try:
+            file_texts.append(f.read_text(encoding='utf-8', errors='ignore')[:max_chars])
+        except Exception:
+            file_texts.append("")
+
+    tokenized_corpus = [text.lower().split() for text in file_texts]
+    tokenized_query = problem_text.lower().split()
+    bm25 = BM25Okapi(tokenized_corpus)
+    bm25_scores = bm25.get_scores(tokenized_query)
+
+    # Asignar ranks BM25 (1-indexados, menor rango = más relevante)
+    bm25_rankings = np.argsort(bm25_scores)[::-1]
+    bm25_ranks = np.zeros(len(files), dtype=int)
+    for rank, idx in enumerate(bm25_rankings):
+        bm25_ranks[idx] = rank + 1
+
+    # --- Fase 2: Búsqueda Semántica (fastembed) ---
+    print(f"Generando embeddings semánticos con fastembed (modelo '{model_name}')...")
+    embedding_model = TextEmbedding(model_name=model_name)
+
+    prob_emb = list(embedding_model.embed([problem_text]))[0]
+
+    batch_size = 32
+    all_embeddings = []
+    for i in range(0, len(file_texts), batch_size):
+        batch = file_texts[i:i+batch_size]
+        batch_embs = list(embedding_model.embed(batch))
+        all_embeddings.extend(batch_embs)
+
+    # Calcular cosine similarity
+    prob_norm = prob_emb / np.linalg.norm(prob_emb)
+    semantic_scores = np.array([
+        np.dot(prob_norm, emb / np.linalg.norm(emb)) for emb in all_embeddings
+    ])
+
+    semantic_rankings = np.argsort(semantic_scores)[::-1]
+    semantic_ranks = np.zeros(len(files), dtype=int)
+    for rank, idx in enumerate(semantic_rankings):
+        semantic_ranks[idx] = rank + 1
+
+    # --- Fase 3: Reciprocal Rank Fusion (RRF) ---
+    k = 60
+    rrf_scores = np.zeros(len(files))
+    for i in range(len(files)):
+        rrf_scores[i] = (1.0 / (k + bm25_ranks[i])) + (1.0 / (k + semantic_ranks[i]))
+
+    actual_top_n = min(top_n, len(files))
+    top_indices = np.argsort(rrf_scores)[-actual_top_n:][::-1]
+
+    selected_files = [str(files[idx].relative_to(ROOT_DIR)) for idx in top_indices]
+    print_success(f"Archivos de alta relevancia seleccionados (RRF híbrido): {', '.join(selected_files)}")
+    return selected_files
+def create_temp_pattern(system_prompt, pattern_name="custom_pattern"):
+    """Crea un patrón temporal de Fabric y retorna la ruta del directorio."""
+    temp_dir = tempfile.mkdtemp(prefix="fabric_pattern_")
+    pattern_dir = Path(temp_dir) / pattern_name
+    pattern_dir.mkdir(parents=True)
+    
+    # El archivo system.md contiene el prompt del sistema
+    system_file = pattern_dir / "system.md"
+    system_file.write_text(system_prompt, encoding="utf-8")
+    
+    # También puede ser necesario un user.md vacío (opcional)
+    (pattern_dir / "user.md").write_text("", encoding="utf-8")
+    
+    return temp_dir, pattern_name
+
+def get_fabric_model_info():
+    """Lee la configuración de Fabric para obtener el vendor y modelo activo."""
+    fabric_env = Path.home() / ".config/fabric/.env"
+    vendor = "Unknown"
+    model = "Unknown"
+    if fabric_env.exists():
+        for line in fabric_env.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("DEFAULT_VENDOR=") and not line.startswith("#"):
+                vendor = line.split("=", 1)[1].strip()
+            elif line.startswith("DEFAULT_MODEL=") and not line.startswith("#"):
+                model = line.split("=", 1)[1].strip()
+    return f"{vendor} / {model}"
+def get_aggregated_specs(is_bootstrap=False):
+    """Reads SPEC.md and all .md files from .sdd/core/specs/,
+
+
+OBJECTIVE:
+Act as a Senior Software Architect specialized in creating executable plans for AI coding assistants (like Aider).
+
+Your ONLY task is to generate a file named `.sdd/instructions/FEATURE.md` that contains a step‑by‑step plan to achieve the given objective.  
+You will have access to a `STRICT CODE CONTEXT` which includes the most relevant files and their code. Use that context to extract real file paths, class names, function names, and line numbers whenever possible.
+
+STRICT RULES:
+0. ALL output MUST be written in English. This is non-negotiable. Never output any content in any other language.
+1. Output ONLY the Markdown content for `.sdd/instructions/FEATURE.md`.
+2. Structure:
+   ## Current Objective
+   [A concise statement of the goal]
+
+   ## Key Artifacts (to focus on)
+   - **Files**: [list exact paths of existing files that need to be read or modified, and new files to create]
+   - **Classes/Interfaces**: [names of key classes, interfaces, or functions]
+   - **Configuration**: [environment variables, config files, etc.]
+
+   ## Task List
+   - [ ] [Each task MUST combine reading existing files with creating or modifying files in a single bullet point. Tasks that only say "Read..." or "Analyze..." without a subsequent code-generating action are FORBIDDEN. Correct example: "Read `app/intelligence/adapters/gemini.py` to understand how it implements `IntelligencePort`, then create `app/intelligence/adapters/openrouter.py` with an `OpenRouterAdapter` class following the same pattern." Another example: "Examine `app/intelligence/factory.py` and modify the `get_intelligence_service` function to include the 'openrouter' provider." Use natural language, no shell commands. Do not write code.]
+
+   ## End Task List
+3. Do NOT write code, diffs, or patches.
+4. Do NOT include any extra text outside the structure.
+5. When you reference a file, class, or function, use the exact names found in the provided code context.
+6. The task list must NOT contain items that are purely analysis. All analysis must be embedded inside the task that produces a change in the repository.
+
+Now, based on the following objective and the code context provided in the `STRICT CODE CONTEXT` section, generate `.sdd/instructions/FEATURE.md`.
+
+REQUIREMENTS:
+
+--- REQUIREMENTS ---
+
+-  Agregar la copia del archivo .sdd/protocols/MCP.md y las carpetas vacías .sdd/protocols/mcp/disabled y .sdd/protocols/mcp/enabled (con sus respecitvos .gitkeep en cada una), pero sin 
+el contenido (este se generara a posteriori), cuando se ejecute la copida de la carpeta .sdd al ejecutar el argumento --init 
+- Eliminar --test ya que se hizo la migración de legacy a hybrid, no tiene sentido mantenerlo
+- Agregar un comando --pi-commands para copiar la carpeta .pi con todo su contenido al directorio destino (como se hace con .sdd)
+- Agregar un comando --enabled-mcp que tenga opciones a copiar, actualmente tenemos .sdd/protocols/mcp/enabled/CODE_BASE_MEMORY.md, entonces la opción sería CODE_BASE_MEMORY,
+entonces deberá copiar .sdd/protocols/mcp/enabled/CODE_BASE_MEMORY.md a .sdd/protocols/mcp/enabled  en la carpeta destino.

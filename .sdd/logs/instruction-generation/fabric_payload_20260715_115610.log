@@ -1,0 +1,344 @@
+=== FABRIC AI MODEL ===
+OpenRouter / qwen/qwen3-14b
+
+=== SYSTEM PROMPT ===
+Act as a Senior Software Architect specialized in creating executable plans for AI coding assistants (like Aider).
+
+Your ONLY task is to generate a file named `.sdd/instructions/BOOTSTRAP.md` that contains a step‑by‑step plan to achieve the given objective.  
+You will have access to a `STRICT CODE CONTEXT` which includes the most relevant files and their code. Use that context to extract real file paths, class names, function names, and line numbers whenever possible.
+
+STRICT RULES:
+1. Output ONLY the Markdown content for `.sdd/instructions/BOOTSTRAP.md`.
+2. Structure:
+   ## Current Objective
+   [A concise statement of the goal]
+
+   ## Target Architecture & Conventions (to be established)
+   - **System Goals**: [Define the main purpose and non‑functional requirements of the system]
+   - **High‑level Architecture**: [Describe the main layers, components, or modules (e.g., API, services, repositories, adapters)]
+   - **Key Conventions**: [Define coding standards, naming patterns, error handling strategies, or design patterns to be followed]
+   - **Technology Stack**: [List the main frameworks, libraries, and tools to be used]
+
+   ## Key Artifacts (to focus on)
+   - **Files**: [list exact paths of existing files that need to be read or modified, and new files to create]
+   - **Classes/Interfaces**: [names of key classes, interfaces, or functions]
+   - **Configuration**: [environment variables, config files, etc.]
+
+   ## Task List
+   - [ ] [Each task MUST combine reading existing files with creating or modifying files in a single bullet point. Tasks that only say "Read..." or "Analyze..." without a subsequent code-generating action are FORBIDDEN. Correct example: "Read `app/intelligence/adapters/gemini.py` to understand how it implements `IntelligencePort`, then create `app/intelligence/adapters/openrouter.py` with an `OpenRouterAdapter` class following the same pattern." Another example: "Examine `app/intelligence/factory.py` and modify the `get_intelligence_service` function to include the 'openrouter' provider." Use natural language, no shell commands. Do not write code.]
+
+   ## End Task List
+3. Do NOT write code, diffs, or patches.
+4. Do NOT include any extra text outside the structure.
+5. When you reference a file, class, or function, use the exact names found in the provided code context.
+6. The task list must NOT contain items that are purely analysis. All analysis must be embedded inside the task action, but the rationale provides the architectural context.
+
+Now, based on the following objective and the code context provided in the `STRICT CODE CONTEXT` section, generate `.sdd/instructions/BOOTSTRAP.md`.
+
+REQUIREMENTS:
+
+The schema for the request body should be updated to include an optional field:
+
+* **`llm_model_id`** (string, required): The ID of the LLM model to be used.
+* **`user_feedback_observations`** (string, required): Feedback provided by the user.
+* **`contract_type`** (string, **optional**): Defines the type of contract.
+* Allowed values: `"project_fixed"`, `"staff_augmentation"`.
+* If omitted, the system should proceed with the default refinement logic without applying specific contract type constraints.
+
+#### **Acceptance Criteria**
+1. **Successful inclusion:** If `contract_type` is provided with a valid value (`"project_fixed"` or `"staff_augmentation"`), the system must process the refinement using that specific contract context.
+1. **Change contract_type:** If the contract_type changes the current model (or sets it for the first time), the system MUST NOT use a refinement template. Instead, it must discard the previous proposal history for this workflow and trigger the initial proposal template (proposal.j2 or proposal_staffing.j2) corresponding to the new contract type.
+2. **Graceful omission:** If the `contract_type` attribute is missing from the JSON payload, the endpoint must still function correctly, ignoring the attribute and proceeding as if no contract type was specified.
+3. **Validation:** The system should return a validation error if an unsupported value is provided for `contract_type`.
+
+
+**Ejemplo de Payload (Request):**
+
+```json
+{
+  "llm_model_id": "deepseek/deepseek-v4-pro",
+  "user_feedback_observations": "Por favor mejora los tiempos, están muy extensos.",
+  "contract_type": "project_fixed" 
+}
+
+```
+
+=== USER PAYLOAD ===
+GLOBAL SPECIFICATIONS:
+
+
+STRICT CODE CONTEXT:
+
+--- FILE: instructor.py ---
+#!/usr/bin/env python3
+"""
+Orquestador Context-Aware de Arquitectura Plana e Independiente.
+Utiliza RAG local para indexar archivos de código relevantes según el escenario 
+(feature/bug) y compila las instrucciones de desarrollo mediante Fabric CLI.
+"""
+
+import datetime
+import os
+import sys
+import json
+import tempfile
+import shutil
+import argparse
+import subprocess
+from pathlib import Path
+
+# Instalar previamente si faltan: pip install sentence-transformers numpy
+from sentence_transformers import SentenceTransformer, util  # type: ignore
+import numpy as np  # type: ignore
+
+# --- CONFIGURACIÓN DE RUTAS ---
+ORCHESTRATOR_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path.cwd() 
+
+SPEC_DOC_PATH = ROOT_DIR / ".sdd/core/SPEC.md"
+CONVENTIONS_DOC_PATH = ROOT_DIR / ".sdd/core/CONVENTIONS.md"
+FEATURE_PROMPT_PATH = ROOT_DIR / ".sdd/inputs/FEATURE.md"
+SPECS_DIR = ROOT_DIR / ".sdd/core/specs"
+BUG_PROMPT_PATH = ROOT_DIR / ".sdd/inputs/DEBUG.md"
+REQUIREMENTS_PROMPT_PATH = ROOT_DIR / ".sdd/inputs/REQUIREMENTS.md"
+BOOTSTRAP_PROMPT_PATH = ROOT_DIR / ".sdd/inputs/BOOTSTRAP.md"
+LOG_PATH = ROOT_DIR / ".sdd/logs/SDD.log"
+# --- CONSTANTE GLOBAL DE FALLBACK SEGURO (MÍNIMO) ---
+DEFAULT_CONFIG = {
+    "include_extensions": [".py", ".js", ".ts", ".json", ".md"],
+    "exclude_extensions": [],
+    "exclude_dirs": ["node_modules", ".git", "venv", "dist", "build", "__pycache__"],
+    "max_file_size_bytes": 1048576,        # 1 MB
+    "max_chars_for_embedding": 1500,
+    "top_n_files": 5,
+    "embedding_model": "all-MiniLM-L6-v2",
+    "fabric_context_lines": 500
+}
+
+def print_step(msg): print(f"\n[\033[94m*\033[0m] {msg}...")
+def print_success(msg): print(f"[\033[92m✓\033[0m] {msg}")
+def print_warning(msg): print(f"[\033[93m!\033[0m] {msg}")
+def print_error(msg): print(f"\n[\033[91mERROR\033[0m] {msg}", file=sys.stderr)
+
+def load_rag_config():
+    """Carga la configuración declarativa externa para la indexación."""
+    config_path = os.environ.get("RAG_CONFIG_PATH")
+    if not config_path:
+        config_path = ORCHESTRATOR_DIR / "config.json"
+    
+    config_file = Path(config_path)
+    if config_file.exists():
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            print_error(f"El archivo de configuración {config_file} contiene errores de sintaxis JSON: {e}")
+            sys.exit(1)
+            
+    print_warning(f"No se localizó '{config_file.name}'. Operando bajo modo de contingencia con parámetros base.")
+    return DEFAULT_CONFIG
+
+def verify_fabric():
+    """Garantiza la presencia de Fabric CLI en el PATH del sistema."""
+    if not shutil.which("fabric"):
+        print_error("Fabric CLI no está disponible globalmente en el sistema.")
+        print("👉 Instálalo con: pipx install fabric-ai")
+        sys.exit(1)
+    result = subprocess.run(["fabric", "--help"], capture_output=True, text=True, encoding="utf-8")
+    if "pattern" not in result.stdout.lower() and "system" not in result.stdout.lower():
+        print_error("Conflicto detectado: El comando 'fabric' pertenece a la herramienta SSH clásica.")
+        sys.exit(1)
+
+def run_rag_localization(problem_text, config):
+    """Indexa dinámicamente el repositorio de manera local y determinista."""
+    include_ext = config.get("include_extensions", DEFAULT_CONFIG["include_extensions"])
+    exclude_ext = set(config.get("exclude_extensions", DEFAULT_CONFIG["exclude_extensions"]))
+    exclude_dirs = set(config.get("exclude_dirs", DEFAULT_CONFIG["exclude_dirs"]))
+    max_size = config.get("max_file_size_bytes", DEFAULT_CONFIG["max_file_size_bytes"])
+    max_chars = config.get("max_chars_for_embedding", DEFAULT_CONFIG["max_chars_for_embedding"])
+    top_n = config.get("top_n_files", DEFAULT_CONFIG["top_n_files"])
+    model_name = config.get("embedding_model", DEFAULT_CONFIG["embedding_model"])
+
+    print(f"DEBUG: exclude_dirs = {exclude_dirs}")
+
+    files = []
+    for ext in include_ext:
+        if ext in exclude_ext:
+            continue
+        for p in ROOT_DIR.rglob(f"*{ext}"):
+            # Obtener las partes de la ruta relativa respecto a ROOT_DIR para evitar la raíz '/'
+            rel_parts = p.relative_to(ROOT_DIR).parts
+            # Verificar si alguna parte está en exclude_dirs o empieza con '.'
+            if any(part in exclude_dirs or part.startswith('.') for part in rel_parts):
+                continue
+            if p.is_file() and p.stat().st_size <= max_size:
+                files.append(p)
+
+    if not files:
+        print_error("La búsqueda RAG no interceptó ningún archivo válido con los criterios proporcionados.")
+        return []
+
+    print(f"ROOT_DIR used for RAG: {ROOT_DIR.resolve()}")
+    print(f"Possibles archivos indexados: {len(files)}")
+    print(f"Ejemplo: {[str(f.relative_to(ROOT_DIR)) for f in files[:5]]}")
+    print(f"Indexando {len(files)} archivos locales usando el modelo '{model_name}'...")
+    model = SentenceTransformer(model_name)
+    prob_emb = model.encode(problem_text, convert_to_tensor=True)
+
+    batch_size = 32
+    similarities = []
+    
+    for i in range(0, len(files), batch_size):
+        batch_files = files[i:i+batch_size]
+        texts = []
+        for f in batch_files:
+            try:
+                texts.append(f.read_text(encoding='utf-8', errors='ignore')[:max_chars])
+            except Exception:
+                texts.append("")
+                
+        batch_embs = model.encode(texts, convert_to_tensor=True)
+        sims = util.cos_sim(prob_emb, batch_embs)[0].cpu().numpy()
+        similarities.extend(sims)
+
+    similarities = np.array(similarities)
+    actual_top_n = min(top_n, len(files))
+    top_indices = np.argsort(similarities)[-actual_top_n:][::-1]
+    
+    selected_files = [str(files[idx].relative_to(ROOT_DIR)) for idx in top_indices]
+    print_success(f"Archivos de alta relevancia seleccionados: {', '.join(selected_files)}")
+    return selected_files
+
+def create_temp_pattern(system_prompt, pattern_name="custom_pattern"):
+    """Crea un patrón temporal de Fabric y retorna la ruta del directorio."""
+    temp_dir = tempfile.mkdtemp(prefix="fabric_pattern_")
+    pattern_dir = Path(temp_dir) / pattern_name
+    pattern_dir.mkdir(parents=True)
+    
+    # El archivo system.md contiene el prompt del sistema
+    system_file = pattern_dir / "system.md"
+    system_file.write_text(system_prompt, encoding="utf-8")
+    
+    # También puede ser necesario un user.md vacío (opcional)
+    (pattern_dir / "user.md").write_text("", encoding="utf-8")
+    
+    return temp_dir, pattern_name
+
+def get_fabric_model_info():
+    """Lee la configuración de Fabric para obtener el vendor y modelo activo."""
+    fabric_env = Path.home() / ".config/fabric/.env"
+    vendor = "Unknown"
+    model = "Unknown"
+    if fabric_env.exists():
+        for line in fabric_env.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("DEFAULT_VENDOR=") and not line.startswith("#"):
+                vendor = line.split("=", 1)[1].strip()
+            elif line.startswith("DEFAULT_MODEL=") and not line.startswith("#"):
+                model = line.split("=", 1)[1].strip()
+    return f"{vendor} / {model}"
+def get_aggregated_specs(is_bootstrap=False):
+    """Reads SPEC.md and all .md files from .sdd/core/specs/,
+    returning the aggregated specifications in a structured format.
+    When is_bootstrap is True, SPEC.md and CONVENTIONS.md are excluded."""
+    specs = ""
+    if not is_bootstrap:
+        if SPEC_DOC_PATH.exists():
+            specs = SPEC_DOC_PATH.read_text(encoding="utf-8")
+        if CONVENTIONS_DOC_PATH.exists():
+            specs += "\n\n" + CONVENTIONS_DOC_PATH.read_text(encoding="utf-8")
+    if SPECS_DIR.exists() and SPECS_DIR.is_dir():
+        md_files = sorted(SPECS_DIR.glob("*.md"))
+        for md_file in md_files:
+            try:
+                content = md_file.read_text(encoding="utf-8")
+                specs += f"\n\n--- SPEC: {md_file.name} ---\n{content}"
+            except Exception:
+                pass
+        if md_files:
+            print_success(f"Especificaciones adicionales cargadas desde {SPECS_DIR.relative_to(ROOT_DIR)} ({len(md_files)} archivo(s))")
+    return specs
+
+def call_fabric(system_prompt, user_payload, output_name="INSTRUCTIONS.md", is_bootstrap=False):
+    # Enrich system_prompt with aggregated specs (core specs excluded in bootstrap mode)
+    specs_content = get_aggregated_specs(is_bootstrap=is_bootstrap)
+    if specs_content:
+        system_prompt = specs_content + "\n\n" + system_prompt
+    
+    pattern_name = "agent_instructor"
+    pattern_dir = Path.home() / ".config/fabric/patterns"
+    system_file = pattern_dir / pattern_name / "system.md"
+    # Sobrescribe el system.md con el prompt actual (dinámico)
+    system_file.write_text(system_prompt, encoding="utf-8")
+
+
+OBJECTIVE:
+Act as a Senior Software Architect specialized in creating executable plans for AI coding assistants (like Aider).
+
+Your ONLY task is to generate a file named `.sdd/instructions/BOOTSTRAP.md` that contains a step‑by‑step plan to achieve the given objective.  
+You will have access to a `STRICT CODE CONTEXT` which includes the most relevant files and their code. Use that context to extract real file paths, class names, function names, and line numbers whenever possible.
+
+STRICT RULES:
+1. Output ONLY the Markdown content for `.sdd/instructions/BOOTSTRAP.md`.
+2. Structure:
+   ## Current Objective
+   [A concise statement of the goal]
+
+   ## Target Architecture & Conventions (to be established)
+   - **System Goals**: [Define the main purpose and non‑functional requirements of the system]
+   - **High‑level Architecture**: [Describe the main layers, components, or modules (e.g., API, services, repositories, adapters)]
+   - **Key Conventions**: [Define coding standards, naming patterns, error handling strategies, or design patterns to be followed]
+   - **Technology Stack**: [List the main frameworks, libraries, and tools to be used]
+
+   ## Key Artifacts (to focus on)
+   - **Files**: [list exact paths of existing files that need to be read or modified, and new files to create]
+   - **Classes/Interfaces**: [names of key classes, interfaces, or functions]
+   - **Configuration**: [environment variables, config files, etc.]
+
+   ## Task List
+   - [ ] [Each task MUST combine reading existing files with creating or modifying files in a single bullet point. Tasks that only say "Read..." or "Analyze..." without a subsequent code-generating action are FORBIDDEN. Correct example: "Read `app/intelligence/adapters/gemini.py` to understand how it implements `IntelligencePort`, then create `app/intelligence/adapters/openrouter.py` with an `OpenRouterAdapter` class following the same pattern." Another example: "Examine `app/intelligence/factory.py` and modify the `get_intelligence_service` function to include the 'openrouter' provider." Use natural language, no shell commands. Do not write code.]
+
+   ## End Task List
+3. Do NOT write code, diffs, or patches.
+4. Do NOT include any extra text outside the structure.
+5. When you reference a file, class, or function, use the exact names found in the provided code context.
+6. The task list must NOT contain items that are purely analysis. All analysis must be embedded inside the task action, but the rationale provides the architectural context.
+
+Now, based on the following objective and the code context provided in the `STRICT CODE CONTEXT` section, generate `.sdd/instructions/BOOTSTRAP.md`.
+
+REQUIREMENTS:
+
+The schema for the request body should be updated to include an optional field:
+
+* **`llm_model_id`** (string, required): The ID of the LLM model to be used.
+* **`user_feedback_observations`** (string, required): Feedback provided by the user.
+* **`contract_type`** (string, **optional**): Defines the type of contract.
+* Allowed values: `"project_fixed"`, `"staff_augmentation"`.
+* If omitted, the system should proceed with the default refinement logic without applying specific contract type constraints.
+
+#### **Acceptance Criteria**
+1. **Successful inclusion:** If `contract_type` is provided with a valid value (`"project_fixed"` or `"staff_augmentation"`), the system must process the refinement using that specific contract context.
+1. **Change contract_type:** If the contract_type changes the current model (or sets it for the first time), the system MUST NOT use a refinement template. Instead, it must discard the previous proposal history for this workflow and trigger the initial proposal template (proposal.j2 or proposal_staffing.j2) corresponding to the new contract type.
+2. **Graceful omission:** If the `contract_type` attribute is missing from the JSON payload, the endpoint must still function correctly, ignoring the attribute and proceeding as if no contract type was specified.
+3. **Validation:** The system should return a validation error if an unsupported value is provided for `contract_type`.
+
+
+**Ejemplo de Payload (Request):**
+
+```json
+{
+  "llm_model_id": "deepseek/deepseek-v4-pro",
+  "user_feedback_observations": "Por favor mejora los tiempos, están muy extensos.",
+  "contract_type": "project_fixed" 
+}
+
+```
+
+--- REQUIREMENTS ---
+
+-  Actualmente para ejecutar agent-instructor se debe pasar el comando con  --mode bug o con  --mode feature.
+Pero es necesario que realmente se usen el comando --bug o el comando --feature en lugar de --mode bug o --mode feature, respectivamente.  Importante, por defecto, como ocurre actualmente, debe ser el comando --feature.
+-  Se debe agregar un nuevo comando, --bootstrap, el cual debe leer .sdd/instructions/BOOTSTRAP.md, y en base a las instrucciones en .sdd/inputs/BOOTSTRAP.md junto a lo definido en .sdd/inputs/REQUIREMENTS.md entonces debe construir .sdd/instructions/BOOTSTRAP.md.  Pero este proceso ya existe cuando se ejecuta --feature.  A diferencia de --feature, no debe incluir dentro del PROMPT que se entrega a Fabric .sdd/core/CONVENTIONS.md ni .sdd/core/SPEC.md porque precisamente esta funcionalidad es para generar esos archivos.
+- Las validaciones de --feature deben ser trasladadas a --bootstrap, respectivamente, con los archivos bootstrap correspondiente a lo ya conversado anteriormente.
+-  Cuando se ejecute el comando --init debe validarse que los archivos BOOTSTRAP.md que se encuentra en la carpeta .sdd de origen de instructor.py, sean copiados a la carpeta destino .sdd respectivamente, de manera que el proceso descrito anteriormente puede ejecutarse de manera razonable.
+- Usar la carpeta .sdd/logs/intruction-generation de la carpeta destino para guardar los (si no existe .sdd/logs/intruction-generation debe crearse), de copiar allí "fabric_payload_{timestamp}.log", que actualmente se hacen dentro de la carpeta  de la variable log_dir, definido por  ORCHESTRATOR_DIR / "logs", "logs"(relativa a la ubicación del archivo instructor.py).  De manera que .sdd/logs/intruction-generation/"fabric_payload_{timestamp}.log" este dentro de la misma carpeta que el .sdd/instructions/BOOTSTRAP.md generado.
