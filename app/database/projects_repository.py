@@ -491,7 +491,7 @@ class ProjectsRepository:
             query["ai_score"] = {"$gte": 5}
             if status == "all":
                 query["proposal_status"] = {
-                    "$in": ["proposal_generated", "submited_to_workana", "ready_for_proposal"]
+                    "$nin": ["not_found", "rejected"]
                 }
             else:
                 query["proposal_status"] = status
