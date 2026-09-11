@@ -1,4 +1,6 @@
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+from telegram.error import TelegramError
+from telegram.ext import ContextTypes
 from loguru import logger
 from app.database.mongo import connect_to_mongo, close_mongo_connection
 from .handlers import start, status, fetch_projects, process_projects, unlock_semaphore
@@ -23,6 +25,14 @@ async def post_init_wrapper(application):
     await connect_to_mongo(application)
     logger.info("post_init completado con éxito.")
 
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Error handler global para la Application.
+    Captura excepciones no manejadas en handlers y errores de red del polling.
+    """
+    logger.error(f"Error no capturado en handler/update: {context.error}", exc_info=context.error)
+
+
 def build_telegram_application(token: str):
     application = (
         ApplicationBuilder()
@@ -39,4 +49,5 @@ def build_telegram_application(token: str):
     application.add_handler(CommandHandler("procesar", process_projects))
     application.add_handler(CommandHandler("desbloquear", unlock_semaphore))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), start))
+    application.add_error_handler(error_handler)
     return application
