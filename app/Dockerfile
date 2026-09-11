@@ -17,10 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 3. INSTALACIÓN CRÍTICA: Playwright 1.50.0 + Dependencias de Sistema
-# El comando 'install-deps' asegura que Chromium tenga todas las libs necesarias
-RUN playwright install chromium && \
-    playwright install-deps chromium
+# 3. INSTALACIÓN CRÍTICA: Patchright (Chromium con fingerprint TLS mejorado) + deps del sistema
+# Patchright sortea Cloudflare donde playwright no puede; usa su propio Chromium (v1234).
+RUN playwright install-deps chromium && \
+    python -m patchright install chromium && \
+    python -m patchright install-deps chromium
 
 # 4. Copiar el resto del código
 COPY . .

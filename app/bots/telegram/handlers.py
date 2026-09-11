@@ -177,7 +177,12 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     try:
-        projects = await scraper.get_projects()
+        # Usar el método con contexto fresco (evita challenge de Cloudflare en paginación).
+        # Fallback a get_projects() si el scraper no lo implementa (p.ej. dummy).
+        if hasattr(scraper, "get_projects_fresh_context"):
+            projects = await scraper.get_projects_fresh_context()
+        else:
+            projects = await scraper.get_projects()
     except Exception as e:
         logger.error(f"❌ Error durante el scraping: {e}", exc_info=True)
         try:

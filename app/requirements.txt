@@ -11,6 +11,7 @@ google-genai==1.74.0
 jinja2==3.1.6
 
 # --- & Scraping ---
+patchright==1.62.3
 playwright==1.58.0
 beautifulsoup4==4.12.3
 

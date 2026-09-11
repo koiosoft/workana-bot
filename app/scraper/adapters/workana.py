@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 from loguru import logger
-from playwright.async_api import Page, async_playwright
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+from patchright.async_api import Page, async_playwright
+from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from ..base import ScraperPort
 
@@ -148,6 +148,119 @@ class WorkanaScraperAdapter(ScraperPort):
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await page.wait_for_timeout(1500) # Esperar a que carguen los nuevos items
             
+
+    async def get_projects_fresh_context(self) -> list:
+        """
+        Variante de get_projects que abre un CONTEXTO NUEVO por cada página.
+        Resuelve el bloqueo de Cloudflare que aparece al reutilizar el mismo
+        contexto para la 2°+ petición (la página 2+ devuelve 'Un momento...').
+        """
+        logger.info(f"🕸️ Iniciando scraping con contexto fresco (Filtro: {self.pub_filter})...")
+        all_projects: list[dict] = []
+        max_projects_first_page = None
+
+        browser_args = ["--no-sandbox", "--disable-setuid-sandbox"]
+        extra_args = os.getenv("WORKANA_EXTRA_CHROME_ARGS")
+        if extra_args:
+            for arg in extra_args.split(","):
+                arg = arg.strip()
+                if arg:
+                    browser_args.append(arg)
+
+        use_session = os.getenv("WORKANA_USE_SESSION", "false").lower() == "true"
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=browser_args)
+            try:
+                current_page = 1
+                while current_page <= self.max_pages:
+                    # Contexto FRESCO por página (clave para Cloudflare)
+                    context_kwargs = dict(self.browser_profile)
+                    if use_session and self._ensure_valid_state_file():
+                        context_kwargs["storage_state"] = self.state_file
+                    context = await browser.new_context(**context_kwargs)
+                    page = await context.new_page()
+                    try:
+                        url = f"{self.jobs_url}&page={current_page}"
+                        logger.info(f"🔍 [fresh] Navegando a página {current_page}...")
+                        logger.info(f"🔍 [fresh] URL= {url}")
+                        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                        logger.info(f"✅ [fresh] {await page.title()}")
+
+                        # Esperar proyectos o detectar challenge persistente
+                        try:
+                            await page.wait_for_selector(".project-item", timeout=20000)
+                        except PlaywrightTimeoutError:
+                            title = await page.title()
+                            if "momento" in title.lower() or "just a moment" in title.lower():
+                                logger.warning(f"⏳ [fresh] página {current_page} en challenge; reintento corto...")
+                                await page.wait_for_timeout(8000)
+                                try:
+                                    await page.wait_for_selector(".project-item", timeout=15000)
+                                except PlaywrightTimeoutError:
+                                    logger.error(f"❌ [fresh] challenge persistente en página {current_page}")
+                                    break
+                            else:
+                                logger.warning(f"⏳ [fresh] sin .project-item en página {current_page}")
+                                break
+
+                        job_elements = await page.query_selector_all(".project-item")
+                        if not job_elements:
+                            logger.info(f"🏁 [fresh] No más proyectos en página {current_page}.")
+                            break
+
+                        page_projects_count = len(job_elements)
+                        page_projects: list[dict] = []
+                        stop_after_current_page = False
+                        if current_page == 1:
+                            max_projects_first_page = page_projects_count
+                            logger.info(f"📌 [fresh] Referencia: {max_projects_first_page} proyectos en página 1.")
+                        elif max_projects_first_page and page_projects_count < max_projects_first_page:
+                            stop_after_current_page = True
+                            logger.info(f"🏁 [fresh] Menos proyectos ({page_projects_count}<{max_projects_first_page}). Se corta paginación.")
+
+                        for job_el in job_elements:
+                            title_el = await job_el.query_selector(".project-title")
+                            link_el = await job_el.query_selector(".project-title a")
+                            details_el = await job_el.query_selector(".project-main-details")
+                            details_text = await details_el.inner_text() if details_el else ""
+                            budget_el = await job_el.query_selector(".values")
+                            if title_el and link_el:
+                                title = (await title_el.inner_text()).strip()
+                                href = await link_el.get_attribute("href")
+                                link = self._normalize_project_link(href)
+                                budget = (await budget_el.inner_text()).strip() if budget_el else "N/A"
+                                date_match = re.search(r'Publicado:\s*(.*?)(?=\s*Propuestas:|$)', details_text)
+                                bids_match = re.search(r'Propuestas:\s*(\d+)', details_text)
+                                skill_handles = await job_el.query_selector_all(".skill h3")
+                                skills = [t.strip() for h in skill_handles if (t := (await h.inner_text()).strip())]
+                                desc_el = await job_el.query_selector(".project-details")
+                                short_description = (await desc_el.inner_text()).replace("Ver más detalles", "").strip() if desc_el else ""
+                                project = {
+                                    "title": title,
+                                    "budget": budget,
+                                    "link": link,
+                                    "published": date_match.group(1).strip() if date_match else "N/A",
+                                    "bids": bids_match.group(1) if bids_match else "0",
+                                    "extracted_at": datetime.utcnow().isoformat(),
+                                    "short_description": short_description,
+                                    "skills": skills,
+                                }
+                                all_projects.append(project)
+                                page_projects.append(project)
+
+                        if stop_after_current_page:
+                            break
+                        current_page += 1
+                    finally:
+                        await context.close()
+            finally:
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
+        return all_projects
+
     async def get_projects(self) -> list:
         logger.info(f"🕸️ Iniciando scraping exhaustivo (Filtro: {self.pub_filter})...")
         all_projects = []
@@ -171,7 +284,10 @@ class WorkanaScraperAdapter(ScraperPort):
                         logger.info(f"🧩 Chrome arg extra: {arg}")
             browser = await p.chromium.launch(headless=True, args=browser_args)
             context_kwargs = {}
-            if self._ensure_valid_state_file():
+            # La sesión del navegador real (storage_state) bloquea Cloudflare si se generó en otro entorno.
+            # Por defecto NO se inyecta; activar con WORKANA_USE_SESSION=true (solo con state.json nativo).
+            use_session = os.getenv("WORKANA_USE_SESSION", "false").lower() == "true"
+            if use_session and self._ensure_valid_state_file():
                 context_kwargs["storage_state"] = self.state_file
                 logger.info(f"🔐 Cargando sesión desde {self.state_file}...")
             context_kwargs.update(self.browser_profile)
@@ -366,7 +482,9 @@ class WorkanaScraperAdapter(ScraperPort):
         """
         async with async_playwright() as p:
             context_kwargs = {}
-            if self._ensure_valid_state_file():
+            # Sesión solo si WORKANA_USE_SESSION=true (evita bloqueo de cf_clearance cross-entorno)
+            use_session = os.getenv("WORKANA_USE_SESSION", "false").lower() == "true"
+            if use_session and self._ensure_valid_state_file():
                 context_kwargs["storage_state"] = self.state_file
                 logger.info(f"🔐 Cargando sesión desde {self.state_file}...")
             browser = await p.chromium.launch(headless=True)

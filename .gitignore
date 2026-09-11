@@ -35,3 +35,4 @@ context_cache/
 .agent-instructor/logs
 sdd.logs
 .config/
+plans
