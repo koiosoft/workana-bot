@@ -34,3 +34,4 @@ context_cache/
 .env.test
 .agent-instructor/logs
 sdd.logs
+.config/
