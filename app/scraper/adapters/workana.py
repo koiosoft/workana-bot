@@ -154,10 +154,22 @@ class WorkanaScraperAdapter(ScraperPort):
         max_projects_first_page = None
         
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
+            browser_args = ["--no-sandbox", "--disable-setuid-sandbox"]
+            blink_features = os.getenv("WORKANA_DISABLE_BLINK_FEATURES")
+            if blink_features:
+                for feature in blink_features.split(","):
+                    feature = feature.strip()
+                    if feature:
+                        browser_args.append(f"--disable-blink-features={feature}")
+                        logger.info(f"🧩 Blink feature deshabilitada: {feature}")
+            extra_args = os.getenv("WORKANA_EXTRA_CHROME_ARGS")
+            if extra_args:
+                for arg in extra_args.split(","):
+                    arg = arg.strip()
+                    if arg:
+                        browser_args.append(arg)
+                        logger.info(f"🧩 Chrome arg extra: {arg}")
+            browser = await p.chromium.launch(headless=True, args=browser_args)
             context_kwargs = {}
             if self._ensure_valid_state_file():
                 context_kwargs["storage_state"] = self.state_file
@@ -175,7 +187,8 @@ class WorkanaScraperAdapter(ScraperPort):
                     logger.info(f"🔍 URL=  {url}")
 
                     try:
-                        await page.goto(url, wait_until="networkidle", timeout=60000)
+                        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                        logger.info(f"✅ Página {current_page} cargada. Título: {await page.title()}")
                     except PlaywrightTimeoutError:
                         logger.error(f"⏱️ Timeout navegando página {current_page}. Se cierra el flujo.")
                         break
