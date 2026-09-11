@@ -1,0 +1,39 @@
+# Surface de sub-agentes para Pi + nicobailon/pi-subagents
+# Las KEYs son referenciadas por los protocolos SDD.
+# El LLM debe buscar la KEY aquí antes de invocar.
+use_cases:
+
+  # Lanzar worker/judge/runner en background
+  # Params: agent, task, async, model
+  # NOTA: el thinking (razonamiento) se controla via sufijo en model:
+  #   model: "provider/model:off"  → razonamiento desactivado
+  #   model: "provider/model:low"  → razonamiento bajo
+  #   model: "provider/model:high" → razonamiento alto
+  #   model: "provider/model"      → usa el perfil del sub-agente
+  launch: "subagent({ agent, task, async, model })"
+
+  # Reanudar un worker que quedó "blocked" o "paused" (tras interrupt/manual).
+  # Conserva el contexto/sesión para no reiniciar la tarea.
+  # Params: id (request: resumeEl id del run), message
+  resume: "subagent({ action: \"resume\", id, message })"
+
+  # Redirigir worker en plena ejecución
+  # Params: id, message
+  steer: "subagent({ action: \"steer\", id, message })"
+
+  # Leer resultado de sub-agente async
+  # Params: id
+  read_result: "subagent({ action: \"status\", id })"
+
+  # Esperar a que termine un async (con timeout del YAML) y leer resultado
+  # Params: id
+  wait_result: |
+    subagent_wait({ id, timeoutMs: 240000 })
+    subagent({ action: "status", id })
+
+  # Consultar estado de un async en vuelo
+  # Params: id
+  check_status: "subagent({ action: \"status\", id })"
+
+# ⏱ Timeout configuration (used by wait_result)
+wait_timeout_ms: 240000

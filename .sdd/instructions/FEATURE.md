@@ -1,26 +1,98 @@
+---
+protocol: FEATURE
+mode_auto: true
+run_integration: true
+run_ui: false
+---
+
 ## Current Objective
-Implement new features for the Agent Instructor to support the initialization of protocol directories, the removal of a deprecated flag, and the addition of new command-line options for copying protocol and PI-related files.
 
 ## Key Artifacts (to focus on)
-- **Files**:
-  - `.sdd/instructions/FEATURE.md` (this file)
-  - `instructor.py`
-  - `.sdd/protocols/MCP.md`
-  - `.sdd/protocols/mcp/disabled/.gitkeep`
-  - `.sdd/protocols/mcp/enabled/.gitkeep`
-  - `.pi/` (directory to be copied)
-  - `config.json`
-- **Classes/Interfaces**: None (script-based functionality)
-- **Configuration**: `config.json` (for RAG parameters, though not directly involved in this feature)
 
 ## Task List
-- [x] Read the existing `instructor.py` file to understand the current command-line argument parsing logic, then modify the `main()` function to remove the `--test` argument and add new arguments `--init`, `--pi-commands`, and `--enabled-mcp` with appropriate help messages and functionality.
-- [x] Copy the .sdd/protocols/MCP.md file (with its content) and then create the empty directories .sdd/protocols/mcp/disabled and .sdd/protocols/mcp/enabled (each with its respective .gitkeep file, leaving their content to be generated later), when copying the .sdd folder upon executing the --init argument.
-- [x] Create empty directories `.sdd/protocols/mcp/disabled` and `.sdd/protocols/mcp/enabled` inside the destination directory when the `--init` argument is used, and add a `.gitkeep` file in each of them to ensure they are tracked by Git.
-- [x] Read the current implementation of the `--init` functionality in `instructor.py`, then modify it to include the copying of the `.sdd/protocols/mcp` directory structure and the `.sdd/protocols/MCP.md` file when the `--init` argument is used.
-- [x] Read the `.pi/` directory and its contents, then add a new command-line argument `--pi-commands` to the `instructor.py` script that copies the `.pi/` directory and all its contents into the destination directory when executed.
-- [x] Add a new command-line argument `--enabled-mcp` to the `instructor.py` script that allows the user to specify which enabled MCP file (e.g., `CODE_BASE_MEMORY.md`) to copy from `.sdd/protocols/mcp/enabled/` to the destination directory when executed.
-- [x] Modify the `instructor.py` script to handle the new command-line arguments `--init`, `--pi-commands`, and `--enabled-mcp` by implementing the logic for copying the respective files and directories to the destination directory.
-- [x] Update the `instructor.py` script's help message to reflect the new command-line arguments and their descriptions when the user runs the script with the `--help` flag.
+- TASK001 [ ] <task description>
 
 ## End Task List
+
+## Review List
+
+- TASK001 [ ]
+  - ACK001 [ ] ReviewTask dataclass and extract_review_items implemented correctly
+  - ACK002 [ ] extract_review_items ignores non-review content
+- TASK002 [ ]
+  - ACK003 [ ] derive_review_status correctly derives approval from ACK states
+  - ACK004 [ ] Edge cases handled: empty list, single ACK
+- TASK003 [ ]
+  - ACK005 [ ] write_task_review_section appends ## Review without affecting ## Status
+  - ACK006 [ ] write_task_review_section replaces existing ## Review correctly
+- TASK018 [ ]
+  - ACK007 [ ] prepare_log and add_task_artifact materialize ACK checklist in TASK###.md
+  - ACK008 [ ] Section omitted for tasks with zero ACKs
+- TASK004 [ ]
+  - ACK009 [ ] mark_ack_review flips ACK [ ]→[x] and returns correct parent_task_id
+  - ACK010 [ ] mark_ack_review flips parent TASK [ ]→[x] when all ACKs are ready
+- TASK005 [ ]
+  - ACK011 [ ] set_ack_correction records REQUIRES_CORRECTION without flipping marks
+  - ACK012 [ ] Correction marker is appended to the correct location
+- TASK019 [ ]
+  - ACK013 [ ] unmark_ack_review flips ACK [x]→[ ] correctly
+  - ACK014 [ ] unmark_ack_review unflips parent TASK when no longer all approved
+- TASK006 [ ]
+  - ACK015 [ ] workflow review mark/unmark/list subcommands registered in parser
+  - ACK016 [ ] Dispatch from main() uses correct handler pattern
+- TASK007 [ ]
+  - ACK017 [ ] handle_workflow_review_mark updates both Reviewer List and task file
+  - ACK018 [ ] --status correction writes ## Review: APPROVED when all ready
+- TASK008 [ ]
+  - ACK019 [ ] handle_workflow_review_list outputs correct table or JSON
+  - ACK020 [ ] Lists only outstanding (TASK_ID, ACK_ID) pairs
+- TASK009 [ ]
+  - ACK021 [ ] workflow update --file scoped to ## Task List section only
+  - ACK022 [ ] No cross-section contamination in Reviewer List
+- TASK010 [ ]
+  - ACK023 [ ] workflow close validates all tasks approved before closing
+  - ACK024 [ ] workflow close aborts with unapproved task list when not all approved
+- TASK011 [ ]
+  - ACK025 [ ] normalize_review_acks rewrites ids to globally unique sequential
+  - ACK026 [ ] normalize_review_acks preserves hierarchical structure and indentation
+- TASK012 [ ]
+  - ACK027 [ ] Formula merged into template STRICT RULES section
+  - ACK028 [ ] Reviewer List generation instructions appended after ## End Task List
+- TASK020 [ ]
+  - ACK029 [ ] Template and runtime mirror verified byte-identical
+  - ACK030 [ ] Source template copied over runtime mirror if mismatch found
+- TASK013 [ ]
+  - ACK031 [ ] Both FEATURE.md files updated with hierarchical Reviewer List
+  - ACK032 [ ] Both files updated identically
+- TASK014 [ ]
+  - ACK033 [ ] REVIEW.md R-1 updated for hierarchical ACK-based format
+  - ACK034 [ ] REVIEW.md R-4 updated and KNOWN LIMITATION removed
+- TASK015 [ ]
+  - ACK035 [ ] DEVELOP.md Phase 7 and 8 updated for review workflow
+  - ACK036 [ ] Changes mirrored to templates/source/
+- TASK016 [ ]
+  - ACK037 [ ] DEV-REVIEWER.md updated for per-ACK launch model
+  - ACK038 [ ] cbm_* and mcp bootstrap claims removed
+- TASK021 [ ]
+  - ACK039 [ ] sdd-reviewer.md updated with per-ACK launch contract
+  - ACK040 [ ] Read-only inspection whitelist maintained
+- TASK017 [ ]
+  - ACK041 [ ] Byte-identical verification done for all touched files
+  - ACK042 [ ] Flat lines replaced with hierarchical format where found
+
+## End Review List
+
+## Unit Test List
+- UNIT001 [ ] <unit test description>
+
+## End Unit Test List
+
+## Integration Test List
+- INT001 [ ] <integration test description>
+
+## End Integration Test List
+
+## UI Test List
+- UIT001 [ ] <ui test description>
+
+## End UI Test List

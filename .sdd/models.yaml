@@ -1,0 +1,109 @@
+subagents:
+  sdd-doc-updater:
+    model_options:
+      - name: "default"
+        model: "deepseek/deepseek-v4-flash"
+        priority: 1
+        thinking: "off"
+      - name: "cheap"
+        model: "openrouter/deepseek/deepseek-v4-flash"
+        priority: 2
+        thinking: "off"
+      - name: "fallback"
+        model: "qwen-token-plan-individual/deepseek-v4-flash-0731"
+        priority: 3
+        thinking: "off"
+
+
+  sdd-worker:
+    model_options:
+      - name: "default"
+        model: "deepseek/deepseek-v4-flash"
+        priority: 1
+        thinking: "low"
+      - name: "cheap"
+        model: "openrouter/deepseek/deepseek-v4-flash"
+        priority: 2
+        thinking: "low"
+      - name: "fallback"
+        model: "qwen-token-plan-individual/deepseek-v4-flash-0731"
+        priority: 3
+        thinking: "low"
+
+  sdd-ui-worker:
+    model_options:
+      - name: "default"
+        model: "qwen-token-plan-individual/qwen3.8-flash"
+        priority: 1
+        thinking: "low"
+      - name: "cheap"
+        model: "openrouter/qwen/qwen3.8-flash"
+        priority: 2
+        thinking: "low"
+      - name: "fallback"
+        model: "deepseek/deepseek-v4-flash"
+        priority: 3
+        thinking: "low"
+
+
+  test-runner:
+    model_options:
+      - name: "default"
+        model: "deepseek/deepseek-v4-flash"
+        priority: 1
+        thinking: "off"
+      - name: "cheap"
+        model: "openrouter/deepseek/deepseek-v4-flash"
+        priority: 2
+        thinking: "off"
+      - name: "fallback"
+        model: "qwen-token-plan-individual/deepseek-v4-flash-0731"
+        priority: 3
+        thinking: "off"
+
+  test-writer:
+    model_options:
+      - name: "default"
+        model: "deepseek/deepseek-v4-flash"
+        priority: 1
+        thinking: "off"
+      - name: "cheap"
+        model: "openrouter/deepseek/deepseek-v4-flash"
+        priority: 2
+        thinking: "off"
+      - name: "fallback"
+        model: "qwen-token-plan-individual/deepseek-v4-flash-0731"
+        priority: 3
+        thinking: "off"
+
+  sdd-reviewer:
+    model_options:
+      - name: "default"
+        model: "deepseek/deepseek-v4-flash"
+        priority: 1
+        thinking: "off"
+      - name: "cheap"
+        model: "openrouter/deepseek/deepseek-v4-flash"
+        priority: 2
+        thinking: "off"
+      - name: "fallback"
+        model: "qwen-token-plan-individual/deepseek-v4-flash-0731"
+        priority: 3
+        thinking: "off"
+
+  sdd-judge:
+    model_options:
+      - name: "default"
+        model: "deepseek/deepseek-v4-flash"
+        priority: 1
+        thinking: "high"
+      - name: "cheap"
+        model: "openrouter/deepseek/deepseek-v4-flash"
+        priority: 2
+        thinking: "high"
+      - name: "fallback"
+        model: "qwen-token-plan-individual/deepseek-v4-flash-0731"
+        priority: 3
+        thinking: "high"
+
+     

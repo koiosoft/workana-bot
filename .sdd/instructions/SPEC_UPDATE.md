@@ -1,11 +1,16 @@
 ---
-protocol: BOOTSTRAP
+protocol: SPEC_UPDATE
 mode_auto: true
 run_integration: false
 run_ui: false
 ---
 
-# Generated instructions
+## Current Objective
+
+## Target Specifications (to update)
+
+## Key Artifacts (to focus on)
+
 
 ## Task List
 - TASK001 [ ] <task description>

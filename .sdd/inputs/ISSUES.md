@@ -1,1 +1,0 @@
-Ejecutando  pytest tests  se consiguieron errores en las pruebas que deben ser corregidos.

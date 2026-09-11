@@ -1,11 +1,15 @@
-import re
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 from urllib.parse import urljoin
-from playwright.async_api import Page, async_playwright, TimeoutError as PlaywrightTimeoutError
+
 from loguru import logger
+from playwright.async_api import Page, async_playwright
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
 from ..base import ScraperPort
+
 
 class WorkanaScraperAdapter(ScraperPort):
     def __init__(self):
@@ -31,7 +35,7 @@ class WorkanaScraperAdapter(ScraperPort):
             f"&language=es"
             f"&publication={self.pub_filter}"
             f"&skills=angular%2Cnode-js%2Cpostgressql%2Cpython%2Creact-js%2Creact-native%2Cvue-js"
-            f"&subcategory=web-development"
+            f"&subcategory=web-development%2Cmobile-development%2Cartificial-intelligence-1"
         )
     
     def _ensure_valid_state_file(self) -> bool:
