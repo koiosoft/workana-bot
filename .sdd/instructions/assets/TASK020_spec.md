@@ -1,0 +1,2 @@
+## Specification: TASK020
+Add a PipelineError exception class to app/exceptions.py, following the existing convention (e.g. AIConnectionError). This exception is the guard-rail signal raised when a Stage 1 (analyze-requirement) or Stage 2 (estimate-full / estimate-discovery) LLM output fails Pydantic validation. From §7.3: if the LLM output does not validate, raise PipelineError before invoking PREMIUM (Etapa 3). Both Gemini and OpenRouter adapters must raise PipelineError from analyze_requirement and estimate_technical so the orchestrator aborts before the Stage 3 call.
