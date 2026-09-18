@@ -1,0 +1,2 @@
+## Specification: TASK008
+Add app/intelligence/prompts/s2-estimation/estimate-discovery.j2 that consumes analysis_json (the Stage 1 RequirementAnalysis output where maturity_score < threshold). Output JSON with scope_matrix {in_scope: list[str], out_of_scope: list[str]}, phase0_hours (int), post_discovery_hourly_rate (float), open_questions (list[str]). No commercial/persuasive text is produced in this stage — output is purely technical structure, to be consumed by Stage 3.

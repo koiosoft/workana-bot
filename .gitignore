@@ -36,3 +36,4 @@ context_cache/
 sdd.logs
 .config/
 plans
+.sdd/logs/openai

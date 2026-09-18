@@ -48,6 +48,7 @@
     "openai_base_url": "https://openrouter.ai/api/v1",
     "openai_api_key": "",
     "active_provider": "openrouter",
+    "timeout": 1200,
     "model_mapping": {
         "openrouter": {
             "default": "minimax/minimax-m3"

@@ -1,0 +1,2 @@
+## Specification: TASK016
+Edit app/intelligence/prompts/s3-commercial/write-proposal.j2 to delete any remaining instructions that compute hours, prices, milestones, or technical floors (270h, technical floors, milestone construction previously embedded in proposal.j2). Move those instructions verbatim into app/intelligence/prompts/s2-estimation/estimate-full.j2 so Stage 2A owns all numeric generation and Stage 3 is purely persuasive. Decision #9: write-proposal.j2 es 100% redacción persuasiva; no altera números ni horas de la Etapa 2.

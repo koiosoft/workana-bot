@@ -1,0 +1,2 @@
+## Specification: TASK013
+Edit app/intelligence/factory.py to: (1) update select_initial_proposal_template to return paths with the new subfolder prefix (e.g., 's1-analysis/evaluate-project.j2', 's1-analysis/format-description.j2', 's3-commercial/write-proposal.j2', 's3-commercial/write-proposal-staffing.j2'); (2) add a select_estimation_template(maturity_score, threshold) helper that returns 's2-estimation/estimate-full.j2' when maturity_score >= threshold, otherwise 's2-estimation/estimate-discovery.j2'.

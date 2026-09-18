@@ -1,0 +1,2 @@
+## Specification: TASK015
+Where the project_fixed pipeline is initialized (within the Gemini/OpenRouter orchestrator and/or the Telegram handler entry point), add reading of the MATURITY_THRESHOLD environment variable (default '8'), parse to int, and pass it as maturity_threshold to analyze_requirement. The value is also persisted in requirement_analyses.maturity_threshold_used for audit (per §6.1 and §8).
