@@ -1,0 +1,21 @@
+# dev-orchestrator finalization module (FINALIZATION.md).
+workflow:
+  name: dev-orchestrator-mod-finalization
+  kind: orchestrator_module
+  entry: finalization
+
+phases:
+  finalization:
+    steps:
+      - apply: module_finalization_summary
+      - branch: fix_artifact_then_summary
+        when: any_incomplete
+      - branch: close_cycle
+
+  close_cycle:
+    steps:
+      - apply: module_finalization_close
+      - write_optional_log_summary
+      - notify: final_summary
+        delivery: <channel>
+      - branch: stop

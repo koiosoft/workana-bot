@@ -35,6 +35,9 @@ category: SDD
   - The `ACTIVE_CYCLE` pointer file that the `add` / `update` subcommands rely on.
 - Capture the printed relative path as `LOG_DIR`.
 - **Do NOT** create the directory, `INDEX.md`, or artifact files by hand. The CLI is the single source of truth for cycle creation.
+- On success, return to the orchestrator phase that invoked this module via the `return_to_caller`
+  label (see `sdd-lang.md` §2 — return labels). On a cycle binding mismatch, follow L-4
+  (`workflow open --reindex`) and then return via the same label.
 
 ### L-2: Dynamic artifacts (recovery option)
 

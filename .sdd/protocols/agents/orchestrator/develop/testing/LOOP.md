@@ -28,7 +28,12 @@ category: SDD
      - Stop and ask the user to fix the environment.
    - **If `success: false` (test failures)**:
      - If `TEST_ITERATION_COUNT >= 3`:
-       - Ask the user how to proceed (Retry/Skip/Abort).
+       - Ask the user how to proceed (Retry/Skip/Abort) via a `gate`.
+       - **No-answer contract (fail-closed):** if the gate does NOT receive an explicit
+         answer, the run stays `blocked` and waits. It is **never** satisfied by inference
+         (a generic "continue", a prior message, a cancellation) nor by a timeout. "Skip"
+         is chosen **only** when the user explicitly chooses it — never as an implicit
+         default after no response. See `sdd-lang.md` §6.6.
        - If "Retry": reset counter and go to step 2.
        - If "Skip": log warning and return to `ORCHESTRATOR.md`.
        - If "Abort": stop the cycle.

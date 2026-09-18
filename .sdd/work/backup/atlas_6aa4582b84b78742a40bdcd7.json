@@ -1,0 +1,66 @@
+{
+  "projects": [
+    {
+      "_id": {
+        "__oid__": "6aa4582b84b78742a40bdcd7"
+      },
+      "link_hash": "241fd507db9414d58bd221e886adbc0c5d2cc19526423d1fea7be2bb4f422cdb",
+      "bids": "0",
+      "budget": "USD 100 - 250",
+      "link": "https://www.workana.com/job/desarrollador-a-de-confianza-para-producto-saas-ya-en-produccion-colaboracion-continuada",
+      "proposal_status": "proposal_generated",
+      "published": "N/A",
+      "scraped_at": "2026-09-11T19:36:11.379144+00:00",
+      "short_description": "Tengo un producto ya construido y en funcionamiento: un recepcionista con IA que responde por WhatsApp, gestiona citas en Google Calendar y envía recordatorios automáticos, dirigido a clínicas de fisioterapia. Yo me encargo de conseguir los clientes (clínicas). Busco a alguien de confianza que se haga cargo de todo el desarrollo y mantenimiento téc ... View more",
+      "skills": [
+        "JavaScript",
+        "Typescript",
+        "React.js",
+        "API",
+        "SQL",
+        "Database",
+        "HTML",
+        "CSS"
+      ],
+      "source": "workana",
+      "title": "Desarrollador/a de confianza para producto Saas ya en producción (c...",
+      "updated_at": "2026-09-11T22:14:43.816992+00:00",
+      "processing_started_at": "2026-09-11T19:36:12.791808+00:00",
+      "ai_reason": "El stack solicitado (TypeScript, React, APIs, SQL) se alinea directamente con mi experiencia fullstack. La complejidad es alta al requerir orquestación asíncrona de APIs de terceros (WhatsApp Business, Google Calendar), manejo de flujos de IA y mantenimiento de un core business crítico. No es un entregable aislado, sino una arquitectura viva que exige diseño relacional sólido, escalabilidad y patrones de observabilidad. Calificado como 'pro' por la integración de APIs complejas y componentes de IA, mientras que 'staff_augmentation' refleja la necesidad del cliente de un partner tecnológico a largo plazo para evolucionar y mantener el producto.",
+      "ai_score": 8,
+      "ai_summary": "Buscan un desarrollador confiable para asumir el desarrollo continuo y mantenimiento de un producto SaaS en producción: un recepcionista virtual con IA para clínicas de fisioterapia que integra WhatsApp, Google Calendar y sistemas de recordatorios automáticos.",
+      "analyzed_at": "2026-09-11T19:37:25.325368+00:00",
+      "contract_type": "staff_augmentation",
+      "strategy": "pro",
+      "budget_detail": "Abierto",
+      "full_description": "Tengo un producto ya construido y en funcionamiento: un recepcionista con \"IA\" que responde por \"WhatsApp\", gestiona citas en \"Google Calendar\" y envía recordatorios automáticos, dirigido a clínicas de fisioterapia.\n\nYo me encargo de conseguir los clientes (clínicas).\n\nBusco a alguien de confianza que se haga cargo de todo el desarrollo y mantenimiento técnico del producto de forma continuada:\n    - nuevas integraciones\n    - ajustes del agente\n    - incorporar cada clínica nueva según vaya cerrando acuerdos\n\nNo es un proyecto puntual ni pido ninguna entrega de muestra antes de nada — antes de acordar precio o alcance, prefiero hacer una videollamada corta para conocernos, resolver dudas y ver si encajamos.\n\nStack actual:\n    - \"Next.js\"\n    - \"TypeScript\"\n    - \"API de WhatsApp Business\"\n    - \"Google Calendar API\"\n    - base de datos con \"Drizzle\"\n    - desplegado en \"Vercel\"\n\nEstado del negocio: el producto está construido y probado (\"WhatsApp Business\" en modo prueba); la cuenta de \"Meta\" como empresa formal aún no está dada de alta, se formalizará según entren los primeros clientes.\n\n--- METADATOS DEL PROYECTO ---\nCategoría Programación y Tecnología\nSubcategoría Programación Web\n¿Cuál es el alcance del proyecto? Cambio mediano\nPlazo de Entrega: No definido",
+      "proposal_at": "2026-09-11T22:14:43.816992+00:00"
+    }
+  ],
+  "proposal_versions": [
+    {
+      "_id": {
+        "__oid__": "6aa47d53c8b542da51603e4a"
+      },
+      "project_id": "6aa4582b84b78742a40bdcd7",
+      "link_hash": "241fd507db9414d58bd221e886adbc0c5d2cc19526423d1fea7be2bb4f422cdb",
+      "version_number": 1,
+      "proposal_data": {
+        "cover_letter": "Hola, un gusto saludarte.\n\nEntiendo perfectamente lo que buscas: no un freelancer para una entrega puntual, sino un perfil técnico de confianza que se integre como socio de desarrollo continuo de tu producto. Tu recepcionista con IA para clínicas de fisioterapia (WhatsApp + Google Calendar + agente ajustable) es exactamente el tipo de producto donde mi perfil encaja bien: stacks modernos en TypeScript/React, integraciones con APIs externas y mantenimiento evolutivo a largo plazo.\n\nTres puntos de mi stack que son directamente relevantes para tu necesidad:\n\n1. TypeScript + React/Next.js: trabajo a diario con este ecosistema para construir y evolucionar aplicaciones del lado cliente y servidor. Manejo tipado estricto, arquitectura de componentes y despliegues en plataformas serverless como Vercel.\n\n2. APIs e integraciones externas (REST & GraphQL): tengo experiencia sólida integrando servicios de terceros (WhatsApp Business API, Google Calendar API y similares), gestionando webhooks, autenticación OAuth, manejo de errores y sincronización de estados entre sistemas.\n\n3. Modelado de datos y backend: diseño y mantengo esquemas SQL (PostgreSQL/MySQL) y NoSQL (MongoDB). Puedo adaptarme sin fricción a un ORM como Drizzle y a las necesidades específicas que aparezcan al incorporar cada nueva clínica (multi-tenant, aislamiento por cliente, recordatorios programados, etc.).\n\nEn cuanto a disponibilidad: puedo comprometer 20 horas semanales de forma estable, con flexibilidad para crecer si el volumen de clínicas lo exige. Me interesa un esquema de colaboración continuada, no un sprint suelto — justo como describes.\n\nCoincido contigo en empezar por una videollamada corta para conocernos, entender el estado real del producto, la deuda técnica si la hay, y ver si encajamos antes de hablar de precios o alcance. Quedo atento para coordinar el horario que mejor te venga. Un saludo cordial.",
+        "budget_summary": {
+          "hourly_rate": 25,
+          "suggested_hours_per_week": 20,
+          "estimated_monthly_budget": 2000
+        },
+        "questions_for_client": [
+          "¿Cuál es la duración estimada inicial del proyecto o rol?",
+          "¿Cómo está compuesto el equipo técnico actual y qué metodología de trabajo utilizan (Scrum, Kanban, etc.)?"
+        ]
+      },
+      "created_at": {
+        "__dt__": "2026-09-11T22:14:43.950000"
+      },
+      "source_of_changes": "IA"
+    }
+  ]
+}

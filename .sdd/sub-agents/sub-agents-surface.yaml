@@ -1,0 +1,32 @@
+# Sub-agent surface — canonical, harness-independent definition of sub-agent structured result.
+# The concrete sub-agent name and how it is invoked depend on the harness/plugin (pi); the exact
+# harness surface is declared below under `surface-file`.
+#
+# This contract applies to the structured result ANY sub-agent (normal or -compiled) returns on
+# task end (see SUBAGENT_COMMS.md). It is a protocol-wide improvement, independent of the YAML
+# experiment status.
+
+surface-file: .sdd/sub-agents/pi/nicobailon-pi-subagents.yaml
+
+# Canonical structured result every sub-agent returns.
+# Single source of the schema (previously it lived under .sdd/compiled/use-cases).
+report_status:
+  description: Canonical JSON a sub-agent emits when it ends its turn.
+  output_schema:
+    type: object
+    additionalProperties: false
+    required: [status, success, summary, affected_files, error_details, question]
+    properties:
+      status:         { enum: [completed, blocked, error] }
+      success:        { type: boolean }
+      summary:        { type: string }
+      affected_files: { type: array, items: { type: string } }
+      error_details:  { type: [string, null] }
+      question:       { type: [string, null] }
+  semantics:
+    completed -> success true, error_details & question null
+    blocked    -> success false, question = concrete doubt
+    error      -> success false, error_details = failure explanation
+
+# The harness/plugin may extend with role fields (reviewer verdicts, test-runner extras), but the
+# fields above are the mandatory base.

@@ -13,10 +13,20 @@ Defines how the **Orchestrator** and **Sub-Agents (Workers)** exchange results a
 
 ### 1.1 Rule
 
-Every sub-agent MUST end its turn by emitting a **single JSON object** as its final response, with **no additional text before or after it**. The orchestrator reads it via `use_case: read_result` (see
-`.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`), extracts that JSON from the final message and validates it against the canonical schema (see § 1.5).
+Every sub-agent MUST end its turn by emitting a **single JSON object** as its final
+result, with no additional text before or after it. The orchestrator reads it via
+`use_case: read_result` (see `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`), extracts
+that JSON from the final message/structured output and validates it against the canonical
+schema (see §1.2 y §1.5).
 
-Communication with the orchestrator happens automatically: the extension captures the sub-agent's final message, so the sub-agent needs **no special call or flag** at the end — it only emits the canonical JSON below and the orchestrator reads it via `use_case: read_result`.
+**Canonical structured close.** When launched with an `outputSchema` matching the
+canonical `report_status` (defined globally in `.sdd/sub-agents/sub-agents-surface.yaml`
+→ `report_status.output_schema`, consumed by
+the harness port), the harness exposes the internal `structured_output` tool and REQUIRES the
+worker to call it as its final action — prose/completion without calling that tool fails the
+step. This is the guaranteed path to receiving the canonical JSON without prose or a fenced
+`acceptance-report`. Omitting `outputSchema` degrades to legacy JSON-in-text (§1.5). The schema
+of the emitted JSON is, in all cases, the one in §1.2.
 
 ### 1.2 Canonical JSON
 
@@ -24,12 +34,19 @@ Communication with the orchestrator happens automatically: the extension capture
 {
   "status": "completed" | "blocked" | "error",
   "success": true | false,
-  "summary": "resumen conciso del trabajo realizado o de la razón del bloqueo",
-  "affected_files": ["path/a/archivo1.ext"],
-  "error_details": null | "detalle técnico del error si status es 'error'",
-  "question": null | "pregunta puntual para el orquestador si status es 'blocked'"
+  "summary": "concise summary of the work done, or the reason for the block",
+  "affected_files": ["path/a/file1.ext"],
+  "error_details": null | "technical detail of the error if status is 'error'",
+  "question": null | "specific question for the orchestrator if status is 'blocked'"
 }
 ```
+
+**Schema source:** this canonical object (and its formal JSON schema) is the one defined in
+`.sdd/sub-agents/sub-agents-surface.yaml` → `report_status.output_schema`. Its contract
+semantics (what `status`/`success`/`error_details` mean, when each field is `null`) is
+documented in that file (`semantics` section). At runtime the JSON validates against that
+schema (structure) and is interpreted according to that semantics.
+
 
 **Reviewer extension (sdd-reviewer role):** When used by the `sdd-reviewer` role,
 the canonical JSON schema is extended as follows:
@@ -37,33 +54,26 @@ the canonical JSON schema is extended as follows:
 - The singular `"verdict"` field (as referenced in earlier reviewer protocols)
   is **replaced by a `"verdicts"` array**.
 - Each element in the `verdicts` array is an object with:
-    - `"ack_id"`: string identifying the ACK (e.g., `"ACK001"`)
-    - `"verdict"`: `"APPROVED"` | `"REQUIRES_CORRECTION"`
-    - `"error_details"`: reasons string — **only** when the verdict is `REQUIRES_CORRECTION`
-    - `"rejected_followup"`: boolean (`false` by default); `true` for non-fixable failures (e.g. environment blocker, spec gap, architectural decision needing input)
+    - `"ack_id"`: string identifying the ACK (e.g., `"criterion-1"`)
+    - `"status"`: `"approved"` | `"rejected"` | `"blocked"`
+    - `"evidence"`: string summarising the reviewer's finding
 
 This extension applies **only** to the `sdd-reviewer` role. All other sub-agents
 use the core schema above without `verdicts`.
 
+```json
 {
   "status": "completed" | "blocked" | "error",
   "success": true | false,
-  "summary": "resumen conciso del trabajo realizado o de la razón del bloqueo",
-  "affected_files": [],
-  "error_details": null | "detalle técnico del error si status es 'error'",
-  "question": null | "pregunta puntual para el orquestador si status es 'blocked'",
+  "summary": "concise summary of the work done, or the reason for the block",
+  "affected_files": ["path/a/file1.ext"],
+  "error_details": null | "technical detail of the error if status is 'error'",
+  "question": null | "specific question for the orchestrator if status is 'blocked'",
   "verdicts": [
     {
-      "ack_id": "ACK001",
-      "verdict": "APPROVED",
-      "error_details": null,
-      "rejected_followup": false
-    },
-    {
-      "ack_id": "ACK002",
-      "verdict": "REQUIRES_CORRECTION",
-      "error_details": "the border-radius on the button is 8 but the spec requires 12",
-      "rejected_followup": false
+      "ack_id": "criterion-1",
+      "status": "approved",
+      "evidence": "The implementation satisfies the criterion."
     }
   ]
 }
@@ -71,64 +81,65 @@ use the core schema above without `verdicts`.
 
 ### 1.3 Status rules
 
-| status | Significado | Campos requeridos |
+| status | Meaning | Required fields |
 | :--- | :--- | :--- |
-| `"completed"` | La tarea se completó íntegramente. | `question` y `error_details` deben ser `null`; `success` = `true`. |
-| `"blocked"` | Falta información, especificación, credencial o decisión de diseño. | Pon la duda exacta en `question`; `success` = `false`. El sub-agente pausa el trabajo (su avance queda guardado en disco / en los archivos). |
-| `"error"` | Falla irrecuperable (ej. error de compilación insalvable, dependencia rota). | Explicar en `error_details`; `success` = `false`. |
+| `"completed"` | The task was completed in full. | `question` and `error_details` must be `null`; `success` = `true`. |
+| `"blocked"` | Missing information, specification, credential, or design decision. | Put the exact doubt in `question`; `success` = `false`. The sub-agent pauses work (its progress is saved on disk / in the files). |
+| `"error"` | Unrecoverable failure (e.g. unsolvable compilation error, broken dependency). | Explain in `error_details`; `success` = `false`. |
 
 ### 1.4 Naming rule: `affected_files`
 
-El campo de archivos es **`affected_files`** (no `changed_files`) porque unifica ambos casos:
-- sub-agentes de edición (`sdd-worker`, `sdd-ui-worker`, `sdd-doc-updater`, `test-writer`) → archivos **creados/modificados**.
-- `test-runner` → archivos **afectados** por fallos en su ejecución (su salida específica `failing_test_files` queda definida en su propio protocolo `test-workers/TEST_RUNNER.md`).
+The file field is **`affected_files`** (not `changed_files`) because it unifies both cases:
+- editing sub-agents (`sdd-worker`, `sdd-ui-worker`, `sdd-doc-updater`, `test-writer`) → files **created/modified**.
+- `test-runner` → files **affected** by failures in its run (its specific `failing_test_files` output is defined in its own protocol `test-workers/TEST_RUNNER.md`).
 
-### 1.5 Robustez del mensaje final (contrato emisor + receptor)
+### 1.5 Final-message robustness (emitter + receiver contract)
 
-El contrato tiene dos capas complementarias, que quedaron **validadas con los modelos de `.sdd/models.yaml`** (PoC: ciclo `blocked` → `resume` → `completed`, con un secreto de contexto por modelo, en `nemotron-3-ultra-550b-a55b:free`, `nemotron-3.5-lightning:free`, `nemotron-3-super-120b-a12b:free`, `gemini-2.5-pro`, `poolside/laguna-s-2.1` y `deepseek-v4-flash-0731`):
+The contract has two complementary layers, which were **validated with the models in `.sdd/models.yaml`** (PoC: cycle `blocked` → `resume` → `completed`, with a per-model context secret, on `nemotron-3-ultra-550b-a55b:free`, `nemotron-3.5-lightning:free`, `nemotron-3-super-120b-a12b:free`, `gemini-2.5-pro`, `poolside/laguna-s-2.1` and `deepseek-v4-flash-0731`):
 
-- **(A) Prescripción al emisor (directiva).** El sub-agente termina su turno emitiendo el **único JSON canónico** como último mensaje (§ 1.1). Cuando la instrucción es explícita y directiva («termina tu turno con un único JSON, sin otra cosa»), todos los modelos de `.sdd/models.yaml` la cumplen; el wording directivo además evita que modelos con tendencia a «juntar contexto primero» (observado en `poolside/laguna-s-2.1` con prompt ambiguo) deriven en prosa.
-- **(B) Tolerancia del receptor (red de seguridad).** El orquestador **extrae** el JSON del mensaje final en lugar de asumir que el body completo es JSON puro. Incluso modelos cumplidores pueden anteponer una línea suelta al JSON (observado en el PoC: `POC_SECRET = manzana-verde-77` antes del JSON en `deepseek-v4-flash-0731`). Parsing recomendado: localizar el bloque `{`…`}` del mensaje final y validarlo contra el esquema canónico (§ 1.2), ignorando el texto envolvente. No hacer `JSON.parse` ciego del mensaje completo.
+- **(A) Emitter prescription (directive).** The sub-agent ends its turn by emitting the **single canonical JSON** as its last message (§ 1.1). When the instruction is explicit and directive ("end your turn with a single JSON, nothing else"), every model in `.sdd/models.yaml` complies; the directive wording also prevents models with a tendency to "gather context first" (observed on `poolside/laguna-s-2.1` with an ambiguous prompt) from drifting into prose.
+- **(B) Receiver tolerance (safety net).** The orchestrator **extracts** the JSON from the final message instead of assuming the whole body is pure JSON. Even compliant models may prepend a stray line to the JSON (observed in the PoC: `POC_SECRET = manzana-verde-77` before the JSON on `deepseek-v4-flash-0731`). Recommended parsing: locate the `{`…`}` block of the final message and validate it against the canonical schema (§ 1.2), ignoring the surrounding text. Do not blind-`JSON.parse` the whole message.
 
-Con (A)+(B), una desviación del modelo degrada de forma controlada: la recuperación es posible mientras el JSON canónico esté presente en el mensaje final.
+With (A)+(B), a model deviation degrades in a controlled way: recovery is possible as long as the canonical JSON is present in the final message.
 
 ---
 
 ## 2. Orchestrator Workflow (lifecycle loop)
 
-       [Orquestador]
+       [Orchestrator]
              │
              ▼
-    1. Invoca Subagente ──► use_case: launch (ver YAML)
+    1. Invoke Sub-agent ──► use_case: launch (see YAML)
              │
              ▼
-    2. Recibe JSON final ◄── Subagente termina su turno
+    2. Receive final JSON ◄── Sub-agent ends its turn
              │
-             ├──► ¿status == "completed"?
-             │          └─► [ÉXITO] Procesa 'affected_files', actualiza la especificación y pasa a la siguiente tarea.
+             ├──► status == "completed"?
+             │          └─► [SUCCESS] Process 'affected_files', update the spec and move to the next task.
              │
-             ├──► ¿status == "error"?
-             │          └─► [ERROR] Registra la falla, notifica al desarrollador o ejecuta una estrategia de fallback.
+             ├──► status == "error"?
+             │          └─► [ERROR] Record the failure, notify the developer or run a fallback strategy.
              │
-             └──► ¿status == "blocked"?
-                        ├─► Lee 'question' del JSON
-                        ├─► Resuelve la duda (consulta interna, reglas del proyecto o usuario)
-                        └─► Reanuda el sub-agente con use_case: resume (paso 3)
-                        └─► (el ciclo se repite desde el paso 2)
+             └──► status == "blocked"?
+                        ├─► Read 'question' from the JSON
+                        ├─► Route the doubt: MODE_AUTO → sdd-judge arbitration (see DEVELOP.md J-1..J-5);
+                        │   else → gate the user (fail-closed). The orchestrator does NOT resolve it.
+                        └─► Resume the sub-agent with use_case: resume (step 3)
+                        └─► (the cycle repeats from step 2)
 
 ### 2.1 Decision tree
 
 ```mermaid
 flowchart TD
-    A[Orquestrador] --> B["use_case: launch (ver YAML)"]
-    B --> C[Sub-agente termina turno con JSON final]
+    A[Orchestrator] --> B["use_case: launch (see YAML)"]
+    B --> C[Sub-agent ends turn with final JSON]
     C --> D{status}
-    D --|completed|--> E[Procesa affected_files]
-    E --> J[Siguiente tarea]
-    D --|error|--> F[Registra falla y notifica]
-    D --|blocked|--> G[Lee question]
-    G --> H[Resuelve la duda]
-    H --> I["use_case: resume (ver YAML)"]
+    D --|completed|--> E[Process affected_files]
+    E --> J[Next task]
+    D --|error|--> F[Record failure and notify]
+    D --|blocked|--> G[Read question]
+    G --> H[Route doubt: sdd-judge or gate user]
+    H --> I["use_case: resume (see YAML)"]
     I --> C
 ```
 
@@ -136,45 +147,50 @@ flowchart TD
 
 ## 3. Resume flow (blocked / paused)
 
-`use_case: resume` se usa para continuar un sub-agente **sin reiniciar su tarea**,
-conservando todo su contexto/sesión previo (lo que leyó/editó antes de parar). Aplica a dos
-estados:
+`use_case: resume` is used to continue a sub-agent **without restarting its task**,
+preserving all its previous context/session (what it read/edited before stopping). It applies to two
+states:
 
-- **`status: "blocked"`** — el sub-agente terminó su turno con una duda en `question`.
-   Para continuar el MISMO sub-agente y recuperar su contexto, usar `use_case: resume`.
-- **`paused` (tras `interrupt`)** — el orquestador pausó al sub-agente manualmente
-   (p. ej. para permitir un commit en medio del trabajo, o para reactivar un
-   sub-agente dormido con contexto acumulado). `use_case: resume` lo reaviva en el mismo
-   punto, devolviendo un **nuevo run id** (la sesión se conserva aunque el id cambie).
+- **`status: "blocked"`** — the sub-agent ended its turn with a doubt in `question`.
+   To continue the SAME sub-agent and recover its context, use `use_case: resume`.
+- **`paused` (after `interrupt`)** — the orchestrator paused the sub-agent manually
+   (e.g. to allow a commit in the middle of the work, or to revive a
+   sleeping sub-agent with accumulated context). `use_case: resume` revives it at the same
+   point, returning a **new run id** (the session is preserved even though the id changes).
 
-Via `use_case: resume` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
-  resume: "<ID_DEL_SUBAGENTE_PAUSADO_OR_BLOCKED>"
-  task: "<instrucción/dirección fresca para continuar>"
+Via `use_case: resume` (see `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
+  resume: "<PAUSED_OR_BLOCKED_SUBAGENT_ID>"
+  task: "<fresh instruction/direction to continue>"
 
-- El sub-agente recupera su contexto anterior, continúa, y vuelve a emitir un JSON final
-  (el ciclo se repite desde § 2).
-- El `ID` inicial lo devolvió la llamada `use_case: launch` (con `async: true`). Tras un `resume`,
-  el run devuelve un nuevo id que se usa para `read_result`/`steer` posteriores.
-  La sesión/conversación del sub-agente se mantiene.
+- The sub-agent recovers its previous context, continues, and re-emits a final JSON
+  (the cycle repeats from § 2).
+- The initial `ID` was returned by the `use_case: launch` call (with `async: true`). After a `resume`,
+  the run returns a new id that is used for subsequent `read_result`/`steer`.
+  The sub-agent's session/conversation is preserved.
 ---
 
 ## 4. steer (running only)
 
-`use_case: steer` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`) se usa
-SOLO para redirigir a un sub-agente **en plena ejecución**. NO aplica al caso
-`blocked` (turno terminado) — para eso usar `use_case: resume`.
+`use_case: steer` (see `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`) is used
+ONLY to redirect a sub-agent **while running**. It does NOT apply to the
+`blocked` case (turn ended) — for that use `use_case: resume`.
 
 ---
 
 ## 5. Tool Quick Reference
 
-| Acción | KEY (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`) |
+| Action | KEY (see `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`) |
 | :--- | :--- |
-| Lanzar sub-agente | `use_case: launch` |
-| Leer resultado final | `use_case: read_result` |
-| Redirigir en ejecución | `use_case: steer` |
-| Reanudar un `blocked`/`paused` (mantiene sesión) | `use_case: resume` |
-| Esperar async | `use_case: wait_result` |
+| Launch sub-agent | `use_case: launch` |
+| Read final result | `use_case: read_result` |
+| Redirect while running | `use_case: steer` |
+| Resume a `blocked`/`paused` (keeps session) | `use_case: resume` |
+| Wait async | `use_case: wait_result` |
+
+`use_case: launch` carries the canonical structured-output path: `launch` adds an
+`outputSchema` = `report_status.output_schema` (from `.sdd/sub-agents/
+sub-agents-surface.yaml`) plus `acceptance: { report: "on" }`, which routes each sub-agent
+result through the `structured_output` tool (§1.1). `read_result` reads that captured value.
 
 ---
 
@@ -182,4 +198,4 @@ SOLO para redirigir a un sub-agente **en plena ejecución**. NO aplica al caso
 
 - Workers: `dev-workers/DEV-WORKER.md`, `dev-workers/DEV-UI-WORKER.md`, `dev-workers/DEV-JUDGE.md`, `test-workers/TEST_WORKER.md`, `test-workers/TEST_RUNNER.md`.
 - Orchestrators: `orchestrator/DEVELOP.md`, `orchestrator/DOCS.md`, `orchestrator/develop/DEV-CODER.md`, `orchestrator/develop/TESTING.md`, `orchestrator/develop/testing/FIX.md`, `orchestrator/develop/testing/LOOP.md`, `orchestrator/develop/testing/RUN.md`, `orchestrator/docs/SPEC_UPDATE.md`.
-- Templates: `templates/source/.pi/extensions/agents/*.md` y el espejo `templates/source/.sdd/protocols/agents/SUBAGENT_COMMS.md`.
+- Templates: `templates/source/.pi/extensions/agents/*.md` and the mirror `templates/source/.sdd/protocols/agents/SUBAGENT_COMMS.md`.

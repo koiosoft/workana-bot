@@ -1,0 +1,27 @@
+---
+name: role.architect
+description: Permission profile for role.architect (native permission key).
+permission:
+  tools:
+    "*": allow
+    edit: deny
+    write: deny
+    find_replace: deny
+    replace_in_symbol: deny
+    move_symbol: deny
+  bash:
+    # Default: deny. Only the read-only verbs below are re-opened.
+    "*": deny
+
+    "git log*": allow
+    "git status*": allow
+    "git diff*": allow
+    "grep *": allow
+    "find *": allow
+    "ls *": allow
+    "cat *": allow
+    "head *": allow
+    "tail *": allow
+---
+
+PERMISSION-ONLY profile. No runtime body.

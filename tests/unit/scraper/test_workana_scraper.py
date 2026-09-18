@@ -1,7 +1,9 @@
 """
-Unit tests for the Workana scraper adapter.
-Tests parsing logic, pagination, session handling, and error detection.
+Unit tests for the Workana scraper adapter (patchright engine).
+Tests parsing logic, fresh-context pagination, session gating
+(WORKANA_USE_SESSION) and error detection.
 """
+import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 from datetime import datetime, timezone
@@ -183,8 +185,8 @@ class TestFetchFullDetail:
                 assert "scraped_at_detail" in result
 
 
-class TestGetProjects:
-    """Tests for get_projects method (high-level)."""
+class TestGetProjectsFreshContext:
+    """Tests for get_projects_fresh_context — un contexto nuevo por pagina (Cloudflare-safe)."""
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_projects(self):
@@ -200,11 +202,86 @@ class TestGetProjects:
             mock_page.goto = AsyncMock()
             mock_page.wait_for_selector = AsyncMock()
             mock_page.query_selector_all = AsyncMock(return_value=[])
+            mock_page.title = AsyncMock(return_value="Workana")
             mock_page.content = AsyncMock(return_value="")
             mock_page.screenshot = AsyncMock()
             mock_context.storage_state = AsyncMock()
-            result = await adapter.get_projects()
+            result = await adapter.get_projects_fresh_context()
             assert result == []
+
+    @pytest.mark.asyncio
+    async def test_creates_and_closes_one_context_per_page(self):
+        """Cada página debe abrir su propio contexto y cerrarlo al terminar
+        (clave para que Cloudflare no desafíe la 2ª+ petición)."""
+        adapter = WorkanaScraperAdapter()
+        adapter.max_pages = 2
+
+        def make_item():
+            item = AsyncMock()
+            item.query_selector = AsyncMock(return_value=None)
+            return item
+
+        def make_page(count):
+            page = AsyncMock()
+            page.goto = AsyncMock()
+            page.title = AsyncMock(return_value="Workana")
+            page.wait_for_selector = AsyncMock()
+            page.query_selector_all = AsyncMock(return_value=[make_item() for _ in range(count)])
+            return page
+
+        pages = [make_page(8), make_page(4)]  # pág 2 con menos items -> corta paginación
+        contexts = []
+
+        def new_context(**kwargs):
+            ctx = AsyncMock()
+            idx = len(contexts)
+            ctx.new_page = AsyncMock(return_value=pages[idx])
+            ctx.kwargs = kwargs
+            contexts.append(ctx)
+            return ctx
+
+        with patch('app.scraper.adapters.workana.async_playwright') as mock_pw:
+            mock_browser = AsyncMock()
+            mock_pw.return_value.__aenter__.return_value.chromium.launch = AsyncMock(return_value=mock_browser)
+            mock_browser.new_context = AsyncMock(side_effect=new_context)
+            result = await adapter.get_projects_fresh_context()
+
+        # 2 páginas => 2 contextos distintos, ambos cerrados
+        assert len(contexts) == 2
+        for ctx in contexts:
+            ctx.close.assert_awaited_once()
+        # se cortó en pág 2 por traer menos proyectos que la pág 1 (8 > 4)
+        assert len(contexts) == 2
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_storage_state_not_injected_by_default(self):
+        """WORKANA_USE_SESSION unset/false -> NO se pasa storage_state al contexto."""
+        adapter = WorkanaScraperAdapter()
+        adapter.max_pages = 1
+        captured = {}
+
+        with patch.dict(os.environ, {"WORKANA_USE_SESSION": "false"}), \
+             patch('app.scraper.adapters.workana.async_playwright') as mock_pw:
+            mock_browser = AsyncMock()
+            mock_context = AsyncMock()
+            mock_page = AsyncMock()
+            mock_page.goto = AsyncMock()
+            mock_page.title = AsyncMock(return_value="Workana")
+            mock_page.wait_for_selector = AsyncMock()
+            mock_page.query_selector_all = AsyncMock(return_value=[])
+
+            def new_context(**kwargs):
+                captured.update(kwargs)
+                return mock_context
+
+            mock_pw.return_value.__aenter__.return_value.chromium.launch = AsyncMock(return_value=mock_browser)
+            mock_browser.new_context = AsyncMock(side_effect=new_context)
+            mock_context.new_page = AsyncMock(return_value=mock_page)
+            await adapter.get_projects_fresh_context()
+
+        assert "storage_state" not in captured
+
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+# Orchestrator suite-run module (deterministic): dispatch test-runner-compiled for a suite & write log.
+workflow:
+  name: dev-orchestrator-mod-testing-run
+  kind: orchestrator_module
+  entry: run
+  params: { mode, log_file_path }
+
+phases:
+  run:
+    steps:
+      - launch: test-runner-compiled
+        task: "Mode: ${mode}. Log file: ${log_file_path}. Run all ${mode} tests."
+      - wait_result
+      - branch: return_with          # structured payload to caller (LOOP)
+        args: { success, failing_test_files, error_type }

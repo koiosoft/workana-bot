@@ -19,7 +19,7 @@ category: SDD
 
 #### Implementation (IMPORTANT — avoid role confusion)
 - F-1 and F-2 are **lightweight** steps executed directly (CLI + notification). **No sub-agents required**.
-- F-1: use `write` (artifact `finalization-summary.md`, derived from `workflow summary`). F-2: use `ask_user` / direct message to the user.
+- F-1: use `write` (artifact `finalization-summary.md`, derived from `workflow summary`). F-2: use a notification (`notify`) to the user — **not** a blocking `gate`, since no answer is required.
 - **Prohibited**: launching `sdd-worker`, `test-writer`, or `planner` for F-1/F-2 — violates the scope of these roles (TW-3b: test-worker focuses on a single test case; F-1/F-2 are not testing).
 - If tools are used, prefer `harness: pi` with a lightweight configured model (no providers without an API key).
 
@@ -32,10 +32,10 @@ category: SDD
 
    - If `workflow close` aborts (any artifact not `Completed`), fix the incomplete item(s), re-run their `workflow update`, then re-run `workflow close`. Never bypass it by editing `INDEX.md` or deleting `ACTIVE_CYCLE` manually.
 
-2. Use `ask_user` to display the final summary:
+2. **Notify** the user of the final summary via `notify` (non-blocking — the run continues and stops; no answer is awaited):
    - *"✅ FEATURE Protocol — Complete"*
    - Show the summary table with task status (from `workflow summary`).
    - If tests passed: *"✅ All tests passed."*
    - If tests failed: *"❌ Some tests failed. Check the logs."*
 
-3. **STOP** execution.
+3. **STOP** execution via the `stop` return label (see `sdd-lang.md` §2 — return labels).

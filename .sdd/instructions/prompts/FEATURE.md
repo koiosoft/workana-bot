@@ -31,7 +31,7 @@ fixed — do not rename, add, or omit fields):
     {
       "description": "Atomic, self-contained task description",
       "specification": [
-        "Verbatim clause/rule/example copied from the input REQUIREMENTS.md"
+        "Imperative instruction derived from the input REQUIREMENTS.md — state the exact change, the file path, and the before/after values — followed by relevant context, values, or examples from the source as part of the same natural-language string."
       ],
       "acceptance_criteria": ["criterion 1", "criterion 2", "..."]
     }
@@ -60,11 +60,11 @@ fixed — do not rename, add, or omit fields):
   do NOT include test-writing, test-running, or documentation tasks here.
   Those belong in `unit_tests`, `integration_tests`, or `ui_tests` respectively.
   Each task **MUST** have at least one `acceptance_criteria` entry.
-  Each task **SHOULD** include a `specification` field (array of strings) to capture
-  the verbatim detail from the input REQUIREMENTS.md that directly applies to that
-  task — this is the primary mechanism by which detailed requirements flow from the
-  source document to the implementation. If a task has NO corresponding detail in
-  the input, use an empty array `[]`.
+HX:  Each task **SHOULD** include a `specification` field (array of strings) that contains
+  imperative, actionable instructions derived from the input REQUIREMENTS.md,
+  followed by any relevant context, values, or examples from the source.
+  If a task has NO corresponding detail in the input, use an empty array `[]`.
+BJ:
 
 ---
 
@@ -131,26 +131,33 @@ detailed specifications into each task.
   ``objective`` contains clauses, rules, examples, constraints, or detailed
   specifications that apply to that task. If it does, you MUST include them
   in the task's ``specification`` array.
-- **Copy the relevant text verbatim** — exactly as written in the source, without
-  paraphrasing, rewording, summarizing, condensing, or reinterpreting. Your role
-  is that of a faithful transmitter: the exact original wording must reach
-  downstream tools unchanged.
-- **Never invent, guess, or extrapolate**. If REQUIREMENTS.md says nothing about
+HV:- **Convert each relevant requirement into an imperative instruction** — state
+  the exact change to make, the file path where it applies, and the
+  before/after values. Use actionable verbs ("Add", "Change", "Replace",
+  "Remove", "Wire"). A worker sub-agent must be able to execute it directly.
+  Do NOT copy the source text verbatim as a passive statement; make it a
+  command.
+ZJ:- **Keep the source context attached** — after the imperative instruction,
+  include the relevant values, examples, code snippets, or verbatim wording
+  from the source as part of the SAME natural-language string, so the worker
+  has the exact constants, colors, or references it needs to execute.
+NR:- **Never invent, guess, or extrapolate**. If REQUIREMENTS.md says nothing about
   a topic relevant to a task, use ``[]`` rather than fabricating content.
-- **Granularity matters**: each distinct clause, rule, example, or specification
-  block gets its own array element. Do not merge unrelated clauses into one string.
-- Preserve original formatting: bullets, numbered lists, code snippets, inline
-  emphasis must survive inside each string element.
-- If a single requirement spans multiple paragraphs, split each paragraph into
+DV:- **Granularity matters**: each distinct change/instruction gets its own array
+  element. Do not merge unrelated changes into one string.
+BF:- If a single requirement spans multiple paragraphs, split each paragraph into
   a separate array element.
 
-**Why this is critical:**
-The ``specification`` array is the ONLY channel through which raw requirement
-detail reaches the implementation. It feeds the asset generator which creates
-standalone reference files that sub-agents read during development. If you
-summarize, omit, or reinterpret the source text, the implementation will lack
-the detail it needs — even if the task description and acceptance criteria
-look complete.
+MZ:**Why this is critical:**
+ZJ:The ``specification`` array is the channel through which the implementation
+OJ:detail reaches the worker sub-agent who executes the task. Worker sub-agents
+NY:are trained to follow explicit, imperative instructions; they tend to IGNORE
+GM:passive, descriptive, or reference-only text (tables, "used for" notes,
+IZ:plain clauses). If you emit only verbatim reference text, the worker will not
+XA:know what concrete change to make and the task will be under-delivered. An
+XS:imperative instruction with the source values attached ensures the worker
+YT:executes the intended change correctly.
+NX:
 
 **Example (correct):**
 Input REQUIREMENTS.md:
@@ -160,18 +167,18 @@ Input REQUIREMENTS.md:
    - Session tokens expire after 3600 seconds (1 hour).
    - Refresh tokens are valid for 7 days and rotate on each use.
 ```
-Good ``specification``:
+Good ``specification`` (imperative instruction + source values in one string):
+```json
+["Implement OAuth 2.0 authentication with Google as the provider in `lib/features/auth/services/auth_service.dart`. Session tokens expire after 3600 seconds (1 hour). Refresh tokens are valid for 7 days and rotate on each use."]
+```
+Bad (passive verbatim copy — worker will ignore it):
 ```json
 ["Users must authenticate using OAuth 2.0 with Google as the provider.",
  "Session tokens expire after 3600 seconds (1 hour).",
  "Refresh tokens are valid for 7 days and rotate on each use."]
 ```
-Bad (summarized, loses exact values):
-```json
-["Users authenticate via OAuth 2.0 with Google, tokens expire after some time."]
-```
-The 'bad' example loses ``3600 seconds``, ``1 hour``, ``7 days``, and ``rotate on each use``.
-These details matter for implementation — you MUST preserve them verbatim.
+The 'bad' example is a list of facts; the 'good' example starts with an actionable command and appends the source values so the worker knows both what to do and the exact constants to use.
+These details matter for implementation — you MUST preserve them verbatim as part of the instruction, not as separate items.
 
 
 Remember: your entire response must be a single, valid **pure JSON** object

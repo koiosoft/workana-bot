@@ -1,0 +1,21 @@
+# dev-orchestrator log-preparation module (LOG_PREPARATION.md).
+workflow:
+  name: dev-orchestrator-mod-log-preparation
+  kind: orchestrator_module
+  entry: open
+
+phases:
+  open:
+    steps:
+      - resolve_flag: { FEATURE: --feature, DEBUG: --debug, UPDATE-SPECS: --update-specs, BOOTSTRAP: --bootstrap }
+      - apply: module_log_preparation
+      - capture: LOG_DIR
+      - branch: return_to_caller
+        when: binding_ok
+      - branch: reindex
+        when: binding_mismatch
+
+  reindex:
+    steps:
+      - apply: module_log_preparation
+      - branch: return_to_caller

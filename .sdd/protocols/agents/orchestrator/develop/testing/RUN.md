@@ -30,4 +30,7 @@ category: SDD
    - `failing_test_files`: array of file paths (only if `success == false`)
    - `error_type`: string (only if `error_type == "environment"`)
 
-3. **Return to `LOOP.md`** with the extracted result.
+3. **Return to `LOOP.md`** with the extracted result, via the structured return label
+   `return_with` (see `sdd-lang.md` §2 — return labels) carrying `success`,
+   `failing_test_files`, and `error_type` as structured keys. No prose anchors such as
+   `<return to LOOP ...>`; the payload is data, not text.

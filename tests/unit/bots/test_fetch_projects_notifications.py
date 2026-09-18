@@ -22,7 +22,10 @@ def mock_dependencies():
         mock_repo.return_value.update_project_analysis = AsyncMock()
         mock_repo.return_value.save_scraped_projects = AsyncMock(return_value={"inserted": 0, "existing": 0})
         
-        mock_scraper.get_scraper.return_value.get_projects = AsyncMock()
+        # El handler hace hasattr(scraper, "get_projects_fresh_context") -> True en MagicMock,
+        # asi que el metodo usado realmente es get_projects_fresh_context.
+        mock_scraper.get_scraper.return_value.get_projects_fresh_context = AsyncMock(return_value=[])
+        mock_scraper.get_scraper.return_value.get_projects = AsyncMock(return_value=[])
         
         mock_filter = MagicMock()
         mock_filter.evaluate_projects = AsyncMock()
@@ -34,7 +37,7 @@ def mock_dependencies():
 async def test_notifies_when_no_relevant_projects_found(mock_dependencies):
     mock_repo, mock_scraper, mock_filter = mock_dependencies
     
-    mock_scraper.get_scraper.return_value.get_projects.return_value = [{"link_hash": "1"}]
+    mock_scraper.get_scraper.return_value.get_projects_fresh_context.return_value = [{"link_hash": "1"}]
     mock_repo.return_value.collection.count_documents.return_value = 1
     mock_repo.return_value.claim_pending_projects.side_effect = [[{"link_hash": "1"}], []]
     mock_filter.evaluate_projects.return_value = [{"score": 2}]
@@ -50,7 +53,7 @@ async def test_notifies_when_no_relevant_projects_found(mock_dependencies):
 async def test_notifies_when_relevant_projects_found(mock_dependencies):
     mock_repo, mock_scraper, mock_filter = mock_dependencies
     
-    mock_scraper.get_scraper.return_value.get_projects.return_value = [{"link_hash": "1"}]
+    mock_scraper.get_scraper.return_value.get_projects_fresh_context.return_value = [{"link_hash": "1"}]
     mock_repo.return_value.collection.count_documents.return_value = 1
     mock_repo.return_value.claim_pending_projects.side_effect = [[{"link_hash": "1"}], []]
     mock_filter.evaluate_projects.return_value = [{"score": 8, "title": "Great Project"}]
@@ -66,7 +69,7 @@ async def test_notifies_when_relevant_projects_found(mock_dependencies):
 async def test_notifies_when_no_pending_projects_exist(mock_dependencies):
     mock_repo, mock_scraper, mock_filter = mock_dependencies
     
-    mock_scraper.get_scraper.return_value.get_projects.return_value = []
+    mock_scraper.get_scraper.return_value.get_projects_fresh_context.return_value = []
 
     mock_update = AsyncMock()
     await fetch_projects(update=mock_update, context=AsyncMock())

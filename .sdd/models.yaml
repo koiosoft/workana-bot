@@ -18,7 +18,7 @@ subagents:
   sdd-worker:
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "qwen-token-plan-individual/qwen3.8-flash"
         priority: 1
         thinking: "low"
       - name: "cheap"

@@ -104,7 +104,7 @@ Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
 - The role's fallback chain is advanced **once** per OUTPUT_TOKEN_LIMIT relaunch (track an in-cycle model pointer per `(role, task_id, token-limit)`).
 - If the **last** non-empty model in the chain is exhausted (no next-priority model remains):
   1. Attempt `sdd-judge` arbitration with the partial work and `error_details = "Output token limit with all fallback models exhausted for <role>/<TASK_ID|TEST_ID>"` (DEVELOP.md J-2/J-3), to obtain a directive — typically to **split the task** into smaller sub-tasks so each fits a single model's budget.
-  2. If `sdd-judge` returns `exit 1` (attempt threshold > 3 exceeded) or an unrecoverable error — or when `MODE_AUTO == false` — escalate to `ask_user` (DEVELOP.md J-4/J-5, "All fallback models in `models.yaml` are exhausted"), surfacing the partial work and the reason.
+  2. If `sdd-judge` returns `exit 1` (attempt threshold > 3 exceeded) or an unrecoverable error — or when `MODE_AUTO == false` — escalate to a `gate` (DEVELOP.md J-4/J-5, "All fallback models in `models.yaml` are exhausted"), surfacing the partial work and the reason. The gate is fail-closed: it waits for an explicit user answer and is never satisfied by inference. See `sdd-lang.md` §6.6.
 - **Single-priority roles:** `sdd-judge` and `sdd-doc-updater` have only a single priority in `.sdd/models.yaml`; if they terminate with OUTPUT_TOKEN_LIMIT they skip straight to escalation (J-4/J-5).
 
 ---

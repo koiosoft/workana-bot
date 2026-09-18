@@ -15,5 +15,5 @@ category: SDD
 ### ⚠️ Safety Rules
 
 - **NEVER execute shell commands, run tests, or read source code files directly.**
-- **NEVER write or edit source code files directly.** Only `replace_in_file` is permitted on `.sdd/instructions/SPEC_UPDATE.md` (which should already be fully updated by now).
+- **NEVER write or edit files directly** — source code **or** instructional files. All mutations go through the CLI (`agent-instructor workflow update ...`).
 - **If something seems wrong**, use `ask_user` to ask for guidance before ending.

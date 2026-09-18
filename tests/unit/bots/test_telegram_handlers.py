@@ -98,6 +98,9 @@ async def test_fetch_projects_when_semaphore_is_unlocked(mock_is_admin, mock_get
 
     # Simulamos que el scraper no devuelve proyectos para no ejecutar toda la función
     mock_scraper = MagicMock()
+    # El handler llama get_projects_fresh_context() cuando el scraper lo expone
+    # (hasattr -> True en MagicMock), por eso se mockea ese metodo.
+    mock_scraper.get_projects_fresh_context = AsyncMock(return_value=[])
     mock_scraper.get_projects = AsyncMock(return_value=[])
     mock_scraper_factory.get_scraper.return_value = mock_scraper
     

@@ -1,103 +1,103 @@
 # SDD Sub-agent Surface
 
-## ¿Por qué?
+## Why?
 
-Los protocolos SDD necesitan invocar sub-agentes (workers, judges, test-runners,
-reviewers, doc-updaters) para delegar trabajo. Originalmente la API de invocación
-estaba hardcodeada en los archivos `.md` usando la sintaxis legacy
-(`Agent()`, `get_subagent_result()`, `steer_subagent()`, `subagent_type`,
-`prompt`, `run_in_background`) de la extensión `@tintinweb/pi-subagents`.
+SDD protocols need to invoke sub-agents (workers, judges, test-runners, reviewers,
+doc-updaters) to delegate work. Originally the invocation API was hardcoded in `.md`
+files using the legacy syntax (`Agent()`, `get_subagent_result()`, `steer_subagent()`,
+`subagent_type`, `prompt`, `run_in_background`) of the `@tintinweb/pi-subagents`
+extension.
 
-Esto causaba dos problemas:
+That caused two problems:
 
-1. **Los LLMs orquestadores se confundían** — intentaban llamar `Agent()`
-   (que no existe como tool), o usaban parámetros legacy en vez de los
-   reales. Perdían tiempo reinterpretando.
-2. **Cambiar de shell o extensión requería reescribir todos los protocolos**
-   — la API quedaba acoplada a una implementación concreta.
+1. **Confused orchestration LLMs** — they tried to call `Agent()` (which is not a tool)
+   or used legacy params instead of the real ones, wasting turns re-interpreting.
+2. **Changing shell or extension meant rewriting every protocol** — the API was coupled
+   to a concrete implementation.
 
-## Solución: Surface YAML + KEYs
+## Solution: Surface YAML + KEYs
 
-Cada shell/extension tiene un archivo YAML en este directorio que define la
-**superficie de invocación**: las KEYs de casos de uso que los protocolos referencian.
+Each shell/extension has a YAML file in this directory defining the **invocation surface**:
+the use-case KEYs that the protocols reference.
 
 ```yaml
-# Ejemplo: .sdd/sub-agents/pi/nicobailon-pi-subagents.yaml
+# e.g. .sdd/sub-agents/pi/nicobailon-pi-subagents.yaml
 use_cases:
   launch: subagent({ agent, task, async, model, thinking })
   resume: subagent({ action: "resume", id, message })
 ```
 
-Cuando un protocolo necesita invocar un sub-agente, escribe:
+When a protocol needs to invoke a sub-agent, it writes:
 
 ```markdown
 Via use_case: launch
   agent: "sdd-worker"
-  task: "Implementar TASK001..."
+  task: "Implement TASK001..."
   async: true
 ```
 
-El LLM busca `launch` en el YAML, ve la forma `subagent({ agent, task, async, ... })`
-y completa los valores. **No hay ambigüedad, no hay traducción.**
+The LLM looks up `launch` in the YAML, copies the canonical form
+`subagent({ agent, task, async, ... })`, and fills the values. **No ambiguity, no
+translation.**
 
-## Convención para LLMs orquestadores
+## Convention for orchestrator LLMs
 
-1. Cuando leas `use_case: <key>` en un protocolo, busca la KEY en el YAML del shell activo.
-2. El YAML te da la **forma canónica** de la invocación.
-3. Completa los parámetros con los valores que el protocolo indica.
-4. Si una KEY no existe en el YAML, usa tu criterio general.
+1. When you read `use_case: <key>` in a protocol, look up that KEY in the active shell YAML.
+2. The YAML gives you the **canonical invocation form**.
+3. Fill the parameters with the values the protocol specifies.
+4. If a KEY is not present in the YAML, use general judgment.
 
-## Cómo escribir un nuevo surface YAML
+## How to write a new surface YAML
 
-1. Crea el archivo en `.sdd/sub-agents/<shell>/<nombre>.yaml`.
-2. Define las KEYs que el protocolo necesita. Todas son opcionales —
-   define solo las que tu extensión soporta:
+1. Create the file at `.sdd/sub-agents/<shell>/<name>.yaml`.
+2. Define the KEYs the protocol needs. All are optional — define only what your extension
+   supports:
 
 ```yaml
 use_cases:
-  # Lanzar sub-agente en background
+  # Launch a sub-agent in background.
   # Params: agent, task, async, model, thinking
   launch: <invocation>
 
-  # Reanudar un sub-agente "blocked" o "paused" (tras interrupt/manual)
-  # Conserva el contexto/sesión del sub-agente.
-  # Params: id (del run), message
+  # Resume a "blocked" or "paused" sub-agent (after interrupt/manual).
+  # Preserves the sub-agent context/session.
+  # Params: id (of the run), message
   resume: <invocation>
 
-  # Redirigir un sub-agente en plena ejecución
+  # Redirect a sub-agent in-flight.
   # Params: id, message
   steer: <invocation>
 
-  # Leer resultado de un sub-agente async
+  # Read an async sub-agent result.
   # Params: id
   read_result: <invocation>
 
-  # Esperar a que un async termine y leer resultado
+  # Wait for an async run to finish, then read result.
   # Params: id
   wait_result: <invocation>
 
-  # Consultar estado en vuelo
+  # Check an in-flight status.
   # Params: id
   check_status: <invocation>
 ```
 
-Cada KEY incluye placeholders de parámetros que el protocolo proveerá.
+Each KEY carries parameter placeholders the protocol will supply.
 
-3. Agrega tu archivo a la tabla de la sección Archivos.
+3. Add your file to the table in the Files section.
 
-## Archivos disponibles
+## Available files
 
-| Shell | Extensión | Archivo |
+| Shell | Extension | File |
 |---|---|---|
 | Pi | nicobailon/pi-subagents | `pi/nicobailon-pi-subagents.yaml` |
 
-## Principios de diseño
+## Design principles
 
-- **Determinista y finito**: El protocolo usa ~6 patrones de invocación.
-  Todo lo demás el LLM lo resuelve con criterio general.
-- **KEY obliga a lookup**: El LLM no puede ignorar el YAML porque
-  la KEY no le dice nada sin resolverla.
-- **Desacoplado**: Cambiar de shell = cambiar el YAML. Los protocolos `.md`
-  nunca mencionan tools ni parámetros concretos.
-- **Mínimo**: El YAML solo define lo que el protocolo necesita. No es
-  un catálogo exhaustivo de la API de sub-agentes.
+- **Deterministic and finite**: the protocol uses ~6 invocation patterns. Everything else the
+  LLM resolves by general judgment.
+- **KEY forces a lookup**: the LLM cannot ignore the YAML, because the KEY alone is
+  meaningless until resolved.
+- **Decoupled**: switching shells = switching the YAML. The `.md` protocols never name tools
+  or concrete params.
+- **Minimal**: the YAML defines only what the protocol needs. It is not an exhaustive
+  catalogue of the sub-agent API.

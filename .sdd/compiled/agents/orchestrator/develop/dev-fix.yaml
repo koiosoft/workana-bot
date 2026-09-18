@@ -1,0 +1,16 @@
+# dev-orchestrator test-fix module (FIX.md).
+workflow:
+  name: dev-orchestrator-mod-testing-fix
+  kind: orchestrator_module
+  entry: fix
+  params: { mode, failing_test_files }
+
+phases:
+  fix:
+    steps:
+      - for_each: failing_test_files
+        do:
+          - launch: test-writer-compiled
+            task: "Mode: ${mode}. Operation: FixTest. Test file: ${file}"
+          - wait_result
+      - branch: return_to_caller

@@ -102,7 +102,18 @@ When a per-ACK verdict is `APPROVED`, the orchestrator does **not** manually wri
 When the verdict is `REQUIRES_CORRECTION` (and `rejected_followup` is `false`):
 
 1. Initialize `REVIEW_ITERATION = 1`.
-2. **Register the rejection state** in `.sdd/instructions/${PROTOCOL}.md`:
+2. **Disambiguate the verdict before fixing.** A `REQUIRES_CORRECTION` may be either (a) a
+   mechanical fix in the implementation or (b) a genuine design ambiguity (is the ACK wording
+   wrong, or is the implementation wrong?). The orchestrator must **classify** it:
+   - If the reason is a **mechanical correction** (a concrete, unambiguous defect in the
+     implementation): proceed to fix (step 3).
+   - If the reason signals a **design ambiguity** (e.g. the acceptance criterion text and the
+     implementation disagree on a design decision, naming, or contract): **do NOT decide it
+     locally and do NOT prescribe a fix.** Route it to `sdd-judge` arbitration (see
+     `DEVELOP.md` MODE_AUTO Interruption Handling), then apply the judge's
+     `DIRECTIVE_FOR_WORKER`. The orchestrator **detects and routes**; it never resolves.
+     This is engine-enforced — see `sdd-lang.md` §6.7.
+3. **Register the rejection state** in `.sdd/instructions/${PROTOCOL}.md`:
    ```markdown
    ## Review: REQUIRES_CORRECTION
    ### ${TASK_ID}
@@ -110,7 +121,7 @@ When the verdict is `REQUIRES_CORRECTION` (and `rejected_followup` is `false`):
    - <reason bullet 2>
    ```
    Reason bullets come verbatim from the reviewer's `error_details`.
-3. **Launch a fix worker** for the rejected task — the same worker that originally implemented it (role selected by semantic intent per DEV‑CODER.md W‑3), scoped to the reviewer's reasons:
+4. **Launch a fix worker** for the rejected task — the same worker that originally implemented it (role selected by semantic intent per DEV‑CODER.md W‑3), scoped to the reviewer's reasons:
    ```js
    Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
      agent: "<sdd-worker | sdd-ui-worker>"
@@ -120,17 +131,19 @@ When the verdict is `REQUIRES_CORRECTION` (and `rejected_followup` is `false`):
      async: true
    ```
 > **Context note:** the fix worker receives `${LOG_DIR}/${TASK_ID}.md` (the task file) for implementation context. It does **not** receive the DOD (`DOD-${TASK_ID}.md`) — the DOD is the reviewer's artifact and is not needed for correction work.
-4. When the fix worker completes (`status: "completed"`):
+5. When the fix worker completes (`status: "completed"`):
    - Mark the task re‑completed via CLI: `agent-instructor workflow update --file ${TASK_ID}.md --status completed`.
    - **Re‑review** — return to **R‑2** to launch `sdd-reviewer` again on the same `${TASK_ID}`. The reviewer again receives the DOD file (`DOD-${TASK_ID}.md`) as its primary artifact, exactly as in the initial review (see R‑2 launch template).
    - Increment `REVIEW_ITERATION`.
-5. **Iteration cap:** if `REVIEW_ITERATION` reaches **3** and the verdict is still `REQUIRES_CORRECTION`:
+6. **Iteration cap:** if `REVIEW_ITERATION` reaches **3** and the verdict is still `REQUIRES_CORRECTION`:
    - Append the final iteration's reasons under the existing `## Review: REQUIRES_CORRECTION` block (do not overwrite prior iterations — keep the history).
-   - Invoke `ask_user` with options **Retry / Skip / Abort** (mirrors `testing/LOOP.md` LOOP‑1):
+   - Invoke a `gate` with options **Retry / Skip / Abort** (mirrors `testing/LOOP.md` LOOP‑1):
      - **Retry** → reset `REVIEW_ITERATION` to 1 and return to R‑2.
      - **Skip** → leave the task `REQUIRES_CORRECTION`; mark it `Failed` via `agent-instructor workflow update --file ${TASK_ID}.md --status failed`; return to `ORCHESTRATOR.md`.
-     - **Abort** → stop the cycle (escalate to `ask_user` with full reviewer history).
-   - In `MODE_AUTO == true`, the orchestrator first attempts automated recovery via the next model priority in `.sdd/models.yaml` and `sdd-judge` arbitration (see `DEVELOP.md` safety rules) before escalating to `ask_user`.
+     - **Abort** → stop the cycle (escalate to a `gate` with full reviewer history).
+     - **No-answer contract (fail-closed):** if the gate does not receive an explicit answer,
+       the run stays `blocked` and waits. Consent is never inferred. See `sdd-lang.md` §6.6.
+   - In `MODE_AUTO == true`, the orchestrator first attempts automated recovery via the next model priority in `.sdd/models.yaml` and `sdd-judge` arbitration (see `DEVELOP.md` safety rules) before escalating to the user.
 
 > **Scope note:** the fix‑and‑re‑review loop is scoped **per TASK ID**. Each task carries its own `REVIEW_ITERATION` counter. A task that is re‑approved (`APPROVED`) resets its own counter; it never inherits another task's correction iterations.
 

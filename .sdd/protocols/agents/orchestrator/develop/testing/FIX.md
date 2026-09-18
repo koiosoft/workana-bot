@@ -27,3 +27,6 @@ category: SDD
        thinking: "<low|high|false from model option, omit if undefined>"
        async: true
      ```
+
+3. After all failing files are processed, return to `LOOP.md` via the `return_to_caller` label
+   (see `sdd-lang.md` §2 — return labels). No prose anchors such as `<return to LOOP>`.

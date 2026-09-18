@@ -12,6 +12,7 @@ Tests are skipped if either is not set.
 """
 
 import os
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict
 
@@ -23,6 +24,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.api.main import app
 from app.database.mongo import get_database, ensure_models_collection
+from app.intelligence.adapters.openrouter import OpenRouterAdapter
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("MONGO_URI"),
@@ -166,23 +168,68 @@ class TestRefineProposalIntegration:
     """End-to-end tests that exercise the full refinement pipeline."""
 
     @pytest.mark.asyncio
-    @_skip_no_openrouter
     @pytest.mark.usefixtures("seed_models_for_refine")
     async def test_refine_endpoint_success(
         self,
         test_db: AsyncIOMotorDatabase,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """
-        Full refinement flow with real OpenRouter call:
+        Full refinement flow with a FAKE LLM response (deterministic):
         1. POST /api/proposals/{id}/refine with valid feedback + model.
         2. Assert 200 and response includes project fields.
         3. Assert new version inserted in proposal_versions with
            source_of_changes="IA".
         4. Assert proposal_data does NOT contain refinement_justification.
         5. Assert refinement_justification is stored as a top-level field.
+
+        The HTTP call to OpenRouter is stubbed at ``_chat_completion`` so the
+        adapter's real prompt-rendering and JSON-parsing logic still runs.
+        A live provider call lives in
+        ``TestRefineProposalLive::test_refine_endpoint_live_llm``.
         """
         seeds = await _seed_project_with_proposal(test_db)
         project_id = seeds["project_id"]
+
+        llm_payload = {
+            "refinement_justification": (
+                "Alcance reducido a backend API segun el feedback. "
+                "Se eliminaron tareas de frontend y se ajustaron las horas."
+            ),
+            "proposal": {
+                "proposal_header": "Hola, soy Arquitecto Senior con 24+ anos.",
+                "milestones": [
+                    {
+                        "step": 1,
+                        "name": "Backend API",
+                        "tasks": {
+                            "API Endpoints": {
+                                "description": "Endpoints REST con FastAPI.",
+                                "hours_with_overhead": 24,
+                            }
+                        },
+                        "hours_with_overhead": 24,
+                        "subtotal": 600.0,
+                    }
+                ],
+                "summary": {
+                    "total_hours": 24,
+                    "total_budget": 600.0,
+                    "delivery_time_weeks": 0.8,
+                    "hourly_rate_applied": 25,
+                },
+                "technical_pitch": "Cierre tecnico enfocado en backend puro.",
+                "questions_for_client": ["¿Que proveedor de base de datos usan?"],
+            },
+        }
+
+        async def fake_chat_completion(self, prompt, circuit_breaker=None):
+            # Devolver el JSON tal cual lo haria el LLM
+            return json.dumps(llm_payload, ensure_ascii=False)
+
+        monkeypatch.setattr(
+            OpenRouterAdapter, "_chat_completion", fake_chat_completion
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -342,6 +389,56 @@ class TestRefineProposalIntegration:
             assert response.status_code == 422
 
 
+class TestRefineProposalLive:
+    """Smoke test against the real provider.
+
+    This is the only refine test that hits OpenRouter, so it is inherently
+    flaky (the model occasionally returns malformed JSON or drops the
+    connection).  It asserts only what must hold for a live call: the route
+    completes and either stores a well-formed version or fails cleanly with
+    502.  Behavioural assertions belong to TestRefineProposalIntegration.
+    """
+
+    @pytest.mark.asyncio
+    @_skip_no_openrouter
+    @pytest.mark.usefixtures("seed_models_for_refine")
+    async def test_refine_endpoint_live_llm(
+        self,
+        test_db: AsyncIOMotorDatabase,
+    ) -> None:
+        seeds = await _seed_project_with_proposal(test_db)
+        project_id = seeds["project_id"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                f"/api/proposals/{project_id}/refine",
+                json={
+                    "llm_model_id": "deepseek/deepseek-v4-pro",
+                    "user_feedback_observations": (
+                        "Reduce the total budget to under $1,500 and focus "
+                        "only on the backend API, no frontend."
+                    ),
+                },
+            )
+
+        versions = await test_db.proposal_versions.find(
+            {"project_id": project_id}
+        ).sort("version_number", -1).to_list(length=None)
+
+        if response.status_code == 200:
+            assert len(versions) >= 2
+            latest = versions[0]
+            assert latest["source_of_changes"] == "IA"
+            assert "refinement_justification" not in latest["proposal_data"]
+            assert isinstance(latest.get("refinement_justification"), str)
+        else:
+            # Provider failed (malformed JSON / dropped connection): the
+            # route must fail cleanly and never store an empty version.
+            assert response.status_code == 502
+            assert len(versions) == 1
+
+
 class TestRefineProposalContractType:
     """Integration tests for the contract_type field in the refine endpoint."""
 
@@ -419,15 +516,21 @@ class TestRefineProposalContractType:
             )
 
     @pytest.mark.asyncio
-    @_skip_no_openrouter
     @pytest.mark.usefixtures("seed_models_for_refine")
     async def test_refine_staff_augmentation_uses_refine_staffing_template(
         self,
         test_db: AsyncIOMotorDatabase,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When refining a staff_augmentation project with the same
-        contract_type, the response should contain staffing-specific fields
-        (cover_letter, budget_summary) indicating refine-staffing.j2 was used."""
+        contract_type, the refine-staffing.j2 template must be used AND the
+        stored proposal_data must keep the staffing shape (cover_letter +
+        budget_summary), never the milestone/project-fixed shape.
+
+        The prompt itself is asserted directly (deterministic); the HTTP call
+        to the provider is stubbed with a spec-compliant response so the
+        storage path is still exercised end to end.
+        """
         # Create a project with staff_augmentation contract_type
         project_doc = {
             "title": "Staff Aug Project",
@@ -465,6 +568,59 @@ class TestRefineProposalContractType:
             "created_at": datetime.now(timezone.utc),
             "source_of_changes": "IA",
         })
+
+        # --- 1. Deterministic check: the refine-staffing prompt must ask for
+        # the staffing shape, never the project-fixed (milestones) shape.
+        from jinja2 import Environment, FileSystemLoader
+        prompts_dir = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..",
+            "app", "intelligence", "prompts",
+        )
+        rendered = Environment(
+            loader=FileSystemLoader(prompts_dir)
+        ).get_template("refine-staffing.j2").render(
+            my_profile_skills=["Python"],
+            hourly_rate=25,
+            suggested_hours_per_week=30,
+            project_payload_json="{}",
+            current_proposal_json=json.dumps(current_proposal),
+            user_feedback_observations="Increase hours to 30",
+        )
+        output_contract = rendered[rendered.index("**FORMATO DE SALIDA"):]
+        assert '"cover_letter"' in output_contract
+        assert '"budget_summary"' in output_contract
+        for forbidden in ('"milestones"', '"proposal_header"', '"technical_pitch"'):
+            assert forbidden not in output_contract, (
+                f"refine-staffing.j2 output contract must not declare {forbidden}"
+            )
+
+        # --- 2. Stub the provider call with a spec-compliant staffing answer
+        # so the storage path runs end to end without depending on the LLM.
+        llm_payload = {
+            "refinement_justification": (
+                "Se ajusto la carga horaria a 30 horas semanales y se reforzo "
+                "el enfasis en React Native dentro de la carta."
+            ),
+            "proposal": {
+                "cover_letter": "Hola, perfil senior para dedicacion exclusiva...",
+                "budget_summary": {
+                    "hourly_rate": 25,
+                    "suggested_hours_per_week": 30,
+                    "estimated_monthly_budget": 3000.0,
+                },
+                "questions_for_client": ["Cual es la duracion estimada del rol?"],
+            },
+        }
+
+        captured_prompt: dict = {}
+
+        async def fake_chat_completion(self, prompt, circuit_breaker=None):
+            captured_prompt["value"] = prompt
+            return json.dumps(llm_payload, ensure_ascii=False)
+
+        monkeypatch.setattr(
+            OpenRouterAdapter, "_chat_completion", fake_chat_completion
+        )
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -506,4 +662,9 @@ class TestRefineProposalContractType:
         )
         assert "refinement_justification" in latest, (
             "refinement_justification must be stored as top-level field"
+        )
+
+        # The staffing template (not the project-fixed one) was actually sent
+        assert "cover_letter" in captured_prompt.get("value", ""), (
+            "refine-staffing.j2 was not the prompt sent to the model"
         )

@@ -36,7 +36,8 @@ category: SDD
    - **Task artifact ownership**: the worker sub‑agent completes `${TASK_ID}.md` (the task artifact), writing its technical justification to the Justification section and optionally marking ACK checkboxes in its own `## ACK Checklist`. The worker **owns and edits** `${TASK_ID}.md`. The DOD (`DOD-${TASK_ID}.md`) is **never** edited by the worker — it is maintained exclusively by the CLI via `workflow review` subcommands.
    - **`workflow update --status completed` continues to update `INDEX.md`**: in addition to flipping the `[ ]`/`[x]` marker in the instruction file, the CLI also writes the matching row in `INDEX.md` as `Completed`. This existing behaviour is unchanged — the worker never edits `INDEX.md` directly.
    - If `MODE_AUTO == false`, perform HARD STOP and ask for confirmation before proceeding.
-   - **If the worker result is `status: "blocked"`** (doubt in `question`): do **NOT** mark it `[x]` nor `Failed`. Route to arbitration (see `DEVELOP.md` MODE_AUTO Interruption Handling → `sdd-judge`); if `MODE_AUTO == false`, ask the user via `ask_user`. Then resume the worker with `use_case: resume`.
+   - **If the worker result is `status: "blocked"`** (doubt in `question`): do **NOT** mark it `[x]` nor `Failed`. **Routing to `sdd-judge` is MANDATORY when `MODE_AUTO == true`** — the orchestrator MUST NOT resolve the doubt itself nor prescribe a fix. Delegate to `sdd-judge` (see `DEVELOP.md` MODE_AUTO Interruption Handling J-2); if `MODE_AUTO == false`, ask the user via a `gate` (fail-closed; see `sdd-lang.md` §6.6). Then resume the worker with `use_case: resume`, applying the judge's `DIRECTIVE_FOR_WORKER`.
+   - **Engine-enforced (sdd-lang §6.7):** resolving the ambiguity locally, prescribing implementation in code, or reading source to decide is an engine-enforced violation that ends the run `blocked`. The orchestrator **detects and routes**; it never resolves.
 
 ---
 
@@ -59,7 +60,7 @@ category: SDD
    ```
    Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
      agent: "<sdd-ui-worker | sdd-worker>"
-     task: "Task file: `${LOG_DIR}/${TASK_ID}.md`. Execute the task defined in that file. MANDATORY: return your technical justification (for the Justification section of `${LOG_DIR}/${TASK_ID}.md`) as part of your final result message."
+     task: "Task file: `${LOG_DIR}/${TASK_ID}.md`. Execute the task defined in that file. MANDATORY: Read the ASSET file referenced by `[ASSET: ...]` markers in the task file BEFORE starting implementation and follow its instructions. The ASSET is part of the task spec — its instructions are as binding as the ACK checklist. Do NOT treat asset instructions as scope-widening; they are the implementation details of this task. MANDATORY: return your technical justification (for the Justification section of `${LOG_DIR}/${TASK_ID}.md`) as part of your final result message."
      model: "<resolved-model OR omit if models.yaml absent/undefined>"
      thinking: "<low|high|false from model option, omit if undefined>"
      async: true
