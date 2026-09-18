@@ -1,14 +1,20 @@
+from __future__ import annotations
 import os
 import re
 import json
 import asyncio
-from typing import Any, cast, Optional
+from typing import Any, cast, Optional, Dict
 from google import genai
 import google.genai.errors
 from jinja2 import Environment, FileSystemLoader
 from loguru import logger
 from ..port import IntelligencePort
 from app.exceptions import AIConnectionError
+from app.exceptions import PipelineError
+from pydantic import ValidationError
+from app.models.analysis import RequirementAnalysis
+from app.models.estimate import TechnicalEstimateFull, TechnicalEstimateDiscovery, _assert_hours_consistent
+from app.intelligence.config import get_maturity_threshold
 from typing import TYPE_CHECKING
 from httpx import RemoteProtocolError
 
@@ -87,7 +93,7 @@ class GeminiAdapter(IntelligencePort):
                 "skills": p.get("skills", [])
             })
 
-        template = self.jinja_env.get_template("evaluation.j2")
+        template = self.jinja_env.get_template("s1-analysis/evaluate-project.j2")
         prompt = template.render(
             pro_strategy=self.pro_strategy,
             flash_strategy=self.flash_strategy,
@@ -167,7 +173,7 @@ class GeminiAdapter(IntelligencePort):
             "budget_range": project.get("budget_detail", "N/A")
         }
 
-        template_name = "proposal_staffing.j2" if contract_type == "staff_augmentation" else "proposal.j2"
+        template_name = "s3-commercial/write-proposal-staffing.j2" if contract_type == "staff_augmentation" else "s3-commercial/write-proposal.j2"
 
         
         prompt = self._render_prompt(
@@ -240,7 +246,7 @@ class GeminiAdapter(IntelligencePort):
         regenerating the proposal from scratch.
 
         When *contract_type* is ``"staff_augmentation"`` and the template is not
-        an initial one, the ``refine-staffing.j2`` template is used.
+        an initial one, the ``s4-refine/refine-proposal-staffing.j2`` template is used.
         """
         hourly_rate = 25
         my_skills = [
@@ -268,8 +274,9 @@ class GeminiAdapter(IntelligencePort):
         # -- Template selection ----------------------------------------------
         if use_initial_template:
             template_name = (
-                "proposal_staffing.j2" if contract_type == "staff_augmentation"
-                else "proposal.j2"
+                "s3-commercial/write-proposal-staffing.j2"
+                if contract_type == "staff_augmentation"
+                else "s3-commercial/write-proposal.j2"
             )
             logger.info(
                 f"🔄 Contract type changed → using initial template '{template_name}'"
@@ -281,9 +288,11 @@ class GeminiAdapter(IntelligencePort):
                 project_payload_json=json.dumps(project_payload, indent=2),
             )
         elif contract_type == "staff_augmentation":
-            logger.info("🔁 Staff augmentation refinement → using refine-staffing.j2")
+            logger.info(
+                "🔁 Staff augmentation refinement → using s4-refine/refine-proposal-staffing.j2"
+            )
             prompt = self._render_prompt(
-                "refine-staffing.j2",
+                "s4-refine/refine-proposal-staffing.j2",
                 my_profile_skills=my_skills,
                 hourly_rate=hourly_rate,
                 suggested_hours_per_week=20,
@@ -292,9 +301,11 @@ class GeminiAdapter(IntelligencePort):
                 user_feedback_observations=user_feedback_observations,
             )
         else:
-            logger.info("🔁 Project-fixed refinement → using refine.j2")
+            logger.info(
+                "🔁 Project-fixed refinement → using s4-refine/refine-proposal.j2"
+            )
             prompt = self._render_prompt(
-                "refine.j2",
+                "s4-refine/refine-proposal.j2",
                 project_payload_json=json.dumps(project_payload, indent=2),
                 current_proposal_json=current_proposal_json,
                 user_feedback_observations=user_feedback_observations,
@@ -363,7 +374,7 @@ class GeminiAdapter(IntelligencePort):
         """Formatea la descripción de un proyecto usando IA para mejorar legibilidad."""
         
         prompt = self._render_prompt(
-            "project_formatter.j2",
+            "s1-analysis/format-description.j2",
             raw_description=description
         )
         
@@ -394,6 +405,285 @@ class GeminiAdapter(IntelligencePort):
             logger.error(f"Error inesperado en formateo de descripción: {e}")
             raise e
 
+    # ── Staged pipeline methods (TASK013) ──────────────────────────────────
+
+    async def analyze_requirement(
+        self,
+        project: dict,
+        maturity_threshold: int = 8,
+        circuit_breaker: "CircuitBreaker" | None = None
+    ) -> dict[str, Any]:
+        """Stage 1: analyze the requirement using the STANDARD model.
+
+        Renders ``s2-estimation/analyze-requirement.j2`` with
+        ``response_mime_type="application/json"`` so Gemini returns structured
+        JSON natively.  Validates the parsed JSON against ``RequirementAnalysis``
+        via ``model_validate`` and raises ``PipelineError`` on failure.
+        """
+        full_description = project.get("full_description", project.get("description", ""))
+
+        prompt = self._render_prompt(
+            "s2-estimation/analyze-requirement.j2",
+            full_description=full_description,
+            threshold=maturity_threshold,
+        )
+
+        logger.info("🤖 Stage 1 — analyzing requirement...")
+        self.set_gemini_model(self.flash_strategy)
+        await asyncio.sleep(self.delay_model)
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt,
+                config=dict(response_mime_type="application/json"),
+            )
+
+            if circuit_breaker:
+                circuit_breaker.record_success()
+
+            if response.text is None:
+                logger.warning("La IA no devolvió texto en analyze_requirement.")
+                raise PipelineError("analyze_requirement: LLM returned no text")
+
+            raw_json = json.loads(response.text.strip())
+            validated = RequirementAnalysis.model_validate(raw_json)
+            logger.success("✅ Requirement analysis passed Pydantic validation.")
+            return validated.model_dump(mode="json")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Stage 1 JSON parse error: {e}")
+            raise PipelineError(f"analyze_requirement: invalid JSON from LLM — {e}") from e
+        except ValidationError as e:
+            logger.error(f"Stage 1 Pydantic validation failed: {e}")
+            raise PipelineError(f"analyze_requirement: Pydantic validation failed — {e}") from e
+        except PipelineError:
+            raise
+        except RemoteProtocolError as e:
+            logger.error(f"Conexión interrumpida durante analyze_requirement: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("Servidor de IA interrumpido inesperadamente") from e
+        except google.genai.errors.APIError as e:
+            logger.error(f"Error en API de IA durante analyze_requirement: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError(f"La API de IA falló durante analyze_requirement: {e}") from e
+        except Exception as e:
+            logger.error(f"Error inesperado en analyze_requirement: {e}")
+            raise e
+
+    async def estimate_technical(
+        self,
+        project: dict,
+        analysis: dict,
+        circuit_breaker: "CircuitBreaker" | None = None
+    ) -> dict[str, Any]:
+        """Stage 2: produce a technical estimate based on the requirement analysis.
+
+        Renders ``s2-estimation/estimate-full.j2`` or
+        ``s2-estimation/estimate-discovery.j2`` depending on
+        ``analysis['branch']``, with ``response_mime_type="application/json"``.
+        Validates the parsed JSON against ``TechnicalEstimateFull`` or
+        ``TechnicalEstimateDiscovery`` and raises ``PipelineError`` on failure.
+        """
+        branch = analysis.get("branch", "full")
+        template_name = (
+            "s2-estimation/estimate-full.j2"
+            if branch == "full"
+            else "s2-estimation/estimate-discovery.j2"
+        )
+
+        prompt = self._render_prompt(
+            template_name,
+            analysis_json=json.dumps(analysis, indent=2),
+        )
+
+        logger.info(f"🤖 Stage 2 — technical estimate (branch={branch})...")
+        self.set_gemini_model(self.flash_strategy)
+        await asyncio.sleep(self.delay_model)
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt,
+                config=dict(response_mime_type="application/json"),
+            )
+
+            if circuit_breaker:
+                circuit_breaker.record_success()
+
+            if response.text is None:
+                logger.warning("La IA no devolvió texto en estimate_technical.")
+                raise PipelineError("estimate_technical: LLM returned no text")
+
+            raw_json = json.loads(response.text.strip())
+
+            if branch == "full":
+                validated = TechnicalEstimateFull.model_validate(raw_json)
+                validated = _assert_hours_consistent(validated)
+            else:
+                validated = TechnicalEstimateDiscovery.model_validate(raw_json)
+
+            logger.success(f"✅ Technical estimate (branch={branch}) passed Pydantic validation.")
+            return validated.model_dump(mode="json")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Stage 2 JSON parse error: {e}")
+            raise PipelineError(f"estimate_technical: invalid JSON from LLM — {e}") from e
+        except ValidationError as e:
+            logger.error(f"Stage 2 Pydantic validation failed: {e}")
+            raise PipelineError(f"estimate_technical: Pydantic validation failed — {e}") from e
+        except PipelineError:
+            raise
+        except RemoteProtocolError as e:
+            logger.error(f"Conexión interrumpida durante estimate_technical: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("Servidor de IA interrumpido inesperadamente") from e
+        except google.genai.errors.APIError as e:
+            logger.error(f"Error en API de IA durante estimate_technical: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError(f"La API de IA falló durante estimate_technical: {e}") from e
+        except Exception as e:
+            logger.error(f"Error inesperado en estimate_technical: {e}")
+            raise e
+
+    async def write_commercial_proposal(
+        self,
+        project: dict,
+        technical_estimate: dict,
+        circuit_breaker: "CircuitBreaker" | None = None
+    ) -> dict[str, Any]:
+        """Stage 3: write the commercial proposal from the validated technical estimate.
+
+        Renders ``s3-commercial/write-proposal.j2`` using the PREMIUM model.
+        The ``technical_estimate`` dict (pre-validated by Stage 2) is injected
+        verbatim — no numeric recomputation occurs here.
+        """
+        hourly_rate = 25
+        my_skills = [
+            "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
+            "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
+            "SQL", "MySQL", "PostgreSQL", "MongoDB", "GIT", "Swift", "C#", "Docker",
+            "UML Diagram", "DB Design (E-R)", "REST & GraphQL APIs"
+        ]
+
+        project_payload = {
+            "title": project.get("title", "Proyecto sin título"),
+            "description": project.get("full_description", project.get("description", "N/A")),
+            "skills_required": project.get("skills", []),
+            "budget_range": project.get("budget_detail", "N/A"),
+        }
+
+        prompt = self._render_prompt(
+            "s3-commercial/write-proposal.j2",
+            my_profile_skills=my_skills,
+            hourly_rate=hourly_rate,
+            project_payload_json=json.dumps(project_payload, indent=2),
+            technical_estimate_json=json.dumps(technical_estimate, indent=2),
+        )
+
+        logger.info("🤖 Stage 3 — writing commercial proposal (PREMIUM)...")
+        self.set_gemini_model(self.pro_strategy)
+        await asyncio.sleep(self.delay_model)
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt
+            )
+
+            if circuit_breaker:
+                circuit_breaker.record_success()
+
+            if response.text is None:
+                logger.warning("La IA no devolvió texto en write_commercial_proposal.")
+                return {"error": "No se pudo generar la propuesta, la IA no devolvió contenido."}
+
+            text_response = response.text.strip()
+            match = re.search(r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL)
+            json_part = match.group(1) if match else text_response[text_response.find("{") : text_response.rfind("}") + 1]
+
+            proposal_data = json.loads(json_part)
+            if "questions_for_client" not in proposal_data:
+                proposal_data["questions_for_client"] = []
+
+            # Inject the technical estimate milestones and summary verbatim
+            if "milestones" in technical_estimate:
+                proposal_data["milestones"] = technical_estimate["milestones"]
+            if "summary" in technical_estimate:
+                proposal_data["summary"] = technical_estimate["summary"]
+
+            return proposal_data
+
+        except RemoteProtocolError as e:
+            logger.error(f"Conexión interrumpida durante write_commercial_proposal: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError("Servidor de IA interrumpido inesperadamente") from e
+        except google.genai.errors.APIError as e:
+            logger.error(f"Error en API de IA durante write_commercial_proposal: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            raise AIConnectionError(f"La API de IA falló durante write_commercial_proposal: {e}") from e
+        except Exception as e:
+            logger.error(f"Error inesperado en write_commercial_proposal: {e}")
+            raise e
+
+    async def generate_project_fixed_proposal(
+        self,
+        project: dict,
+        circuit_breaker: "CircuitBreaker" | None = None
+    ) -> dict[str, Any]:
+        """Full staged pipeline for project-fixed proposals.
+
+        Calls ``analyze_requirement`` → ``estimate_technical`` →
+        ``write_commercial_proposal`` in sequence and returns the full accumulated
+        JSON (analysis + estimate + proposal).
+
+        If ``analyze_requirement`` or ``estimate_technical`` raises
+        ``PipelineError``, the orchestrator aborts before calling
+        ``write_commercial_proposal`` (Stage 3 / PREMIUM).  Persistence into
+        ``requirement_analyses``, ``technical_estimates`` and
+        ``proposal_versions`` is NOT the orchestrator's responsibility — the
+        Telegram handler (TASK016) persists.
+        """
+        threshold = get_maturity_threshold()
+        logger.info(f"🚀 Starting project-fixed pipeline with maturity_threshold={threshold}")
+
+        # Stage 1
+        analysis = await self.analyze_requirement(
+            project=project,
+            maturity_threshold=threshold,
+            circuit_breaker=circuit_breaker,
+        )
+        logger.success("✅ Stage 1 complete — requirement analysis done.")
+
+        # Stage 2 (may raise PipelineError → aborts before Stage 3)
+        estimate = await self.estimate_technical(
+            project=project,
+            analysis=analysis,
+            circuit_breaker=circuit_breaker,
+        )
+        logger.success("✅ Stage 2 complete — technical estimate done.")
+
+        # Stage 3 (PREMIUM model call)
+        proposal = await self.write_commercial_proposal(
+            project=project,
+            technical_estimate=estimate,
+            circuit_breaker=circuit_breaker,
+        )
+        logger.success("✅ Stage 3 complete — commercial proposal done.")
+
+        return {
+            "analysis": analysis,
+            "estimate": estimate,
+            "proposal": proposal,
+        }
+
+    # ── Model helpers ──────────────────────────────────────────────────────
     def set_gemini_model(self, strategy = "none") -> str:
         self.model_id = self._filter_model_override or FILTER_MODEL
         if strategy == self.pro_strategy:
@@ -413,7 +703,4 @@ class GeminiAdapter(IntelligencePort):
         if override is not None:
             self.delay_model = float(override)
             
-        return self.delay_model 
-    
-    
-
+        return self.delay_model

@@ -25,3 +25,14 @@ class CircuitBreakerCritical(CircuitBreakerError):
 class CircuitBreakerTrippedError(CircuitBreakerError):
     """Raised for definitive shutdown after max failures."""
     pass
+
+
+class PipelineError(Exception):
+    """Custom exception for pipeline guard-rail validation failures.
+
+    Raised when Stage 1 (analyze-requirement) or Stage 2 (estimate-full /
+    estimate-discovery) LLM output fails Pydantic validation.  The pipeline
+    stops before invoking PREMIUM (Stage 3) when this exception is raised.
+    See plan §7.3 "validacion estricta de salidas JSON".
+    """
+    pass

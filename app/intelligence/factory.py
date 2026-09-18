@@ -75,18 +75,43 @@ async def get_intelligence_service(
 
 
 def select_initial_proposal_template(contract_type: str) -> str:
-    """Return the initial proposal template name for a given contract type.
+    """Return the initial proposal template path for a given contract type.
+
+    The Jinja FileSystemLoader points at the ``prompts/`` root, so the returned
+    value must carry its stage subfolder prefix.
 
     Args:
         contract_type: Either ``"project_fixed"`` or ``"staff_augmentation"``.
 
     Returns:
-        ``"proposal.j2"`` for project-fixed, ``"proposal_staffing.j2"`` for
-        staff augmentation.
+        ``s3-commercial/write-proposal.j2`` for project-fixed and
+        ``s3-commercial/write-proposal-staffing.j2`` for staff augmentation.
     """
     if contract_type == "staff_augmentation":
-        return "proposal_staffing.j2"
-    return "proposal.j2"
+        return "s3-commercial/write-proposal-staffing.j2"
+    return "s3-commercial/write-proposal.j2"
+
+
+def select_estimation_template(
+    maturity_score: float,
+    threshold: float,
+) -> str:
+    """Return the estimation template path based on maturity score.
+
+    The Jinja FileSystemLoader points at the ``prompts/`` root, so the returned
+    value must carry its stage subfolder prefix.
+
+    Args:
+        maturity_score: The project's maturity score (0.0 – 1.0).
+        threshold: The minimum maturity score required for the full estimation template.
+
+    Returns:
+        ``s2-estimation/estimate-full.j2`` when maturity_score >= threshold,
+        otherwise ``s2-estimation/estimate-discovery.j2``.
+    """
+    if maturity_score >= threshold:
+        return "s2-estimation/estimate-full.j2"
+    return "s2-estimation/estimate-discovery.j2"
 
 
 async def refine_proposal(

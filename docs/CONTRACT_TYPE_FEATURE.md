@@ -15,7 +15,7 @@ Optimizar la tasa de conversión de propuestas al adaptar el enfoque comercial s
 
 ### 1. **Detección del Tipo de Contrato (Fase de Evaluación)**
 
-**Archivo**: `app/intelligence/prompts/evaluation.j2`
+**Archivo**: `app/intelligence/prompts/s1-analysis/evaluate-project.j2`
 
 La IA analiza la semántica de la descripción del proyecto durante el comando `/lista` y asigna uno de los siguientes valores:
 
@@ -89,7 +89,7 @@ En el método `generate_proposal()`:
 contract_type = project.get("contract_type", "project_fixed")
 
 # Seleccionamos el template según el tipo de contrato
-template_name = "proposal_staffing.j2" if contract_type == "staff_augmentation" else "proposal.j2"
+template_name = "s3-commercial/write-proposal-staffing.j2" if contract_type == "staff_augmentation" else "s3-commercial/write-proposal.j2"
 
 prompt = self._render_prompt(
     template_name,
@@ -101,14 +101,14 @@ prompt = self._render_prompt(
 
 ### 6. **Templates de Propuesta**
 
-#### 📦 `proposal.j2` - Proyectos Llave en Mano
+#### 📦 `s3-commercial/write-proposal.j2` - Proyectos Llave en Mano
 Genera propuestas con:
 - Hitos estructurados
 - Desglose de tareas técnicas
 - Presupuesto total y horas estimadas
 - Enfoque en arquitectura y entregables
 
-#### 🔧 `proposal_staffing.j2` - Staff Augmentation
+#### 🔧 `s3-commercial/write-proposal-staffing.j2` - Staff Augmentation
 Genera propuestas con:
 - Carta de presentación del perfil profesional
 - Tarifa por hora
@@ -237,9 +237,9 @@ python migrations/main.py
 
 ## 📚 Referencias
 
-- Template de evaluación: `app/intelligence/prompts/evaluation.j2`
-- Template de propuesta fixed: `app/intelligence/prompts/proposal.j2`
-- Template de propuesta staffing: `app/intelligence/prompts/proposal_staffing.j2`
+- Template de evaluación: `app/intelligence/prompts/s1-analysis/evaluate-project.j2`
+- Template de propuesta fixed: `app/intelligence/prompts/s3-commercial/write-proposal.j2`
+- Template de propuesta staffing: `app/intelligence/prompts/s3-commercial/write-proposal-staffing.j2`
 - Repositorio de proyectos: `app/database/projects_repository.py`
 - Handler de Telegram: `app/bots/telegram/handlers.py`
 - Adaptador de IA: `app/intelligence/adapters/gemini.py`

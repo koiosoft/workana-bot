@@ -2,7 +2,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 
-from app.bots.telegram.handlers import status, fetch_projects, unlock_semaphore
+from app.bots.telegram.handlers import status, fetch_projects, unlock_semaphore, process_projects
+from app.database.requirement_analyses_repository import RequirementAnalysesRepository
+from app.database.technical_estimates_repository import TechnicalEstimatesRepository
 
 # Correr con: pytest tests/unit/test_telegram_handlers.py
 
@@ -202,3 +204,165 @@ async def test_unlock_semaphore_when_status_none(mock_is_admin, mock_get_semapho
     mock_update.message.reply_text.assert_called_once()
     call_args, _ = mock_update.message.reply_text.call_args
     assert "El semáforo ya estaba liberado" in call_args[0]
+
+
+# ========== UNIT017 TESTS: contract_type routing ==========
+#
+# These tests verify that process_projects correctly routes to
+# project_fixed staged pipeline vs staff_augmentation generate_proposal
+# based on the project's contract_type field.
+
+
+@pytest.mark.asyncio
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+@patch("app.bots.telegram.handlers.ScraperFactory")
+@patch("app.bots.telegram.handlers.get_projects_repository")
+async def test_process_project_fixed_routes_to_staged_pipeline(
+    mock_get_repo, mock_scraper_factory, mock_is_admin, mock_get_semaphore, 
+    mock_update, mock_context, mock_semaphore
+):
+    """UNIT017: project_fixed contract type routes to generate_project_fixed_proposal.
+
+    The handler should call the PREMIUM adapter's
+    generate_project_fixed_proposal for project_fixed projects.
+    """
+    mock_semaphore.is_locked = AsyncMock(return_value=False)
+    mock_semaphore.acquire = AsyncMock(return_value=True)
+    mock_semaphore.update_activity = AsyncMock()
+    mock_semaphore.release = AsyncMock()
+    mock_get_semaphore.return_value = mock_semaphore
+
+    mock_repo = MagicMock()
+    mock_repo.reset_orphaned_proposals = AsyncMock(return_value=0)
+    mock_repo.get_projects_for_deep_analysis = AsyncMock(
+        return_value=[
+            {"link": "http://example.com/1", "link_hash": "hash1", 
+             "title": "Project 1", "contract_type": "project_fixed"}
+        ]
+    )
+    mock_repo.collection.find_one = AsyncMock(
+        return_value={"_id": "proj123"}
+    )
+    mock_repo.collection.update_one = AsyncMock()
+    mock_repo._proposal_versions = MagicMock()
+    mock_repo._proposal_versions.insert_version = AsyncMock()
+    mock_repo.mark_projects_status = AsyncMock()
+    mock_repo.update_full_details = AsyncMock()
+    mock_get_repo.return_value = mock_repo
+
+    mock_scraper = MagicMock()
+    mock_scraper.fetch_full_detail = AsyncMock(
+        return_value={"full_description": "A good project"}
+    )
+    mock_scraper_factory.get_scraper.return_value = mock_scraper
+
+    # Simulate the intelligence service with mocked adapters
+    mock_standard = MagicMock()
+    mock_standard.format_project_description = AsyncMock(
+        return_value="Formatted description"
+    )
+    mock_premium = MagicMock()
+    mock_premium.generate_project_fixed_proposal = AsyncMock(
+        return_value={
+            "analysis": {"branch": "full", "maturity_score": 8},
+            "estimate": {"estimate_type": "full", "milestones": [], "summary": {}},
+            "proposal": {"proposal_header": "Test"}
+        }
+    )
+
+    with patch(
+        "app.bots.telegram.handlers.create_intelligence_service",
+        AsyncMock(return_value={
+            "STANDARD": mock_standard,
+            "PREMIUM": mock_premium,
+            "FILTER": mock_standard,
+        })
+    ), patch.object(
+        RequirementAnalysesRepository, "insert", AsyncMock(return_value="id1")
+    ), patch.object(
+        TechnicalEstimatesRepository, "insert", AsyncMock(return_value="id2")
+    ):
+        from app.bots.telegram.handlers import process_projects
+        await process_projects(mock_update, mock_context)
+
+    # Verify the staged pipeline was called
+    mock_premium.generate_project_fixed_proposal.assert_awaited_once()
+    # The project dict should have contract_type and full_description
+    call_arg = mock_premium.generate_project_fixed_proposal.call_args[0][0]
+    assert call_arg.get("contract_type") == "project_fixed"
+    assert "full_description" in call_arg
+
+
+@pytest.mark.asyncio
+@patch("app.bots.telegram.handlers.get_process_semaphore")
+@patch("app.bots.telegram.handlers.is_admin", return_value=True)
+@patch("app.bots.telegram.handlers.ScraperFactory")
+@patch("app.bots.telegram.handlers.get_projects_repository")
+async def test_process_staff_augmentation_routes_to_generate_proposal(
+    mock_get_repo, mock_scraper_factory, mock_is_admin, mock_get_semaphore, 
+    mock_update, mock_context, mock_semaphore
+):
+    """UNIT017: staff_augmentation contract type routes to generate_proposal.
+
+    The handler should call the PREMIUM adapter's generate_proposal
+    (the legacy path) for staff_augmentation projects, not the staged pipeline.
+    """
+    mock_semaphore.is_locked = AsyncMock(return_value=False)
+    mock_semaphore.acquire = AsyncMock(return_value=True)
+    mock_semaphore.update_activity = AsyncMock()
+    mock_semaphore.release = AsyncMock()
+    mock_get_semaphore.return_value = mock_semaphore
+
+    mock_repo = MagicMock()
+    mock_repo.reset_orphaned_proposals = AsyncMock(return_value=0)
+    mock_repo.get_projects_for_deep_analysis = AsyncMock(
+        return_value=[
+            {"link": "http://example.com/2", "link_hash": "hash2", 
+             "title": "Staff Project", "contract_type": "staff_augmentation"}
+        ]
+    )
+    mock_repo.collection.find_one = AsyncMock(
+        return_value={"_id": "proj456"}
+    )
+    mock_repo.collection.update_one = AsyncMock()
+    mock_repo.mark_projects_status = AsyncMock()
+    mock_repo.update_full_details = AsyncMock()
+    mock_repo.update_project_proposal = AsyncMock()
+    mock_get_repo.return_value = mock_repo
+    mock_repo.mark_projects_status = AsyncMock()
+    mock_repo.update_full_details = AsyncMock()
+    mock_repo.update_project_proposal = AsyncMock()
+    mock_get_repo.return_value = mock_repo
+
+    mock_scraper = MagicMock()
+    mock_scraper.fetch_full_detail = AsyncMock(
+        return_value={"full_description": "Need developers"}
+    )
+    mock_scraper_factory.get_scraper.return_value = mock_scraper
+
+    # Simulate the intelligence service with mocked adapters
+    mock_standard = MagicMock()
+    mock_standard.format_project_description = AsyncMock(
+        return_value="Formatted"
+    )
+    mock_premium = MagicMock()
+    mock_premium.generate_proposal = AsyncMock(
+        return_value={"cover_letter": "Dear client", "budget_summary": {}}
+    )
+
+    with patch(
+        "app.bots.telegram.handlers.create_intelligence_service",
+        AsyncMock(return_value={
+            "STANDARD": mock_standard,
+            "PREMIUM": mock_premium,
+            "FILTER": mock_standard,
+        })
+    ):
+        from app.bots.telegram.handlers import process_projects
+        await process_projects(mock_update, mock_context)
+
+    # Verify the legacy generate_proposal was called (staffing path)
+    mock_premium.generate_proposal.assert_awaited_once()
+    # Verify project_fixed pipeline was NOT called
+    assert mock_premium.generate_project_fixed_proposal.call_count == 0

@@ -46,3 +46,48 @@ class IntelligencePort(ABC):
     ) -> str:
         """Formatea la descripción de un proyecto para mejorar su legibilidad."""
         pass
+
+    @abstractmethod
+    async def analyze_requirement(
+        self,
+        project: dict,
+        maturity_threshold: int = 8,
+        circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> dict[str, Any]:
+        """Analiza el requerimiento del proyecto usando el pipeline por etapas."""
+        pass
+
+    @abstractmethod
+    async def estimate_technical(
+        self,
+        project: dict,
+        analysis: dict,
+        circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> dict[str, Any]:
+        """Estima técnicamente el proyecto basado en el análisis de requerimientos."""
+        pass
+
+    @abstractmethod
+    async def write_commercial_proposal(
+        self,
+        project: dict,
+        technical_estimate: dict,
+        circuit_breaker: Optional["CircuitBreaker"] = None
+    ) -> dict[str, Any]:
+        """Escribe la propuesta comercial basada en la estimación técnica."""
+        pass
+    @abstractmethod
+    async def generate_project_fixed_proposal(
+        self,
+        project: dict,
+        circuit_breaker: Optional["CircuitBreaker"] = None,
+    ) -> dict[str, Any]:
+        """Orquesta el pipeline por etapas (Etapa 1 -> 2 -> 3) para project_fixed.
+
+        Devuelve el JSON **acumulado** (``analysis`` + ``estimate`` + ``proposal``).
+        La persistencia en ``requirement_analyses``, ``technical_estimates`` y
+        ``proposal_versions`` NO es responsabilidad del orquestador: la realiza el
+        handler de Telegram (TASK016), único punto con acceso a ``project_id`` y
+        ``link_hash``.
+        """
+        pass

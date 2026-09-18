@@ -265,13 +265,71 @@ Plazo: 6-8 semanas
 
 | Aspecto | Staff Augmentation | Proyecto Fijo |
 |---------|-------------------|---------------|
-| **Template Usado** | `proposal_staffing.j2` | `proposal.j2` |
+| **Template Usado** | `s3-commercial/write-proposal-staffing.j2` | `s3-commercial/write-proposal.j2` |
 | **Enfoque** | Presentación de perfil | Solución técnica con hitos |
 | **Presupuesto** | Tarifa por hora + estimado mensual | Presupuesto total + desglose |
 | **Estructura** | Cover letter + budget_summary | Header + milestones + pitch |
 | **Duración** | Indefinida o largo plazo | Definida en semanas |
 | **Entregables** | Horas de trabajo | Productos/funcionalidades |
 | **Riesgo** | Bajo (pago por tiempo) | Medio (alcance fijo) |
+
+
+---
+
+## 🏗️ Pipeline por Etapas para Proyectos Fijos (project_fixed)
+
+A partir de la versión con pipeline por etapas, los proyectos detectados como ``project_fixed`` siguen un proceso de 4 etapas en lugar de la generación directa de propuesta:
+
+### Las 4 Etapas del Pipeline
+
+| Etapa | Método | Template | Modelo | Descripción |
+|-------|--------|----------|--------|-------------|
+| **1** | ``analyze_requirement`` | ``s2-estimation/analyze-requirement.j2`` | STANDARD (Flash) | Analiza el requerimiento del proyecto, determina madurez y ramifica |
+| **2A** | ``estimate_technical`` (rama ``full``) | ``s2-estimation/estimate-full.j2`` | STANDARD (Flash) | Estimación técnica completa con hitos detallados |
+| **2B** | ``estimate_technical`` (rama ``discovery``) | ``s2-estimation/estimate-discovery.j2`` | STANDARD (Flash) | Estimación exploratoria para proyectos de baja madurez |
+| **3** | ``write_commercial_proposal`` | ``s3-commercial/write-proposal.j2`` | PREMIUM (Pro) | Redacción de propuesta comercial con pitch técnico |
+| **4** | ``refine_proposal`` | ``s4-refine/refine-proposal.j2`` | Modelo configurable | Refinamiento de propuesta con feedback del usuario |
+
+El flujo completo se orquesta en ``generate_project_fixed_proposal()``, que encadena Etapa 1 → Etapa 2 → Etapa 3 y devuelve el JSON acumulado (``analysis`` + ``estimate`` + ``proposal``). La Etapa 4 (``refine_proposal``) se invoca por separado cuando el usuario solicita refinamiento.
+
+### MATURITY_THRESHOLD y la Regla de Ramificación
+
+La variable de entorno ``MATURITY_THRESHOLD`` (default: ``8``) controla si un proyecto recibe estimación completa o exploratoria:
+
+- **``MATURITY_THRESHOLD``** se lee de ``os.environ`` con valor por defecto ``8``.
+- **Regla**: Si el ``maturity_score`` (0–10) del análisis es **>=** al threshold → se usa la rama ``full`` (Etapa 2A).
+- Si el ``maturity_score`` es **<** al threshold → se usa la rama ``discovery`` (Etapa 2B).
+- Un proyecto con ``maturity_score >= 8`` se considera maduro y recibe estimación completa con hitos detallados.
+- Un proyecto con ``maturity_score < 8`` recibe una estimación exploratoria (Discovery), diseñada para clarificar alcance en proyectos ambiguos.
+
+Configuración:
+
+```bash
+# Usar el valor por defecto (8)
+export MATURITY_THRESHOLD=8
+
+# Umbral más estricto — solo proyectos muy maduros reciben estimación completa
+export MATURITY_THRESHOLD=9
+
+# Umbral más permisivo — más proyectos reciben estimación completa
+export MATURITY_THRESHOLD=6
+```
+
+### Staff Augmentation se Mantiene Sin Cambios
+
+Los proyectos detectados como ``staff_augmentation`` continúan usando el flujo directo existente:
+
+- **Template**: ``s3-commercial/write-proposal-staffing.j2`` (generación directa, sin pipeline por etapas).
+- **Refinamiento**: ``s4-refine/refine-proposal-staffing.j2``.
+- No participan del pipeline de 4 etapas ni de la evaluación de madurez.
+
+### Interfaces Externas Sin Cambios
+
+Las interfaces externas no se modifican:
+
+- **API REST**: Los endpoints existentes continúan funcionando con la misma semántica. No se introducen nuevos endpoints para el pipeline.
+- **Comandos de Telegram**: La salida de ``/lista`` y ``/procesar`` mantiene el mismo formato. No hay cambios visibles para el usuario final.
+- **Base de datos**: Los campos ``requirement_analyses``, ``technical_estimates`` y ``proposal_versions`` son colecciones internas gestionadas por el handler de Telegram.
 
 ---
 

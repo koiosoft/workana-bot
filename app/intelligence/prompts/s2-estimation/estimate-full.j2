@@ -1,0 +1,108 @@
+{#- Jinja2 template: estimate-full.j2
+  Stage 2A — Technical Estimate Generator
+  Consumes analysis_json (Stage 1 RequirementAnalysis output).
+  Produces purely technical numbers and structure, consumed by Stage 3.
+  No commercial or persuasive text is generated in this stage.
+-#}
+{%- set analysis = analysis_json -%}
+{%- set HOURLY_RATE = 45 -%}
+{%- set MINIMUM_HOURS = 270 -%}
+{%- set BASE_WEEKLY_HOURS = 40 -%}
+{%- set OVERHEAD_MULTIPLIER = 1.25 -%}
+{%- set TECHNICAL_FLOOR_HOURS = 40 -%}
+{%- set SAFETY_MARGIN = 0.15 -%}
+{%- set COMPLEXITY_MULTIPLIERS = {"low": 1.0, "medium": 1.2, "high": 1.5} -%}
+{%- set DELIVERY_MULTIPLIERS = {"standard": 1.0, "expedited": 1.3, "urgent": 1.6} -%}
+{%- macro with_overhead(base_hours) -%}
+  {{ (base_hours * OVERHEAD_MULTIPLIER) | round(0, 'ceil') | int }}
+{%- endmacro -%}
+{%- macro subtotal(hours) -%}
+  {{ (hours * HOURLY_RATE) | round(2) }}
+{%- endmacro -%}
+
+{%- if analysis is defined and analysis.requirements is defined -%}
+  {%- set req_count = analysis.requirements | length -%}
+{%- else -%}
+  {%- set req_count = 0 -%}
+{%- endif -%}
+{%- if analysis is defined and analysis.complexity is defined -%}
+  {%- set complexity = analysis.complexity | lower -%}
+{%- else -%}
+  {%- set complexity = "medium" -%}
+{%- endif -%}
+{%- if analysis is defined and analysis.delivery_pace is defined -%}
+  {%- set delivery_pace = analysis.delivery_pace | lower -%}
+{%- else -%}
+  {%- set delivery_pace = "standard" -%}
+{%- endif -%}
+{%- set complexity_mult = COMPLEXITY_MULTIPLIERS[complexity] | default(1.2) -%}
+{%- set delivery_mult = DELIVERY_MULTIPLIERS[delivery_pace] | default(1.0) -%}
+
+{%- set base_hours = (req_count * 16 * complexity_mult * delivery_mult) | round(0, 'ceil') | int -%}
+{%- set raw_total = [base_hours, MINIMUM_HOURS] | max -%}
+{%- set total_hours = [raw_total, TECHNICAL_FLOOR_HOURS * 3] | max -%}
+
+{%- set safety_hours = (total_hours * SAFETY_MARGIN) | round(0, 'ceil') | int -%}
+{%- set grand_total_hours = total_hours + safety_hours -%}
+
+{%- if grand_total_hours < 200 -%}
+  {%- set milestone_count = 2 -%}
+{%- elif grand_total_hours <= 500 -%}
+  {%- set milestone_count = 3 -%}
+{%- else -%}
+  {%- set milestone_count = 4 -%}
+{%- endif -%}
+{%- set milestone_hours = (grand_total_hours / milestone_count) | round(0, 'ceil') | int -%}
+{%- set milestone_names = ["Foundation & Setup", "Core Implementation", "Integration & Polish", "Deployment & Handover"] -%}
+
+{%- if analysis is defined and analysis.requirements is defined and analysis.requirements | length > 0 -%}
+  {%- set reqs_per_milestone = (analysis.requirements | length / milestone_count) | round(0, 'ceil') | int -%}
+{%- else -%}
+  {%- set reqs_per_milestone = 3 -%}
+{%- endif -%}
+
+{%- set delivery_weeks = (grand_total_hours / BASE_WEEKLY_HOURS) | round(0, 'ceil') | int -%}
+{%- set total_budget = grand_total_hours * HOURLY_RATE -%}
+
+{%- set milestones = [] -%}
+{%- for i in range(milestone_count) -%}
+  {%- set step = i + 1 -%}
+  {%- set ms_name = milestone_names[i] -%}
+  {%- set ms_hours = with_overhead(milestone_hours) -%}
+  {%- set ms_subtotal = subtotal(ms_hours) -%}
+  {%- set tasks = {} -%}
+  {%- if analysis is defined and analysis.requirements is defined -%}
+    {%- set start_idx = i * reqs_per_milestone -%}
+    {%- set end_idx = ((i + 1) * reqs_per_milestone) | min(analysis.requirements | length) -%}
+    {%- for j in range(start_idx, end_idx) -%}
+      {%- set req = analysis.requirements[j] -%}
+      {%- set task_name = req.name | default("task_" ~ (j + 1)) -%}
+      {%- set _ = tasks.update({task_name: {
+        "description": req.description | default(""),
+        "hours_with_overhead": ms_hours
+      }}) -%}
+    {%- endfor -%}
+  {%- else -%}
+    {%- set _ = tasks.update({"task_1": {
+      "description": "General implementation work",
+      "hours_with_overhead": ms_hours
+    }}) -%}
+  {%- endif -%}
+  {%- set _ = milestones.append({
+    "step": step,
+    "name": ms_name,
+    "tasks": tasks,
+    "hours_with_overhead": ms_hours,
+    "subtotal": ms_subtotal
+  }) -%}
+{%- endfor -%}
+
+{
+  "milestones": {{ milestones | tojson(indent=2) }},
+  "summary": {
+    "total_hours": {{ grand_total_hours }},
+    "total_budget": {{ total_budget }},
+    "delivery_time_weeks": {{ delivery_weeks }},
+    "hourly_rate_applied": {{ HOURLY_RATE }}
+  }
+}

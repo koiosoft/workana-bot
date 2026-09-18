@@ -523,7 +523,7 @@ class TestRefineProposalContractType:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When refining a staff_augmentation project with the same
-        contract_type, the refine-staffing.j2 template must be used AND the
+        contract_type, the s4-refine/refine-proposal-staffing.j2 template must be used AND the
         stored proposal_data must keep the staffing shape (cover_letter +
         budget_summary), never the milestone/project-fixed shape.
 
@@ -578,7 +578,7 @@ class TestRefineProposalContractType:
         )
         rendered = Environment(
             loader=FileSystemLoader(prompts_dir)
-        ).get_template("refine-staffing.j2").render(
+        ).get_template("s4-refine/refine-proposal-staffing.j2").render(
             my_profile_skills=["Python"],
             hourly_rate=25,
             suggested_hours_per_week=30,
@@ -591,7 +591,7 @@ class TestRefineProposalContractType:
         assert '"budget_summary"' in output_contract
         for forbidden in ('"milestones"', '"proposal_header"', '"technical_pitch"'):
             assert forbidden not in output_contract, (
-                f"refine-staffing.j2 output contract must not declare {forbidden}"
+                f"s4-refine/refine-proposal-staffing.j2 output contract must not declare {forbidden}"
             )
 
         # --- 2. Stub the provider call with a spec-compliant staffing answer
@@ -666,5 +666,284 @@ class TestRefineProposalContractType:
 
         # The staffing template (not the project-fixed one) was actually sent
         assert "cover_letter" in captured_prompt.get("value", ""), (
-            "refine-staffing.j2 was not the prompt sent to the model"
+            "s4-refine/refine-proposal-staffing.j2 was not the prompt sent to the model"
+        )
+
+
+
+# ---------------------------------------------------------------------------
+# INT001: Template path assertions — factory functions return subfolder paths
+# ---------------------------------------------------------------------------
+
+
+class TestProposalTemplatePaths:
+    """INT001: Validate that factory template-path functions return subfolder-
+    prefixed paths compatible with the Jinja FileSystemLoader."""
+
+    def _import_select_initial_template(self):
+        from app.intelligence.factory import select_initial_proposal_template
+        return select_initial_proposal_template
+
+    def _import_select_estimation_template(self):
+        from app.intelligence.factory import select_estimation_template
+        return select_estimation_template
+
+
+    def test_select_initial_proposal_template_project_fixed(self) -> None:
+        """project_fixed contract type → 's3-commercial/write-proposal.j2'"""
+        fn = self._import_select_initial_template()
+        path = fn("project_fixed")
+        assert path == "s3-commercial/write-proposal.j2", (
+            f"Expected s3-commercial subfolder path, got {path}"
+        )
+        # Verify the template file actually exists at that path
+        import os
+        template_file = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..",
+            "app", "intelligence", "prompts", path,
+        )
+        assert os.path.exists(template_file), (
+            f"Template file not found at {template_file}"
+        )
+
+    def test_select_initial_proposal_template_staff_augmentation(self) -> None:
+        """staff_augmentation contract type →
+        's3-commercial/write-proposal-staffing.j2'"""
+        fn = self._import_select_initial_template()
+        path = fn("staff_augmentation")
+        assert path == "s3-commercial/write-proposal-staffing.j2", (
+            f"Expected s3-commercial subfolder path, got {path}"
+        )
+
+    def test_select_estimation_template_full(self) -> None:
+        """maturity_score >= threshold → 's2-estimation/estimate-full.j2'"""
+        from app.intelligence.config import get_maturity_threshold
+        fn = self._import_select_estimation_template()
+        path = fn(9.0, get_maturity_threshold())
+        assert path == "s2-estimation/estimate-full.j2", (
+            f"Expected s2-estimation subfolder path, got {path}"
+        )
+    def test_select_estimation_template_discovery(self) -> None:
+        """maturity_score < threshold → 's2-estimation/estimate-discovery.j2'"""
+        from app.intelligence.config import get_maturity_threshold
+        fn = self._import_select_estimation_template()
+        path = fn(4.0, get_maturity_threshold())
+        assert path == "s2-estimation/estimate-discovery.j2", (
+            f"Expected s2-estimation subfolder path, got {path}"
+        )
+    def test_select_estimation_template_at_threshold(self) -> None:
+        """maturity_score == threshold → full template (>= threshold)"""
+        from app.intelligence.config import get_maturity_threshold
+        fn = self._import_select_estimation_template()
+        path = fn(8.0, get_maturity_threshold())
+        assert path == "s2-estimation/estimate-full.j2"
+# ---------------------------------------------------------------------------
+# INT002: GET/POST endpoints expose proposal in same format,
+#          no intermediate artifacts
+# ---------------------------------------------------------------------------
+
+
+class TestProposalGetPostConsistency:
+    """INT002: Verify that GET /api/projects/{id} and POST /api/proposals/{id}/refine
+    return the project with the same proposal structure and no intermediate
+    fields leaking into the response."""
+
+    @pytest.mark.asyncio
+    async def test_refine_response_has_same_fields_as_get_project(
+        self,
+        test_db: AsyncIOMotorDatabase,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """
+        After refinement, the POST response must have the same shape as a
+        subsequent GET /api/projects/{id} response: both must include
+        ``proposal``, ``proposal_version_number`` and omit intermediate
+        internal fields like ``proposal_data`` or ``refinement_justification``.
+        """
+        seeds = await _seed_project_with_proposal(test_db)
+        project_id = seeds["project_id"]
+
+        llm_payload = {
+            "refinement_justification": "Simplified scope.",
+            "proposal": {
+                "proposal_header": "Hola, soy Arquitecto Senior.",
+                "milestones": [
+                    {
+                        "step": 1,
+                        "name": "API Core",
+                        "tasks": {
+                            "Endpoints": {
+                                "description": "REST endpoints.",
+                                "hours_with_overhead": 20,
+                            }
+                        },
+                        "hours_with_overhead": 20,
+                        "subtotal": 500.0,
+                    }
+                ],
+                "summary": {
+                    "total_hours": 20,
+                    "total_budget": 500.0,
+                    "delivery_time_weeks": 1.0,
+                    "hourly_rate_applied": 25,
+                },
+                "technical_pitch": "Backend API.",
+                "questions_for_client": ["Auth method?"],
+            },
+        }
+
+        async def fake_chat_completion(self, prompt, circuit_breaker=None):
+            return json.dumps(llm_payload, ensure_ascii=False)
+
+        monkeypatch.setattr(
+            OpenRouterAdapter, "_chat_completion", fake_chat_completion
+        )
+
+        # 1. POST to refine
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            post_resp = await ac.post(
+                f"/api/proposals/{project_id}/refine",
+                json={
+                    "llm_model_id": "deepseek/deepseek-v4-pro",
+                    "user_feedback_observations": "Simplify.",
+                },
+            )
+
+        assert post_resp.status_code == 200, post_resp.text
+        post_data = post_resp.json()
+
+        # 2. GET the same project
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            get_resp = await ac.get(f"/api/projects/{project_id}")
+
+        assert get_resp.status_code == 200, get_resp.text
+        get_data = get_resp.json()
+
+        # 3. Compare proposal structure and values
+        for key in ("proposal", "proposal_version_number"):
+            assert key in post_data, (
+                f"POST response missing '{key}' — intermediate artifacts may be leaking"
+            )
+            assert key in get_data, (
+                f"GET response missing '{key}'"
+            )
+
+        # The proposal_data must be identical (same version)
+        assert post_data["proposal"] == get_data["proposal"], (
+            "POST and GET must return the same proposal data"
+        )
+        assert post_data["proposal_version_number"] == get_data["proposal_version_number"], (
+            "POST and GET must return the same version number"
+        )
+
+        # No internal / intermediate fields should leak into the response
+        forbidden_keys = {"proposal_data", "refinement_justification", "source_of_changes"}
+        for key in forbidden_keys:
+            assert key not in post_data, (
+                f"POST response must not contain internal field '{key}'"
+            )
+            assert key not in get_data, (
+                f"GET response must not contain internal field '{key}'"
+            )
+
+
+# ---------------------------------------------------------------------------
+# INT009: External contract — proposal_versions validates against
+#          MilestoneProposal; GET exposes correct structure
+# ---------------------------------------------------------------------------
+
+
+class TestProposalExternalContract:
+    """INT009: Verify that proposal_versions documents conform to the
+    MilestoneProposal contract expected by the external dashboard.
+    The proposal_data stored must carry the fields that the frontend
+    dashboard expects: proposal_header, milestones, summary, technical_pitch,
+    questions_for_client."""
+
+    @pytest.mark.asyncio
+    async def test_proposal_version_milestone_proposal_contract(
+        self,
+        test_db: AsyncIOMotorDatabase,
+    ) -> None:
+        """The proposal_data stored in proposal_versions must include all
+        fields of the MilestoneProposal contract."""
+        seeds = await _seed_project_with_proposal(test_db)
+        project_id = seeds["project_id"]
+
+        # Read the proposal version that was seeded
+        version = await test_db.proposal_versions.find_one(
+            {"project_id": project_id},
+            sort=[("version_number", -1)],
+        )
+        assert version is not None, "Seed should have created a proposal version"
+
+        proposal_data = version["proposal_data"]
+
+        # The MilestoneProposal contract requires all of these top-level fields
+        contract_fields = [
+            "proposal_header",
+            "milestones",
+            "summary",
+            "technical_pitch",
+            "questions_for_client",
+        ]
+        for field in contract_fields:
+            assert field in proposal_data, (
+                f"MilestoneProposal contract requires '{field}' in proposal_data, "
+                f"but it's missing. Available: {list(proposal_data.keys())}"
+            )
+
+        # Validate structure of milestones entries
+        assert isinstance(proposal_data["milestones"], list), (
+            "milestones must be a list"
+        )
+        if len(proposal_data["milestones"]) > 0:
+            milestone = proposal_data["milestones"][0]
+            for mfield in ("step", "name", "tasks", "hours_with_overhead", "subtotal"):
+                assert mfield in milestone, (
+                    f"Each milestone must contain '{mfield}'"
+                )
+
+        # Validate structure of summary
+        summary = proposal_data["summary"]
+        for sfield in ("total_hours", "total_budget", "delivery_time_weeks", "hourly_rate_applied"):
+            assert sfield in summary, (
+                f"Summary must contain '{sfield}'"
+            )
+
+    @pytest.mark.asyncio
+    async def test_get_exposes_correct_proposal_structure(
+        self,
+        test_db: AsyncIOMotorDatabase,
+    ) -> None:
+        """GET /api/projects/{id} must expose the proposal with the
+        MilestoneProposal shape from proposal_versions."""
+        seeds = await _seed_project_with_proposal(test_db)
+        project_id = seeds["project_id"]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(f"/api/projects/{project_id}")
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+
+        # The response must include proposal as a nested object
+        assert "proposal" in data, "GET response must include 'proposal' field"
+        proposal = data["proposal"]
+        assert proposal is not None, "Proposal must not be null"
+
+        # Must have full MilestoneProposal shape
+        for field in ("proposal_header", "milestones", "summary", "technical_pitch", "questions_for_client"):
+            assert field in proposal, (
+                f"Proposal must contain '{field}', got keys: {list(proposal.keys())}"
+            )
+
+        # Response must carry version metadata
+        assert "proposal_version_number" in data, (
+            "GET response must include proposal_version_number"
+        )
+        assert isinstance(data["proposal_version_number"], int), (
+            "proposal_version_number must be an integer"
         )

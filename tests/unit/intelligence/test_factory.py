@@ -491,16 +491,45 @@ class TestSelectInitialProposalTemplate:
 
     def test_returns_proposal_j2_for_project_fixed(self) -> None:
         result = factory.select_initial_proposal_template("project_fixed")
-        assert result == "proposal.j2"
+        assert result == "s3-commercial/write-proposal.j2"
 
     def test_returns_proposal_staffing_j2_for_staff_augmentation(self) -> None:
         result = factory.select_initial_proposal_template("staff_augmentation")
-        assert result == "proposal_staffing.j2"
+        assert result == "s3-commercial/write-proposal-staffing.j2"
 
     def test_defaults_to_proposal_j2_for_unknown_type(self) -> None:
-        """Any unrecognized contract type falls back to proposal.j2."""
+        """Any unrecognized contract type falls back to s3-commercial/write-proposal.j2."""
         result = factory.select_initial_proposal_template("unknown_type")
-        assert result == "proposal.j2"
+        assert result == "s3-commercial/write-proposal.j2"
+
+
+# ---------------------------------------------------------------------------
+# select_estimation_template
+# ---------------------------------------------------------------------------
+
+
+class TestSelectEstimationTemplate:
+    """Tests for ``select_estimation_template``."""
+
+    def test_returns_full_j2_when_maturity_exceeds_threshold(self) -> None:
+        result = factory.select_estimation_template(0.8, 0.5)
+        assert result == "s2-estimation/estimate-full.j2"
+
+    def test_returns_full_j2_when_maturity_equals_threshold(self) -> None:
+        result = factory.select_estimation_template(0.5, 0.5)
+        assert result == "s2-estimation/estimate-full.j2"
+
+    def test_returns_discovery_j2_when_maturity_below_threshold(self) -> None:
+        result = factory.select_estimation_template(0.3, 0.5)
+        assert result == "s2-estimation/estimate-discovery.j2"
+
+    def test_returns_discovery_j2_for_zero_maturity(self) -> None:
+        result = factory.select_estimation_template(0.0, 0.5)
+        assert result == "s2-estimation/estimate-discovery.j2"
+
+    def test_returns_full_j2_for_perfect_maturity(self) -> None:
+        result = factory.select_estimation_template(1.0, 0.5)
+        assert result == "s2-estimation/estimate-full.j2"
 
 
 # ---------------------------------------------------------------------------

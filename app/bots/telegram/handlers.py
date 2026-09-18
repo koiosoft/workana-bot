@@ -1,13 +1,16 @@
 import os
 import asyncio
 import time
+from datetime import datetime, timezone
 from loguru import logger
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import NetworkError as TelegramNetworkError
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from app.scraper.factory import ScraperFactory
 from app.database import get_projects_repository, get_process_semaphore
+from app.database.requirement_analyses_repository import RequirementAnalysesRepository
+from app.database.technical_estimates_repository import TechnicalEstimatesRepository
+from app.intelligence.config import get_maturity_threshold
 from app.intelligence.factory import create_intelligence_service
 from .messages import send_long_message
 from app.bots.telegram.circuit_breaker import CircuitBreaker
@@ -334,8 +337,6 @@ async def fetch_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-# ... (other imports remain the same)
-...
 async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return
@@ -442,16 +443,108 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "strategy": project.get("strategy", "none")
             })
 
-            proposal = await adapters["PREMIUM"].generate_proposal(full_detail, circuit_breaker=circuit_breaker)
-            
-            if proposal and "error" not in proposal:
-                await projects_repository.update_project_proposal(link_hash, proposal)
-                processed_count += 1
-                # Notificación de éxito...
+            contract_type = full_detail.get("contract_type", "project_fixed")
+
+            if contract_type == "project_fixed":
+                # --- Project-fixed: staged pipeline with 3-collection persistence ---
+                accumulated = await adapters["PREMIUM"].generate_project_fixed_proposal(
+                    full_detail, circuit_breaker=circuit_breaker
+                )
+
+                if accumulated and "error" not in accumulated:
+                    analysis = accumulated.get("analysis", {})
+                    estimate = accumulated.get("estimate", {})
+                    proposal = accumulated.get("proposal", {})
+
+                    # Get project _id for foreign keys
+                    project_doc = await projects_repository.collection.find_one(
+                        {"link_hash": link_hash}, {"_id": 1}
+                    )
+                    project_id = str(project_doc["_id"]) if project_doc else link_hash
+
+                    now_utc = datetime.now(timezone.utc)
+
+                    # 1) Persist RequirementAnalysis into requirement_analyses
+                    req_repo = RequirementAnalysesRepository()
+                    analysis_payload = {
+                        "project_id": project_id,
+                        "link_hash": link_hash,
+                        "analysis": analysis,
+                        "maturity_threshold_used": get_maturity_threshold(),
+                        "model_used": estimate.get("model_used", "unknown"),
+                        "created_at": now_utc,
+                    }
+                    await req_repo.insert(analysis_payload)
+
+                    # 2) Persist TechnicalEstimate into technical_estimates
+                    tech_repo = TechnicalEstimatesRepository()
+                    estimate_payload = {
+                        "project_id": project_id,
+                        "link_hash": link_hash,
+                        "estimate_type": estimate.get("estimate_type", "full"),
+                        "analysis": analysis,
+                        "model_used": estimate.get("model_used", "unknown"),
+                        "created_at": now_utc,
+                    }
+                    # Add branch-specific fields
+                    if estimate.get("estimate_type") == "full":
+                        estimate_payload["milestones"] = estimate.get("milestones", [])
+                        estimate_payload["summary"] = estimate.get("summary", {})
+                    else:
+                        estimate_payload["scope_matrix"] = estimate.get("scope_matrix", {})
+                        estimate_payload["phase0_hours"] = estimate.get("phase0_hours", 0)
+                        estimate_payload["post_discovery_hourly_rate"] = estimate.get("post_discovery_hourly_rate", 0)
+                        estimate_payload["open_questions"] = estimate.get("open_questions", [])
+                    await tech_repo.insert(estimate_payload)
+
+                    # 3) Persist flat MilestoneProposal into proposal_versions
+                    flat_proposal = {
+                        "proposal_header": proposal.get("proposal_header", {}),
+                        "milestones": estimate.get("milestones", proposal.get("milestones", [])),
+                        "summary": estimate.get("summary", proposal.get("summary", {})),
+                        "technical_pitch": proposal.get("technical_pitch", ""),
+                        "questions_for_client": proposal.get("questions_for_client", []),
+                    }
+                    await projects_repository._proposal_versions.insert_version(
+                        project_id=project_id,
+                        link_hash=link_hash,
+                        proposal_data=flat_proposal,
+                        source_of_changes="IA",
+                    )
+
+                    # Update project status
+                    await projects_repository.collection.update_one(
+                        {"link_hash": link_hash},
+                        {"$set": {
+                            "proposal_status": "proposal_generated",
+                            "proposal_at": now_utc.isoformat(),
+                            "updated_at": now_utc.isoformat(),
+                        }},
+                    )
+                    processed_count += 1
+                else:
+                    failed_count += 1
+                    await semaphore.update_activity(processed_count, failed_count, not_found_count)
+                    logger.error(
+                        f"Error en pipeline project_fixed para {title}: ",
+                        f"{accumulated.get('error', 'Unknown') if accumulated else 'None'}"
+                    )
+
             else:
-                failed_count += 1
-                await semaphore.update_activity(processed_count, failed_count, not_found_count)
-                logger.error(f"Error de la IA al generar propuesta para {title}: {proposal.get('error', 'Unknown') if proposal else 'None'}")
+                # --- Staff augmentation: keep existing generate_proposal path ---
+                proposal = await adapters["PREMIUM"].generate_proposal(
+                    full_detail, circuit_breaker=circuit_breaker
+                )
+                if proposal and "error" not in proposal:
+                    await projects_repository.update_project_proposal(link_hash, proposal)
+                    processed_count += 1
+                else:
+                    failed_count += 1
+                    await semaphore.update_activity(processed_count, failed_count, not_found_count)
+                    logger.error(
+                        f"Error de la IA al generar propuesta para {title}: ",
+                        f"{proposal.get('error', 'Unknown') if proposal else 'None'}"
+                    )
         
         except CircuitBreakerWarning as e:
             failed_count += 1

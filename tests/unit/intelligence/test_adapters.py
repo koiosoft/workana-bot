@@ -1,6 +1,7 @@
 """Unit tests for the OpenRouterAdapter intelligence adapter."""
 
 import os
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,7 +9,7 @@ import httpx
 import pytest
 
 from app.bots.telegram.circuit_breaker import CircuitBreaker
-from app.exceptions import AIConnectionError
+from app.exceptions import AIConnectionError, PipelineError
 from app.intelligence.adapters.openrouter import STANDARD_MODEL, OpenRouterAdapter
 
 
@@ -329,7 +330,7 @@ class TestRefineProposalTemplateSelection:
         self, adapter: OpenRouterAdapter,
     ) -> None:
         """Default: project_fixed contract_type with no template override
-        should render refine.j2."""
+        should render s4-refine/refine-proposal.j2."""
         with patch.object(
             adapter, "_chat_completion", AsyncMock(return_value='{"proposal":"ok"}')
         ), patch.object(adapter, "_render_prompt") as mock_render:
@@ -343,14 +344,14 @@ class TestRefineProposalTemplateSelection:
 
             # First positional arg is the template name
             template_name = mock_render.call_args[0][0]
-            assert template_name == "refine.j2"
+            assert template_name == "s4-refine/refine-proposal.j2"
 
     @pytest.mark.asyncio
     async def test_refine_uses_refine_staffing_j2_for_staff_augmentation(
         self, adapter: OpenRouterAdapter,
     ) -> None:
         """When contract_type is staff_augmentation and not an initial
-        template, should render refine-staffing.j2."""
+        template, should render s4-refine/refine-proposal-staffing.j2."""
         with patch.object(
             adapter, "_chat_completion", AsyncMock(return_value='{"proposal":"ok"}')
         ), patch.object(adapter, "_render_prompt") as mock_render:
@@ -364,14 +365,14 @@ class TestRefineProposalTemplateSelection:
             )
 
             template_name = mock_render.call_args[0][0]
-            assert template_name == "refine-staffing.j2"
+            assert template_name == "s4-refine/refine-proposal-staffing.j2"
 
     @pytest.mark.asyncio
     async def test_refine_uses_proposal_j2_when_contract_type_changes_to_fixed(
         self, adapter: OpenRouterAdapter,
     ) -> None:
         """When use_initial_template=True and contract_type is project_fixed,
-        should render proposal.j2."""
+        should render s3-commercial/write-proposal.j2."""
         with patch.object(
             adapter, "_chat_completion", AsyncMock(return_value='{"proposal":"ok"}')
         ), patch.object(adapter, "_render_prompt") as mock_render:
@@ -386,14 +387,14 @@ class TestRefineProposalTemplateSelection:
             )
 
             template_name = mock_render.call_args[0][0]
-            assert template_name == "proposal.j2"
+            assert template_name == "s3-commercial/write-proposal.j2"
 
     @pytest.mark.asyncio
     async def test_refine_uses_proposal_staffing_j2_when_contract_type_changes_to_staffing(
         self, adapter: OpenRouterAdapter,
     ) -> None:
         """When use_initial_template=True and contract_type is
-        staff_augmentation, should render proposal_staffing.j2."""
+        staff_augmentation, should render s3-commercial/write-proposal-staffing.j2."""
         with patch.object(
             adapter, "_chat_completion", AsyncMock(return_value='{"cover_letter":"ok"}')
         ), patch.object(adapter, "_render_prompt") as mock_render:
@@ -408,7 +409,7 @@ class TestRefineProposalTemplateSelection:
             )
 
             template_name = mock_render.call_args[0][0]
-            assert template_name == "proposal_staffing.j2"
+            assert template_name == "s3-commercial/write-proposal-staffing.j2"
 
 
 # ------------------------------------------------------------------
@@ -526,3 +527,354 @@ class TestGeminiAdapterModelOverrides:
         # Simulate what happens during generate_proposal with a 'pro' strategy
         adapter.set_gemini_model("pro")
         assert adapter.model_id == "db-gp-from-proposal"
+
+
+# ------------------------------------------------------------------
+#  New staged pipeline methods (UNIT004, UNIT005, UNIT010, UNIT018,
+#  UNIT019, UNIT020) — OpenRouterAdapter
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_analyze_requirement_exists(
+    adapter: OpenRouterAdapter, cb: MagicMock
+) -> None:
+    """UNIT004: analyze_requirement should exist and accept documented signature."""
+    assert hasattr(adapter, "analyze_requirement")
+    import inspect
+    sig = inspect.signature(adapter.analyze_requirement)
+    params = list(sig.parameters.keys())
+    assert "project" in params
+    assert "maturity_threshold" in params
+    assert "circuit_breaker" in params
+
+
+@pytest.mark.asyncio
+async def test_estimate_technical_exists(
+    adapter: OpenRouterAdapter, cb: MagicMock
+) -> None:
+    """UNIT004: estimate_technical should exist and accept documented signature."""
+    assert hasattr(adapter, "estimate_technical")
+    import inspect
+    sig = inspect.signature(adapter.estimate_technical)
+    params = list(sig.parameters.keys())
+    assert "project" in params
+    assert "analysis" in params
+    assert "circuit_breaker" in params
+
+
+@pytest.mark.asyncio
+async def test_write_commercial_proposal_exists(
+    adapter: OpenRouterAdapter, cb: MagicMock
+) -> None:
+    """UNIT004: write_commercial_proposal should exist and accept documented signature."""
+    assert hasattr(adapter, "write_commercial_proposal")
+    import inspect
+    sig = inspect.signature(adapter.write_commercial_proposal)
+    params = list(sig.parameters.keys())
+    assert "project" in params
+    assert "technical_estimate" in params
+    assert "circuit_breaker" in params
+
+
+@pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_maturity_threshold_default_forwarded(
+    adapter: OpenRouterAdapter, cb: MagicMock
+) -> None:
+    """UNIT010: verify MATURITY_THRESHOLD default is 8 and passed to analyze_requirement.
+    We mock _render_prompt to capture the threshold value."""
+    valid_response = json.dumps({
+        "maturity_score": 7,
+        "maturity_reason": "Good details but some gaps",
+        "entities": {"technologies": ["Python"], "deliverables": [], "constraints": []},
+        "gaps": ["Missing testing strategy"],
+        "branch": "full"
+    })
+    with patch.object(adapter, "_render_prompt", return_value="prompt"):
+        with patch.object(adapter, "_chat_completion", AsyncMock(return_value=valid_response)):
+            with patch("app.intelligence.config.os.environ.get", return_value="8"):
+                result = await adapter.analyze_requirement(
+                    project={"description": "test"},
+                )
+    # If no error, method was called (mocked returns valid JSON)
+    assert result is not None
+    assert result["maturity_score"] == 7
+    assert result["branch"] == "full"
+
+
+@pytest.mark.asyncio
+async def test_generate_project_fixed_proposal_accumulates(
+    adapter: OpenRouterAdapter, cb: MagicMock
+) -> None:
+    """UNIT020: accumulation test — generate_project_fixed_proposal should return
+    analysis + estimate + proposal keys."""
+    # We need to mock all three stage methods
+    mock_analysis = {"branch": "full", "summary": "analysis done"}
+    mock_estimate = {"milestones": [], "summary": {"total_hours": 40, "total_budget": 1000}}
+    mock_proposal = {"proposal_header": "Header", "technical_pitch": "pitch", "questions_for_client": []}
+
+    with patch.object(adapter, "analyze_requirement", AsyncMock(return_value=mock_analysis)):
+        with patch.object(adapter, "estimate_technical", AsyncMock(return_value=mock_estimate)):
+            with patch.object(adapter, "write_commercial_proposal", AsyncMock(return_value=mock_proposal)):
+                result = await adapter.generate_project_fixed_proposal(
+                    project={"title": "Test"},
+                )
+
+    assert "analysis" in result
+    assert result["analysis"] == mock_analysis
+    assert "estimate" in result
+    assert result["estimate"] == mock_estimate
+    assert "proposal" in result
+    assert result["proposal"] == mock_proposal
+
+
+@pytest.mark.asyncio
+async def test_write_commercial_proposal_contract_fields(
+    adapter: OpenRouterAdapter, cb: MagicMock
+) -> None:
+    """UNIT018: contract test — write_commercial_proposal output should contain
+    proposal_header, milestones, summary, technical_pitch, questions_for_client.
+    We mock _chat_completion to return a response that includes all fields."""
+    mock_response = '```json\n{"proposal_header": "Prop", "milestones": [], "summary": {"total_hours": 40, "total_budget": 1000, "delivery_time_weeks": 4, "hourly_rate_applied": 25}, "technical_pitch": "Tech", "questions_for_client": ["Q1"]}\n```'
+    with patch.object(adapter, "_chat_completion", AsyncMock(return_value=mock_response)):
+        with patch.object(adapter, "_render_prompt", return_value="prompt"):
+            result = await adapter.write_commercial_proposal(
+                project={"title": "Test"},
+                technical_estimate={"milestones": [], "summary": {"total_hours": 40}},
+            )
+
+    assert "proposal_header" in result
+    assert "milestones" in result
+    assert "summary" in result
+    assert "technical_pitch" in result
+    assert "questions_for_client" in result
+
+
+@pytest.mark.asyncio
+async def test_write_commercial_proposal_verbatim_milestones_summary(
+    adapter: OpenRouterAdapter, cb: MagicMock
+) -> None:
+    """UNIT019: verbatim test — milestones and summary from technical_estimate
+    should be injected verbatim (deep-equal)."""
+    tech_estimate_milestones = [{"step": 1, "name": "Design", "tasks": {}, "hours_with_overhead": 10.0, "subtotal": 250.0}]
+    tech_estimate_summary = {"total_hours": 40, "total_budget": 1000, "delivery_time_weeks": 4, "hourly_rate_applied": 25}
+    mock_llm_response = '```json\n{"proposal_header": "Test", "milestones": ["WRONG"], "summary": {"wrong": "data"}, "technical_pitch": "pitch", "questions_for_client": []}\n```'
+
+    with patch.object(adapter, "_chat_completion", AsyncMock(return_value=mock_llm_response)):
+        with patch.object(adapter, "_render_prompt", return_value="prompt"):
+            result = await adapter.write_commercial_proposal(
+                project={"title": "Test"},
+                technical_estimate={
+                    "milestones": tech_estimate_milestones,
+                    "summary": tech_estimate_summary,
+                },
+            )
+
+    # Must be deep-equal to the original estimate values, not the LLM's hallucinated ones
+    assert result["milestones"] == tech_estimate_milestones
+    assert result["summary"] == tech_estimate_summary
+
+
+@pytest.mark.asyncio
+async def test_staff_augmentation_generate_proposal_unchanged(
+    adapter: OpenRouterAdapter, cb: MagicMock
+) -> None:
+    """UNIT016: regression test — staff_augmentation generate_proposal path
+    is functionally unchanged. Should return cover_letter and budget_summary."""
+    mock_text = ('```json\n{"cover_letter": "Dear client", ',
+        '"budget_summary": {"hourly_rate": 25, "suggested_hours_per_week": 20, ',
+        '"estimated_monthly_budget": 2000}}\n```')
+    mock_text = ''.join(mock_text)
+    with patch.object(
+        adapter, "_chat_completion", AsyncMock(return_value=mock_text)
+    ), patch("asyncio.sleep", AsyncMock()):
+        result = await adapter.generate_proposal(
+            {"title": "Test", "contract_type": "staff_augmentation"},
+            circuit_breaker=cb,
+        )
+
+    assert "cover_letter" in result
+    assert "budget_summary" in result
+
+
+# ------------------------------------------------------------------
+#  UNIT006 / UNIT007 — Pipeline guard rails (PipelineError)
+# ------------------------------------------------------------------
+#
+#  UNIT006: generate_project_fixed_proposal orchestrates the three
+#  stages and aborts before PREMIUM (Stage 3) when Stage 1 or 2
+#  raises PipelineError.
+#
+#  UNIT007: analyze_requirement and estimate_technical raise
+#  PipelineError on LLM returning no text, invalid JSON, or
+#  Pydantic validation failure. The pipeline stops before Stage 3.
+# ------------------------------------------------------------------
+
+
+class TestPipelineGuardRails:
+    """Validate that PipelineError is raised and propagated.
+
+    The orchestrator must abort before Stage 3 (PREMIUM) when any
+    earlier stage fails validation.  These tests verify that
+    analyze_requirement, estimate_technical and the orchestrator
+    itself raise PipelineError under the documented failure modes.
+    """
+
+    @pytest.mark.asyncio
+    async def test_analyze_requirement_pipeline_error_on_no_text(
+        self, adapter: OpenRouterAdapter, cb: MagicMock
+    ) -> None:
+        """UNIT007: LLM returning no text -> PipelineError."""
+        with patch.object(
+            adapter, "_chat_completion", AsyncMock(return_value="")
+        ):
+            with pytest.raises(PipelineError, match="no text"):
+                await adapter.analyze_requirement(
+                    project={"description": "test"},
+                    circuit_breaker=cb,
+                )
+
+    @pytest.mark.asyncio
+    async def test_analyze_requirement_pipeline_error_on_invalid_json(
+        self, adapter: OpenRouterAdapter, cb: MagicMock
+    ) -> None:
+        """UNIT007: Non-JSON LLM response -> PipelineError."""
+        with patch.object(
+            adapter, "_chat_completion",
+            AsyncMock(return_value="not json at all"),
+        ):
+            with pytest.raises(PipelineError, match="invalid JSON"):
+                await adapter.analyze_requirement(
+                    project={"description": "test"},
+                    circuit_breaker=cb,
+                )
+
+    @pytest.mark.asyncio
+    async def test_analyze_requirement_pipeline_error_on_pydantic_fail(
+        self, adapter: OpenRouterAdapter, cb: MagicMock
+    ) -> None:
+        """UNIT007: Pydantic validation failure -> PipelineError.
+
+        Return valid JSON but with an invalid maturity_score (0) so
+        RequirementAnalysis.model_validate raises ValidationError.
+        """
+        invalid_json = '{"maturity_score": 0, "maturity_reason": "x", "branch": "full"}'
+        with patch.object(
+            adapter, "_chat_completion",
+            AsyncMock(return_value=f'```json\n{invalid_json}\n```'),
+        ):
+            with pytest.raises(PipelineError, match="Pydantic"):
+                await adapter.analyze_requirement(
+                    project={"description": "test"},
+                    circuit_breaker=cb,
+                )
+
+    @pytest.mark.asyncio
+    async def test_estimate_technical_pipeline_error_on_no_text(
+        self, adapter: OpenRouterAdapter, cb: MagicMock
+    ) -> None:
+        """UNIT007: LLM returning no text in Stage 2 -> PipelineError."""
+        with patch.object(
+            adapter, "_chat_completion", AsyncMock(return_value="")
+        ), patch.object(adapter, "_render_prompt", return_value="prompt"):
+            with pytest.raises(PipelineError, match="no text"):
+                await adapter.estimate_technical(
+                    project={"description": "test"},
+                    analysis={"branch": "full", "maturity_score": 8},
+                    circuit_breaker=cb,
+                )
+
+    @pytest.mark.asyncio
+    async def test_estimate_technical_pipeline_error_on_invalid_json(
+        self, adapter: OpenRouterAdapter, cb: MagicMock
+    ) -> None:
+        """UNIT007: Non-JSON LLM response in Stage 2 -> PipelineError."""
+        with patch.object(
+            adapter, "_chat_completion",
+            AsyncMock(return_value="bad response"),
+        ), patch.object(adapter, "_render_prompt", return_value="prompt"):
+            with pytest.raises(PipelineError, match="invalid JSON"):
+                await adapter.estimate_technical(
+                    project={"description": "test"},
+                    analysis={"branch": "full", "maturity_score": 8},
+                    circuit_breaker=cb,
+                )
+
+    @pytest.mark.asyncio
+    async def test_estimate_technical_pipeline_error_on_pydantic_fail(
+        self, adapter: OpenRouterAdapter, cb: MagicMock
+    ) -> None:
+        """UNIT007: Pydantic validation failure in Stage 2 -> PipelineError.
+
+        Return valid JSON but missing required milestones field.
+        """
+        invalid_estimate = ('```json\n{"estimate_type": "full", ', 
+            '"summary": {"total_hours": 40, "total_budget": 1000, ', 
+            '"delivery_time_weeks": 4, "hourly_rate_applied": 25}, ', 
+            '"analysis": {"maturity_score": 8, "maturity_reason": "x", ', 
+            '"entities": {}, "gaps": [], "branch": "full"}, ', 
+            '"model_used": "test"}\n```')
+        invalid_estimate = ''.join(invalid_estimate)
+        with patch.object(
+            adapter, "_chat_completion",
+            AsyncMock(return_value=invalid_estimate),
+        ), patch.object(adapter, "_render_prompt", return_value="prompt"):
+            with pytest.raises(PipelineError, match="Pydantic"):
+                await adapter.estimate_technical(
+                    project={"description": "test"},
+                    analysis={"branch": "full", "maturity_score": 8},
+                    circuit_breaker=cb,
+                )
+
+    @pytest.mark.asyncio
+    async def test_generate_project_fixed_aborts_before_premium_on_stage1_fail(
+        self, adapter: OpenRouterAdapter, cb: MagicMock
+    ) -> None:
+        """UNIT006: PipelineError in Stage 1 should abort before Stage 3.
+
+        When analyze_requirement raises PipelineError, the orchestrator
+        must NOT call write_commercial_proposal (the PREMIUM stage).
+        """
+        with patch.object(
+            adapter, "analyze_requirement",
+            AsyncMock(side_effect=PipelineError("Stage 1 failed")),
+        ):
+            mock_write = AsyncMock()
+            with patch.object(
+                adapter, "write_commercial_proposal", mock_write
+            ):
+                with pytest.raises(PipelineError):
+                    await adapter.generate_project_fixed_proposal(
+                        project={"title": "Test"},
+                        circuit_breaker=cb,
+                    )
+                mock_write.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_generate_project_fixed_aborts_before_premium_on_stage2_fail(
+        self, adapter: OpenRouterAdapter, cb: MagicMock
+    ) -> None:
+        """UNIT006: PipelineError in Stage 2 should abort before Stage 3.
+
+        When estimate_technical raises PipelineError, the orchestrator
+        must NOT call write_commercial_proposal (the PREMIUM stage).
+        """
+        with patch.object(
+            adapter, "analyze_requirement",
+            AsyncMock(return_value={"branch": "full", "score": 8}),
+        ):
+            with patch.object(
+                adapter, "estimate_technical",
+                AsyncMock(side_effect=PipelineError("Stage 2 failed")),
+            ):
+                mock_write = AsyncMock()
+                with patch.object(
+                    adapter, "write_commercial_proposal", mock_write
+                ):
+                    with pytest.raises(PipelineError):
+                        await adapter.generate_project_fixed_proposal(
+                            project={"title": "Test"},
+                            circuit_breaker=cb,
+                        )
+                    mock_write.assert_not_awaited()

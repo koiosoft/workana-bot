@@ -20,22 +20,30 @@ class TestInterfaceCompliance:
         assert issubclass(OpenRouterAdapter, IntelligencePort)
 
     def test_port_has_required_abstract_methods(self) -> None:
-        """The ABC must define exactly the three required async methods."""
+        """The ABC must define the required async methods."""
         expected = {
             "evaluate_projects",
             "generate_proposal",
             "refine_proposal",
             "format_project_description",
+            "analyze_requirement",
+            "estimate_technical",
+            "write_commercial_proposal",
+            "generate_project_fixed_proposal",
         }
         assert IntelligencePort.__abstractmethods__ == expected
 
     def test_both_adapters_accept_circuit_breaker_parameter(self) -> None:
-        """All three interface methods must accept an optional circuit_breaker parameter."""
+        """All interface methods must accept an optional circuit_breaker parameter."""
         method_names = [
             "evaluate_projects",
             "generate_proposal",
             "refine_proposal",
             "format_project_description",
+            "analyze_requirement",
+            "estimate_technical",
+            "write_commercial_proposal",
+            "generate_project_fixed_proposal",
         ]
 
         for adapter_cls in (GeminiAdapter, OpenRouterAdapter):

@@ -1,0 +1,77 @@
+{#
+  Stage 2B – Discovery-Mode Technical Estimate
+  ---------------------------------------------
+  Consumes: analysis_json (Stage 1 RequirementAnalysis output where
+             maturity_score < threshold).
+  Produces: JSON with scope_matrix, phase0_hours,
+             post_discovery_hourly_rate, open_questions.
+  Strictly technical — no commercial or persuasive language.
+  Used as input to Stage 3.
+-#}
+{%- macro estimate_discovery(analysis_json) -%}
+{
+  "scope_matrix": {
+    "in_scope": {{ _extract_in_scope(analysis_json.requirements) | tojson }},
+    "out_of_scope": {{ _extract_out_of_scope(analysis_json.requirements) | tojson }}
+  },
+  "phase0_hours": {{ _compute_phase0_hours(analysis_json) }},
+  "post_discovery_hourly_rate": {{ _compute_post_discovery_rate(analysis_json) }},
+  "open_questions": {{ _extract_open_questions(analysis_json) | tojson }}
+}
+{%- endmacro -%}
+
+{%- macro _extract_in_scope(requirements) -%}
+{%-   set results = [] -%}
+{%-   for req in requirements -%}
+{%-     if req.get("disposition", "out") == "in" -%}
+{%-       set _ = results.append(req.get("id", req.get("title", "unnamed"))) -%}
+{%-     endif -%}
+{%-   endfor -%}
+{{ results }}
+{%- endmacro -%}
+
+{%- macro _extract_out_of_scope(requirements) -%}
+{%-   set results = [] -%}
+{%-   for req in requirements -%}
+{%-     if req.get("disposition", "out") == "out" -%}
+{%-       set _ = results.append(req.get("id", req.get("title", "unnamed"))) -%}
+{%-     endif -%}
+{%-   endfor -%}
+{{ results }}
+{%- endmacro -%}
+
+{%- macro _compute_phase0_hours(analysis_json) -%}
+{%-   set base = analysis_json.get("estimated_base_hours", 40) -%}
+{%-   set complexity = analysis_json.get("complexity_factor", 1.0) -%}
+{%-   set unknowns = analysis_json.get("unknown_requirement_count", 0) -%}
+{%-   set total = (base * complexity + unknowns * 8) | round(0, "ceil") | int -%}
+{{ total }}
+{%- endmacro -%}
+
+{%- macro _compute_post_discovery_rate(analysis_json) -%}
+{%-   set base_rate = analysis_json.get("base_hourly_rate", 150.0) -%}
+{%-   set risk_markup = analysis_json.get("risk_markup_factor", 1.0) -%}
+{%-   set rate = (base_rate * risk_markup * 1.0) | round(2) -%}
+{{ rate }}
+{%- endmacro -%}
+
+{%- macro _extract_open_questions(analysis_json) -%}
+{%-   set questions = analysis_json.get("open_questions", []) -%}
+{%-   if questions | length == 0 -%}
+{%-     set questions = _derive_questions(analysis_json) -%}
+{%-   endif -%}
+{{ questions }}
+{%- endmacro -%}
+
+{%- macro _derive_questions(analysis_json) -%}
+{%-   set derived = [] -%}
+{%-   for req in analysis_json.get("requirements", []) -%}
+{%-     if req.get("clarity", "unclear") == "unclear" and req.get("disposition", "out") == "in" -%}
+{%-       set _ = derived.append("Clarify: " ~ req.get("id", req.get("title", "unnamed"))) -%}
+{%-     endif -%}
+{%-   endfor -%}
+{%-   if derived | length == 0 -%}
+{%-     set _ = derived.append("No open questions at this stage") -%}
+{%-   endif -%}
+{{ derived }}
+{%- endmacro -%}

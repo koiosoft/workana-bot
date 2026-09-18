@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import re
 import json
@@ -6,8 +7,16 @@ import asyncio
 import httpx
 from jinja2 import Environment, FileSystemLoader
 from loguru import logger
+from pydantic import ValidationError
 from ..port import IntelligencePort
-from app.exceptions import AIConnectionError
+from app.exceptions import AIConnectionError, PipelineError
+from app.models.analysis import RequirementAnalysis
+from app.models.estimate import (
+    TechnicalEstimateDiscovery,
+    TechnicalEstimateFull,
+    _assert_hours_consistent,
+)
+from app.intelligence.config import get_maturity_threshold
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -223,7 +232,7 @@ class OpenRouterAdapter(IntelligencePort):
             )
 
         prompt = self._render_prompt(
-            "evaluation.j2",
+            "s1-analysis/evaluate-project.j2",
             pro_strategy=self.pro_strategy,
             flash_strategy=self.flash_strategy,
             default_strategy=self.default_strategy,
@@ -307,9 +316,9 @@ class OpenRouterAdapter(IntelligencePort):
         }
 
         template_name = (
-            "proposal_staffing.j2"
+            "s3-commercial/write-proposal-staffing.j2"
             if contract_type == "staff_augmentation"
-            else "proposal.j2"
+            else "s3-commercial/write-proposal.j2"
         )
 
         prompt = self._render_prompt(
@@ -387,7 +396,7 @@ class OpenRouterAdapter(IntelligencePort):
         proposal template is used instead of the refinement template.
 
         When *contract_type* is ``"staff_augmentation"``, the
-        ``refine-staffing.j2`` template is selected.
+        ``s4-refine/refine-proposal-staffing.j2`` template is selected.
         """
         hourly_rate = int(os.getenv("HOURLY_RATE", "25"))
         my_skills = [
@@ -415,8 +424,9 @@ class OpenRouterAdapter(IntelligencePort):
         # -- Template selection ----------------------------------------------
         if use_initial_template:
             template_name = (
-                "proposal_staffing.j2" if contract_type == "staff_augmentation"
-                else "proposal.j2"
+                "s3-commercial/write-proposal-staffing.j2"
+                if contract_type == "staff_augmentation"
+                else "s3-commercial/write-proposal.j2"
             )
             logger.info(
                 f"🔄 Contract type changed → using initial template '{template_name}'"
@@ -428,9 +438,11 @@ class OpenRouterAdapter(IntelligencePort):
                 project_payload_json=json.dumps(project_payload, indent=2),
             )
         elif contract_type == "staff_augmentation":
-            logger.info("🔁 Staff augmentation refinement → using refine-staffing.j2")
+            logger.info(
+                "🔁 Staff augmentation refinement → using s4-refine/refine-proposal-staffing.j2"
+            )
             prompt = self._render_prompt(
-                "refine-staffing.j2",
+                "s4-refine/refine-proposal-staffing.j2",
                 my_profile_skills=my_skills,
                 hourly_rate=hourly_rate,
                 suggested_hours_per_week=20,
@@ -439,9 +451,11 @@ class OpenRouterAdapter(IntelligencePort):
                 user_feedback_observations=user_feedback_observations,
             )
         else:
-            logger.info("🔁 Project-fixed refinement → using refine.j2")
+            logger.info(
+                "🔁 Project-fixed refinement → using s4-refine/refine-proposal.j2"
+            )
             prompt = self._render_prompt(
-                "refine.j2",
+                "s4-refine/refine-proposal.j2",
                 project_payload_json=json.dumps(project_payload, indent=2),
                 current_proposal_json=current_proposal_json,
                 user_feedback_observations=user_feedback_observations,
@@ -520,7 +534,7 @@ class OpenRouterAdapter(IntelligencePort):
     ) -> str:
         """Formatea la descripción de un proyecto usando IA."""
         prompt = self._render_prompt(
-            "project_formatter.j2", raw_description=description
+            "s1-analysis/format-description.j2", raw_description=description
         )
 
         logger.info("🤖 Llamando a OpenRouter para formatear descripción...")
@@ -548,3 +562,276 @@ class OpenRouterAdapter(IntelligencePort):
             raise AIConnectionError(
                 "Servidor de IA (OpenRouter) interrumpido inesperadamente"
             ) from e
+
+    # ------------------------------------------------------------------
+    # Pipeline por etapas (project_fixed) — TASK014
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_json_object(text: str) -> str:
+        """Devuelve el objeto JSON embebido en la respuesta cruda del modelo.
+        
+        OpenRouter no garantiza `response_mime_type`, así que el texto puede venir
+        envuelto en un bloque ```json ... ``` o precedido/seguido de prosa. Se
+        reutiliza la misma heurística de ``generate_proposal`` para no divergir.
+        """
+        text = text.strip()
+        match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+        if match:
+            return match.group(1)
+        return text[text.find("{") : text.rfind("}") + 1]
+
+    async def analyze_requirement(
+        self,
+        project: dict,
+        maturity_threshold: int = 8,
+        circuit_breaker: Optional["CircuitBreaker"] = None,
+    ) -> dict[str, Any]:
+        """Etapa 1: analiza el requerimiento con el modelo STANDARD.
+        
+        Renderiza ``s2-estimation/analyze-requirement.j2`` y valida el JSON
+        resultante **post-hoc** contra ``RequirementAnalysis`` (OpenRouter puede
+        ignorar ``response_mime_type``, por lo que la validación no puede
+        delegarse al proveedor). Lanza ``PipelineError`` si el texto falta, no es
+        JSON válido o no supera el esquema, de modo que el orquestador aborta
+        antes de facturar la Etapa 3 (PREMIUM).
+        """
+        full_description = project.get(
+            "full_description", project.get("description", "")
+        )
+
+        prompt = self._render_prompt(
+            "s2-estimation/analyze-requirement.j2",
+            full_description=full_description,
+            threshold=maturity_threshold,
+        )
+
+        logger.info("🤖 Etapa 1 — analizando requerimiento...")
+        self._select_model(self.flash_strategy)
+        self._set_delay(self.flash_strategy)
+
+        try:
+            text_response = await self._chat_completion(prompt, circuit_breaker)
+        except AIConnectionError:
+            raise
+
+        if not text_response:
+            logger.warning("La IA no devolvió texto en analyze_requirement.")
+            raise PipelineError("analyze_requirement: LLM returned no text")
+
+        try:
+            raw_json = json.loads(self._extract_json_object(text_response))
+        except json.JSONDecodeError as e:
+            logger.error(f"Etapa 1 JSON parse error: {e}")
+            raise PipelineError(
+                f"analyze_requirement: invalid JSON from LLM — {e}"
+            ) from e
+
+        try:
+            validated = RequirementAnalysis.model_validate(raw_json)
+        except ValidationError as e:
+            logger.error(f"Etapa 1 Pydantic validation failed: {e}")
+            raise PipelineError(
+                f"analyze_requirement: Pydantic validation failed — {e}"
+            ) from e
+
+        logger.success("✅ Etapa 1 superó la validación Pydantic.")
+        return cast(dict[str, Any], validated.model_dump(mode="json"))
+
+    async def estimate_technical(
+        self,
+        project: dict,
+        analysis: dict,
+        circuit_breaker: Optional["CircuitBreaker"] = None,
+    ) -> dict[str, Any]:
+        """Etapa 2: produce la estimación técnica a partir del análisis.
+        
+        Selecciona ``s2-estimation/estimate-full.j2`` (rama 'full') o
+        ``s2-estimation/estimate-discovery.j2`` (rama 'discovery') según
+        ``analysis['branch']``, y valida el JSON post-hoc contra
+        ``TechnicalEstimateFull`` / ``TechnicalEstimateDiscovery``. En la rama
+        'full' se ejecuta además ``_assert_hours_consistent`` para que cualquier
+        descuadre de horas se reporte como ``PipelineError`` y no como un crash
+        sin clasificar.
+        """
+        branch = analysis.get("branch", "full")
+        template_name = (
+            "s2-estimation/estimate-full.j2"
+            if branch == "full"
+            else "s2-estimation/estimate-discovery.j2"
+        )
+
+        prompt = self._render_prompt(
+            template_name,
+            analysis_json=json.dumps(analysis, indent=2),
+        )
+
+        logger.info(f"🤖 Etapa 2 — estimación técnica (branch={branch})...")
+        self._select_model(self.flash_strategy)
+        self._set_delay(self.flash_strategy)
+
+        try:
+            text_response = await self._chat_completion(prompt, circuit_breaker)
+        except AIConnectionError:
+            raise
+
+        if not text_response:
+            logger.warning("La IA no devolvió texto en estimate_technical.")
+            raise PipelineError("estimate_technical: LLM returned no text")
+
+        try:
+            raw_json = json.loads(self._extract_json_object(text_response))
+        except json.JSONDecodeError as e:
+            logger.error(f"Etapa 2 JSON parse error: {e}")
+            raise PipelineError(
+                f"estimate_technical: invalid JSON from LLM — {e}"
+            ) from e
+
+        try:
+            if branch == "full":
+                validated: Any = TechnicalEstimateFull.model_validate(raw_json)
+                validated = _assert_hours_consistent(validated)
+            else:
+                validated = TechnicalEstimateDiscovery.model_validate(raw_json)
+        except ValidationError as e:
+            logger.error(f"Etapa 2 Pydantic validation failed: {e}")
+            raise PipelineError(
+                f"estimate_technical: Pydantic validation failed — {e}"
+            ) from e
+
+        logger.success(
+            f"✅ Etapa 2 (branch={branch}) superó la validación Pydantic."
+        )
+        return cast(dict[str, Any], validated.model_dump(mode="json"))
+
+    async def write_commercial_proposal(
+        self,
+        project: dict,
+        technical_estimate: dict,
+        circuit_breaker: Optional["CircuitBreaker"] = None,
+    ) -> dict[str, Any]:
+        """Etapa 3: redacta la propuesta comercial (modelo PREMIUM).
+        
+        Renderiza ``s3-commercial/write-proposal.j2`` alimentada con la
+        estimación técnica **ya validada** en la Etapa 2. No se recalcula ningún
+        número: ``milestones`` y ``summary`` se reinyectan verbatim desde
+        ``technical_estimate`` sobre la salida del modelo, tal y como exige el
+        contrato del dashboard de Workana.
+        """
+        hourly_rate = int(os.getenv("HOURLY_RATE", "25"))
+        my_skills: list[str] = [
+            "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
+            "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
+            "SQL", "MySQL", "PostgreSQL", "MongoDB", "GIT", "Swift", "C#", "Docker",
+            "UML Diagram", "DB Design (E-R)", "REST & GraphQL APIs",
+        ]
+
+        project_payload: dict[str, Any] = {
+            "title": project.get("title", "Proyecto sin título"),
+            "description": project.get(
+                "full_description", project.get("description", "N/A")
+            ),
+            "skills_required": project.get("skills", []),
+            "budget_range": project.get("budget_detail", "N/A"),
+        }
+
+        prompt = self._render_prompt(
+            "s3-commercial/write-proposal.j2",
+            my_profile_skills=my_skills,
+            hourly_rate=hourly_rate,
+            project_payload_json=json.dumps(project_payload, indent=2),
+            technical_estimate_json=json.dumps(technical_estimate, indent=2),
+        )
+
+        logger.info("🤖 Etapa 3 — redactando propuesta comercial (PREMIUM)...")
+        self._select_model(self.pro_strategy)
+        self._set_delay(self.pro_strategy)
+
+        try:
+            text_response = await self._chat_completion(prompt, circuit_breaker)
+        except AIConnectionError:
+            raise
+
+        if not text_response:
+            logger.warning(
+                "La IA no devolvió texto en write_commercial_proposal."
+            )
+            return {
+                "error": "No se pudo generar la propuesta, la IA no devolvió contenido."
+            }
+
+        try:
+            proposal_data: dict[str, Any] = json.loads(
+                self._extract_json_object(text_response)
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parseando propuesta comercial: {e}")
+            raise AIConnectionError(
+                "Respuesta de OpenRouter no pudo ser interpretada"
+            ) from e
+
+        if "questions_for_client" not in proposal_data:
+            proposal_data["questions_for_client"] = []
+
+        # Reinyección verbatim: los números validados en Etapa 2 mandan siempre.
+        if "milestones" in technical_estimate:
+            proposal_data["milestones"] = technical_estimate["milestones"]
+        if "summary" in technical_estimate:
+            proposal_data["summary"] = technical_estimate["summary"]
+
+        return proposal_data
+
+    async def generate_project_fixed_proposal(
+        self,
+        project: dict,
+        circuit_breaker: Optional["CircuitBreaker"] = None,
+    ) -> dict[str, Any]:
+        """Orquestador completo del pipeline 'project_fixed'.
+        
+        Ejecuta ``analyze_requirement`` → ``estimate_technical`` →
+        ``write_commercial_proposal`` en secuencia y devuelve el JSON acumulado
+        (analysis + estimate + proposal).
+
+        Si la Etapa 1 o la Etapa 2 lanzan ``PipelineError``, este orquestador
+        aborta **antes** de invocar ``write_commercial_proposal`` (Etapa 3 /
+        PREMIUM), que es precisamente el punto donde se factura el modelo caro.
+        
+        La persistencia en ``requirement_analyses``, ``technical_estimates`` y
+        ``proposal_versions`` NO es responsabilidad del orquestador: el handler
+        de Telegram (TASK016) persiste las tres colecciones.
+        """
+        threshold = get_maturity_threshold()
+        logger.info(
+            f"🚀 Pipeline project_fixed con maturity_threshold={threshold}"
+        )
+
+        # Etapa 1 (STANDARD) — un PipelineError propaga y corta aquí.
+        analysis = await self.analyze_requirement(
+            project=project,
+            maturity_threshold=threshold,
+            circuit_breaker=circuit_breaker,
+        )
+        logger.success("✅ Etapa 1 completa — análisis de requerimientos.")
+
+        # Etapa 2 (STANDARD) — PipelineError => nunca se llega a Etapa 3.
+        estimate = await self.estimate_technical(
+            project=project,
+            analysis=analysis,
+            circuit_breaker=circuit_breaker,
+        )
+        logger.success("✅ Etapa 2 completa — estimación técnica.")
+
+        # Etapa 3 (PREMIUM).
+        proposal = await self.write_commercial_proposal(
+            project=project,
+            technical_estimate=estimate,
+            circuit_breaker=circuit_breaker,
+        )
+        logger.success("✅ Etapa 3 completa — propuesta comercial.")
+
+        return {
+            "analysis": analysis,
+            "estimate": estimate,
+            "proposal": proposal,
+        }
+

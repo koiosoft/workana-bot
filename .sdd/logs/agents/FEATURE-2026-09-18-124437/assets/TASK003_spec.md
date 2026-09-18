@@ -1,0 +1,3 @@
+## Specification: TASK003
+Add app/models/analysis.py and define the following Pydantic models: Entities with fields technologies (list[str]), deliverables (list[str]), constraints (list[str]); RequirementAnalysis with fields maturity_score (int, ge=1, le=10), maturity_reason (str), entities (Entities), gaps (list[str], where each gap is a plain string describing a void or uncertainty), branch (Literal['full','discovery']).
+These models act as gatekeepers for the pipeline (Decision: validación estricta de salidas JSON, §7.3). If the LLM output does not validate, raise PipelineError before invoking PREMIUM.

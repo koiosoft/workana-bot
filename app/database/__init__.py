@@ -1,4 +1,5 @@
 from .projects_repository import ProjectsRepository
+from .requirement_analyses_repository import RequirementAnalysesRepository
 from .semaphore import ProcessSemaphore, get_process_semaphore
 
 _repository_instance: ProjectsRepository | None = None
@@ -15,4 +16,4 @@ def get_projects_repository() -> ProjectsRepository:
     return _repository_instance
 
 
-__all__ = ['ProjectsRepository', 'ProcessSemaphore', 'get_projects_repository', 'get_process_semaphore']
+__all__ = ['ProjectsRepository', 'RequirementAnalysesRepository', 'ProcessSemaphore', 'get_projects_repository', 'get_process_semaphore']
