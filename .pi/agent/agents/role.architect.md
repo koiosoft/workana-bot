@@ -4,8 +4,8 @@ description: Permission profile for role.architect (native permission key).
 permission:
   tools:
     "*": allow
-    edit: deny
-    write: deny
+    edit: allow
+    write: allow
     find_replace: deny
     replace_in_symbol: deny
     move_symbol: deny
