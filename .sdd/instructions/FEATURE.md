@@ -9,8 +9,8 @@ code_context_lines: 200
 Refactor the proposal generation process for project_fixed by splitting technical estimation (engineering, numbers) from commercial writing (tone, persuasion) via a 4-stage pipeline driven by a new maturity_score, while keeping staff_augmentation unchanged and preserving all external interfaces (REST API and Telegram bot).
 
 ## Key Artifacts (to focus on)
-- **Files**: app/intelligence/adapters/gemini.py, app/intelligence/adapters/openrouter.py, app/intelligence/factory.py, app/intelligence/port.py, app/models/analysis.py, app/models/estimate.py, app/models/project.py, app/database/requirement_analyses_repository.py, app/database/technical_estimates_repository.py, app/bots/telegram/handlers.py, app/intelligence/prompts/base/base-role.j2, app/intelligence/prompts/s1-analysis/evaluate-project.j2, app/intelligence/prompts/s1-analysis/format-description.j2, app/intelligence/prompts/s2-estimation/analyze-requirement.j2, app/intelligence/prompts/s2-estimation/estimate-full.j2, app/intelligence/prompts/s2-estimation/estimate-discovery.j2, app/intelligence/prompts/s3-commercial/write-proposal.j2, app/intelligence/prompts/s3-commercial/write-proposal-staffing.j2, app/intelligence/prompts/s4-refine/refine-proposal.j2, app/intelligence/prompts/s4-refine/refine-proposal-staffing.j2, tests/unit/intelligence/test_adapters.py, tests/unit/intelligence/test_factory.py, tests/unit/intelligence/test_gemini_adapter.py, tests/integration/api/test_proposals.py, docs/CONTRACT_TYPE_FEATURE.md, docs/USAGE_EXAMPLES.md
-- **Classes/Interfaces**: IntelligencePort, RequirementAnalysis, Entities, Gap, TechnicalEstimateFull, TechnicalEstimateDiscovery, Milestone, Task, MilestoneProposalSummary, RequirementAnalysesRepository, TechnicalEstimatesRepository, PipelineError
+- **Files**: app/intelligence/adapters/gemini.py, app/intelligence/adapters/openrouter.py, app/intelligence/factory.py, app/intelligence/port.py, app/exceptions.py, app/models/analysis.py, app/models/estimate.py, app/models/project.py, app/database/requirement_analyses_repository.py, app/database/technical_estimates_repository.py, app/bots/telegram/handlers.py, app/intelligence/prompts/base/base-role.j2, app/intelligence/prompts/s1-analysis/evaluate-project.j2, app/intelligence/prompts/s1-analysis/format-description.j2, app/intelligence/prompts/s2-estimation/analyze-requirement.j2, app/intelligence/prompts/s2-estimation/estimate-full.j2, app/intelligence/prompts/s2-estimation/estimate-discovery.j2, app/intelligence/prompts/s3-commercial/write-proposal.j2, app/intelligence/prompts/s3-commercial/write-proposal-staffing.j2, app/intelligence/prompts/s4-refine/refine-proposal.j2, app/intelligence/prompts/s4-refine/refine-proposal-staffing.j2, tests/unit/intelligence/test_adapters.py, tests/unit/intelligence/test_factory.py, tests/unit/intelligence/test_gemini_adapter.py, tests/integration/api/test_proposals.py, docs/CONTRACT_TYPE_FEATURE.md, docs/USAGE_EXAMPLES.md
+- **Classes/Interfaces**: IntelligencePort, RequirementAnalysis, Entities, TechnicalEstimateFull, TechnicalEstimateDiscovery, Milestone, Task, MilestoneProposalSummary, RequirementAnalysesRepository, TechnicalEstimatesRepository, PipelineError
 - **Configuration**: MATURITY_THRESHOLD
 
 ## Task List
@@ -23,15 +23,16 @@ Refactor the proposal generation process for project_fixed by splitting technica
 - TASK006 [ ] Create the Stage 1 prompt template analyze-requirement.j2 in app/intelligence/prompts/s2-estimation/ that extracts entities, gaps, and assigns maturity_score. [ASSET: ./assets/TASK006_spec.md]
 - TASK007 [ ] Create the Stage 2A prompt template estimate-full.j2 in app/intelligence/prompts/s2-estimation/ that produces a structured technical estimate for mature requirements. [ASSET: ./assets/TASK007_spec.md]
 - TASK008 [ ] Create the Stage 2B prompt template estimate-discovery.j2 in app/intelligence/prompts/s2-estimation/ that produces a discovery-mode technical estimate for ambiguous requirements. [ASSET: ./assets/TASK008_spec.md]
-- TASK009 [ ] Refactor write-proposal.j2 into a 100% commercial-writing prompt that does not recompute technical numbers. [ASSET: ./assets/TASK009_spec.md]
+- TASK009 [ ] Refactor write-proposal.j2 into a 100% commercial-writing prompt that emits the full flat MilestoneProposal contract (proposal_header, milestones, summary, technical_pitch, questions_for_client), carrying milestones and summary verbatim from the technical estimate. [ASSET: ./assets/TASK009_spec.md]
 - TASK010 [ ] Add the three new abstract methods to IntelligencePort in app/intelligence/port.py for the staged pipeline. [ASSET: ./assets/TASK010_spec.md]
 - TASK011 [ ] Update the Gemini adapter to implement the new staged pipeline methods with strict Pydantic validation and structured output, plus the project_fixed orchestrator. [ASSET: ./assets/TASK011_spec.md]
 - TASK012 [ ] Update the OpenRouter adapter to implement the new staged pipeline methods with post-hoc Pydantic validation, plus the project_fixed orchestrator. [ASSET: ./assets/TASK012_spec.md]
 - TASK013 [ ] Update app/intelligence/factory.py template selection helpers for the new subfolder paths and add a maturity-aware estimation template selector. [ASSET: ./assets/TASK013_spec.md]
 - TASK014 [ ] Update app/bots/telegram/handlers.py to route by contract_type and persist the three collections, keeping the telemetry message format unchanged. [ASSET: ./assets/TASK014_spec.md]
 - TASK015 [ ] Update project_fixed proposal generation to read MATURITY_THRESHOLD from the environment and pass it to analyze_requirement, persisting it on the analysis record. [ASSET: ./assets/TASK015_spec.md]
-- TASK016 [ ] Remove legacy numeric-estimation logic from write-proposal.j2 and consolidate the 270h minimum, technical floors, and milestone construction into estimate-full.j2. [ASSET: ./assets/TASK016_spec.md]
+- TASK016 [ ] Consolidate the numeric/commercial split: verify estimate-full.j2 owns all numeric generation and write-proposal.j2 contains zero numeric instructions, fixing any gap. [ASSET: ./assets/TASK016_spec.md]
 - TASK017 [ ] Document the new staged pipeline in docs/USAGE_EXAMPLES.md, including the MATURITY_THRESHOLD configuration and branch behavior. [ASSET: ./assets/TASK017_spec.md]
+- TASK018 [ ] Define PipelineError in app/exceptions.py for the staged pipeline guard rail, used by the Stage 1 and Stage 2 validation gatekeepers. [ASSET: ./assets/TASK018_spec.md]
 
 ## End Task List
 
@@ -54,6 +55,9 @@ Refactor the proposal generation process for project_fixed by splitting technica
 - UNIT015 [ ] tests/unit/database/test_technical_estimates_repository.py — verify insert persists 'full' and 'discovery' documents correctly and get_latest_by_project_id returns the highest created_at, with no version_number logic used.
 - UNIT016 [ ] tests/unit/intelligence/test_adapters.py — regression test: staff_augmentation path (generate_proposal) remains functionally unchanged after the refactor.
 - UNIT017 [ ] tests/unit/bots/test_telegram_handlers.py — verify the handler routes contract_type='project_fixed' to generate_project_fixed_proposal and contract_type='staff_augmentation' to the existing generate_proposal path.
+- UNIT018 [ ] tests/unit/intelligence/test_adapters.py — contract test: the output of write_commercial_proposal validates against MilestoneProposal from app/models/project.py and contains exactly the fields proposal_header, milestones, summary, technical_pitch, questions_for_client.
+- UNIT019 [ ] tests/unit/intelligence/test_adapters.py — verbatim test: the milestones and summary in the Stage 3 output are deep-equal to those in the technical_estimate_json input (no recompute, rename, restyle or drop).
+- UNIT020 [ ] tests/unit/intelligence/test_adapters.py — accumulation test: each stage adds its block without losing the previous ones (Stage 1 -> analysis; Stage 2 -> analysis+estimate; Stage 3 -> the merged final MilestoneProposal).
 
 ## End Unit Test List
 
@@ -61,12 +65,13 @@ Refactor the proposal generation process for project_fixed by splitting technica
 
 - INT001 [ ] tests/integration/api/test_proposals.py — update template-path assertions to the new subfolder-prefixed paths used by the adapters (lines ~526-669).
 - INT002 [ ] tests/integration/api/test_proposals.py — verify GET /api/projects/{id} and POST /{projectId}/refine endpoints continue to expose the proposal in the same format with proposal embedded; intermediate artifacts (requirement_analyses, technical_estimates) are NOT exposed in API responses.
-- INT003 [ ] tests/integration/pipeline/test_project_fixed_pipeline.py — full pipeline integration: given a project_fixed project, run generate_project_fixed_proposal end-to-end and assert a document exists in requirement_analyses, one in technical_estimates, and one in proposal_versions with the merged JSON (analysis + estimate + proposal).
+- INT003 [ ] tests/integration/pipeline/test_project_fixed_pipeline.py — full pipeline integration: given a project_fixed project, exercise the Telegram handler processing path (which owns persistence) so that generate_project_fixed_proposal runs end-to-end and a document exists in requirement_analyses, one in technical_estimates, and one in proposal_versions. Assert the proposal_versions document carries the merged JSON (analysis + estimate + proposal). The orchestrator itself returns the accumulated JSON and does NOT persist; persistence is asserted at the handler level.
 - INT004 [ ] tests/integration/pipeline/test_project_fixed_pipeline.py — maturity branching integration: with maturity_score >= MATURITY_THRESHOLD, verify technical_estimates contains milestones+summary and estimate_type='full'; with maturity_score < MATURITY_THRESHOLD, verify it contains scope_matrix, phase0_hours, post_discovery_hourly_rate, open_questions and estimate_type='discovery'.
 - INT005 [ ] tests/integration/pipeline/test_project_fixed_pipeline.py — guard-rail integration: feed an invalid JSON output for Etapa 1 (or 2) and assert PipelineError is raised, no PREMIUM call is made for Etapa 3, and no proposal_versions document is created.
 - INT006 [ ] tests/integration/pipeline/test_project_fixed_pipeline.py — idempotency integration: if Etapa 3 fails after Etapas 1-2 succeed, the persisted technical_estimate remains reusable on retry without re-running Etapas 1-2.
 - INT007 [ ] tests/integration/pipeline/test_staff_augmentation_regression.py — verify staff_augmentation still uses the direct generate_proposal path with no Etapa 1/2 calls and no requirement_analyses or technical_estimates inserts.
 - INT008 [ ] tests/integration/bots/test_telegram_handlers.py — verify the Telegram commands /analizar, /procesar, /refinar keep the current telemetry message structure and that /procesar routes by contract_type correctly.
+- INT009 [ ] tests/integration/api/test_proposals.py — external contract integration: the document persisted in proposal_versions.proposal_data validates against MilestoneProposal and GET /api/projects/{id} exposes the proposal with the exact same structure the Workana dashboard consumes (proposal_header, milestones[], summary, technical_pitch, questions_for_client).
 
 ## End Integration Test List
 
@@ -79,13 +84,14 @@ Refactor the proposal generation process for project_fixed by splitting technica
 ## Reviewer List
 
 - TASK001:
-    - ACK001 [ ] All seven templates exist at the new subfolder paths with semantic prefixes (analyze-, estimate-, write-, refine-, evaluate-, format-)
+    - ACK001 [ ] All seven templates exist at the new subfolder paths with semantic prefixes (analyze-, estimate-, write-, refine-, evaluate-, format-); the move uses the plain shell `mv` command
     - ACK002 [ ] No template file remains at the old name or old location
-    - ACK003 [ ] Every get_template() call in the listed files (gemini.py, openrouter.py, factory.py, tests, docs) references the new subfolder-prefixed path
+    - ACK003 [ ] Every Jinja template reference in the listed files (gemini.py, openrouter.py, factory.py, tests, docs) — including template_name string literals, not only get_template() calls — references the new subfolder-prefixed path
     - ACK004 [ ] Running the test suite shows no template-not-found errors caused by the rename
     - ACK005 [ ] docs/CONTRACT_TYPE_FEATURE.md and docs/USAGE_EXAMPLES.md reflect the new paths
+    - ACK095 [ ] A repository-wide search confirms no bare template reference (e.g. 'evaluation.j2', 'proposal.j2', 'base_role.j2') remains outside the new subfolders
 - TASK002:
-    - ACK006 [ ] app/models/analysis.py exists with Entities, Gap (or equivalent), and RequirementAnalysis classes
+    - ACK006 [ ] app/models/analysis.py exists with Entities and RequirementAnalysis classes, where RequirementAnalysis.gaps is a list of strings
     - ACK007 [ ] RequirementAnalysis.maturity_score is constrained to integers 1..10
     - ACK008 [ ] RequirementAnalysis.branch only accepts the literal values 'full' or 'discovery'
     - ACK009 [ ] Instantiating RequirementAnalysis with valid data succeeds and with invalid data raises ValidationError
@@ -128,11 +134,13 @@ Refactor the proposal generation process for project_fixed by splitting technica
     - ACK040 [ ] Output schema defines phase0_hours, post_discovery_hourly_rate, and open_questions
     - ACK041 [ ] Template instructions explicitly forbid commercial/persuasive language; this is a Stage 2B gatekeeper
 - TASK009:
-    - ACK042 [ ] Template at app/intelligence/prompts/s3-commercial/write-proposal.j2 contains zero instructions to compute hours, prices, or milestones
+    - ACK042 [ ] Template at app/intelligence/prompts/s3-commercial/write-proposal.j2 contains zero instructions to COMPUTE hours, prices, milestones, or subtotals (it may only carry them through verbatim from the technical estimate)
     - ACK043 [ ] Template accepts technical_estimate_json as the sole technical source
-    - ACK044 [ ] Output schema is proposal_header, technical_pitch, questions_for_client
+    - ACK044 [ ] Output schema is the full MilestoneProposal contract: proposal_header, milestones, summary, technical_pitch, questions_for_client (milestones and summary carried through verbatim from the technical estimate)
     - ACK045 [ ] Conditional CTA and \n\n maquetation are preserved
     - ACK046 [ ] References inside the prompt to numeric generation (270h, floors, milestone construction) are removed
+    - ACK093 [ ] The Stage 3 rendered output validates against MilestoneProposal from app/models/project.py and exposes all six fields required by the Workana dashboard
+    - ACK094 [ ] The template explicitly forbids omitting, renaming, restyling or summarizing milestones and summary
 - TASK010:
     - ACK047 [ ] IntelligencePort declares the three new abstract methods with the exact signatures above
     - ACK048 [ ] Existing generate_proposal and refine_proposal abstract methods remain unchanged
@@ -162,7 +170,7 @@ Refactor the proposal generation process for project_fixed by splitting technica
     - ACK069 [ ] New helper is importable from app.intelligence.factory
 - TASK014:
     - ACK070 [ ] Handler branches by contract_type to the new orchestrator vs the existing generate_proposal
-    - ACK071 [ ] On project_fixed success, a document is inserted into requirement_analyses, one into technical_estimates, and one into proposal_versions
+    - ACK071 [ ] On project_fixed success, a document is inserted into requirement_analyses, one into technical_estimates, and one into proposal_versions; the proposal_versions.proposal_data is the flat MilestoneProposal contract (proposal_header, milestones, summary, technical_pitch, questions_for_client), not the nested accumulated shape
     - ACK072 [ ] On staff_augmentation, behavior is unchanged
     - ACK073 [ ] Telemetry message strings keep their current structure (no added/removed fields)
     - ACK074 [ ] No new external command or response format is introduced to the Telegram bot
@@ -183,5 +191,10 @@ Refactor the proposal generation process for project_fixed by splitting technica
     - ACK086 [ ] Branch rule (>=T → full, <T → discovery) is documented
     - ACK087 [ ] staff_augmentation is described as unchanged
     - ACK088 [ ] External interfaces (REST API, Telegram bot) are described as unchanged
+- TASK018:
+    - ACK089 [ ] PipelineError is defined in app/exceptions.py and is importable
+    - ACK090 [ ] analyze_requirement and estimate_technical raise PipelineError when Pydantic validation fails
+    - ACK091 [ ] The orchestrator aborts before the Stage 3 (PREMIUM) call when PipelineError is raised
+    - ACK092 [ ] PipelineError follows the existing exception convention in app/exceptions.py
 
 ## End Reviewer List
