@@ -20,8 +20,17 @@ PROMPTS_DIR = os.path.join(
 
 @pytest.fixture(scope="module")
 def jinja_env() -> Environment:
-    """Create a Jinja2 environment pointed at the prompts directory."""
-    return Environment(loader=FileSystemLoader(PROMPTS_DIR))
+    """Create a Jinja2 environment pointed at the prompts directory.
+
+    ``fromjson`` is registered here because both production adapters do the same
+    (``OpenRouterAdapter.__init__`` / ``GeminiAdapter.__init__``): the Stage 2
+    templates normalise ``analysis_json``, which callers pass as a JSON *string*,
+    via ``| fromjson``. A fixture without the filter cannot render either template
+    and would report a false failure.
+    """
+    env = Environment(loader=FileSystemLoader(PROMPTS_DIR))
+    env.filters["fromjson"] = json.loads
+    return env
 
 
 # ── Template existence tests ────────────────────────────────────────────────
@@ -133,25 +142,69 @@ def test_analyze_requirement_renders(jinja_env: Environment) -> None:
 
 
 def test_estimate_full_renders(jinja_env: Environment) -> None:
-    """UNIT022: estimate-full.j2 renders with documented context (analysis_json).
-    Note: template may have runtime type errors in macro calls.
-    We verify the template loads and starts rendering without syntax error."""
+    """UNIT022: estimate-full.j2 renders to parseable JSON with consistent hours.
+
+    The previous version of this test wrapped the render in a bare
+    ``except Exception: pass``, so it stayed green while the template crashed in
+    production with ``TypeError: type str doesn't define __round__ method``. A
+    prompt template that does not render is never acceptable, so the render is
+    now asserted unconditionally.
+    """
     template = jinja_env.get_template("s2-estimation/estimate-full.j2")
     analysis = _sample_analysis()
-    # Verify no syntax error (ignore runtime errors from macro type issues)
-    try:
-        output = template.render(analysis_json=json.dumps(analysis, indent=2))
-        assert len(output) > 0, "Template rendered empty string"
-    except Exception:
-        # Runtime errors from Jinja macro type issues are acceptable
-        pass
+    output = template.render(analysis_json=json.dumps(analysis, indent=2))
+    assert len(output) > 0, "Template rendered empty string"
+
+    payload = json.loads(output)
+    assert payload["estimate_type"] == "full", (
+        "TechnicalEstimateFull requires estimate_type: Literal['full']"
+    )
+    # Hours invariant asserted by TechnicalEstimateFull.validate_hours_consistency.
+    total = payload["summary"]["total_hours"]
+    milestones = payload["milestones"]
+    assert milestones, "an empty plan has nothing for Stage 3 to sell"
+    assert abs(total - sum(m["hours_with_overhead"] for m in milestones)) <= 0.5, (
+        "summary.total_hours must equal the sum of the milestone hours"
+    )
+    for milestone in milestones:
+        rollup = sum(t["hours_with_overhead"] for t in milestone["tasks"].values())
+        assert abs(rollup - milestone["hours_with_overhead"]) <= 0.5, (
+            f"milestone step {milestone['step']} disagrees with its own tasks"
+        )
 
 
 def test_estimate_discovery_renders(jinja_env: Environment) -> None:
-    """UNIT022: estimate-discovery.j2 renders with documented context.
-    Note: this template defines macros and does not produce output until
-    a macro is called. We verify it loads without error."""
+    """UNIT022: estimate-discovery.j2 renders to parseable JSON at top level.
+
+    This template used to be a bag of never-invoked ``{% macro %}`` definitions,
+    so ``render()`` returned ``''`` for every input and OpenRouter rejected the
+    blank prompt with ``400 — Input must have at least 1 token``. The body is now
+    inline; both the emptiness and the JSON shape are asserted.
+    """
     template = jinja_env.get_template("s2-estimation/estimate-discovery.j2")
     analysis = _sample_analysis()
-    # Just validate no Jinja syntax error
-    template.render(analysis_json=json.dumps(analysis, indent=2))
+    output = template.render(analysis_json=json.dumps(analysis, indent=2))
+    assert output.strip(), (
+        "estimate-discovery.j2 rendered empty — the Stage 2B prompt would be "
+        "rejected upstream as 'Input must have at least 1 token'"
+    )
+
+    payload = json.loads(output)
+    assert payload["estimate_type"] == "discovery"
+    assert isinstance(payload["phase0_hours"], int) and payload["phase0_hours"] >= 1
+    assert payload["post_discovery_hourly_rate"] > 0
+    # open_questions must be a real JSON array, not the Python repr of one
+    # (the old ``{{ questions }}`` emitted "['g1', 'g2']").
+    assert isinstance(payload["open_questions"], list), (
+        "open_questions must serialise via | tojson, not via Python repr"
+    )
+    assert len(payload["open_questions"]) >= 1, (
+        "TechnicalEstimateDiscovery requires at least one open question"
+    )
+    for question in payload["open_questions"]:
+        assert question.strip(), "open_questions must not contain blank strings"
+
+    scope = payload["scope_matrix"]
+    assert set(scope["in_scope"]).isdisjoint(scope["out_of_scope"]), (
+        "validate_scope_disjoint rejects items present in both scope branches"
+    )

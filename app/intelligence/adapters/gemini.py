@@ -45,6 +45,14 @@ class GeminiAdapter(IntelligencePort):
 
         template_path = os.path.join(os.path.dirname(__file__), '../prompts')
         self.jinja_env = Environment(loader=FileSystemLoader(template_path))
+        # Las plantillas de estimación reciben ``analysis_json`` ya serializado
+        # (json.dumps). Jinja2 no trae un filtro inverso a ``tojson`` (``fromjson``
+        # es propio de Ansible), así que se registra explícitamente para que la
+        # plantilla pueda normalizar str -> dict sin romper a los llamantes que
+        # ya pasan un mapping. Sin este registro, estimate-full.j2 y
+        # estimate-discovery.j2 revientan con
+        # TemplateRuntimeError: No filter named 'fromjson' found.
+        self.jinja_env.filters["fromjson"] = json.loads
 
         logger.info('Instanciando el Adapter de GEMINI')
         api_key = os.getenv("GEMINI_API_KEY")

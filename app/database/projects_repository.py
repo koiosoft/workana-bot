@@ -1,3 +1,4 @@
+import os
 import hashlib
 import re
 from datetime import datetime, timedelta, timezone
@@ -276,7 +277,16 @@ class ProjectsRepository:
             "ai_score": 1,
             "ai_summary": 1
         }).limit(limit)
-        return await cursor.to_list(length=limit)
+        projects = await cursor.to_list(length=limit)
+
+        # DEBUG FILTER: enabled by env var DEBUG_FILTER_LINK_HASH
+        # When set to a link_hash value, only that project is returned.
+        # When unset or empty, all projects pass through normally.
+        _debug_hash = os.environ.get("DEBUG_FILTER_LINK_HASH", "")
+        if _debug_hash:
+            projects = [p for p in projects if p.get("link_hash") == _debug_hash]
+
+        return projects
 
     async def update_full_details(self, link_hash: str, details: dict):
         """Actualiza el proyecto con la data profunda y cambia el estado."""

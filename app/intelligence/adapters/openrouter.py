@@ -56,6 +56,12 @@ class OpenRouterAdapter(IntelligencePort):
 
         template_path = os.path.join(os.path.dirname(__file__), "../prompts")
         self.jinja_env = Environment(loader=FileSystemLoader(template_path))
+        # Las plantillas de estimación reciben ``analysis_json`` ya serializado
+        # (json.dumps). Jinja2 no trae un filtro inverso a ``tojson`` (``fromjson``
+        # es propio de Ansible), así que se registra explícitamente para que la
+        # plantilla pueda normalizar str -> dict sin romper a los llamantes que
+        # ya pasan un mapping.
+        self.jinja_env.filters["fromjson"] = json.loads
 
         logger.info("Instanciando el Adapter de OpenRouter")
         api_key = os.getenv("OPENROUTER_API_KEY")
@@ -661,9 +667,36 @@ class OpenRouterAdapter(IntelligencePort):
             else "s2-estimation/estimate-discovery.j2"
         )
 
+        # -- Trazabilidad de Etapa 2: qué datos entran realmente a la plantilla.
+        # Sin esto, un campo inexistente en el Stage 1 (p.ej. ``requirements``)
+        # se resuelve como Undefined dentro de Jinja sin lanzar errores, y el
+        # descuadre de horas aparece aguas abajo como PipelineError opaco.
+        analysis_keys = sorted(analysis.keys()) if isinstance(analysis, dict) else []
+        entities = analysis.get("entities", {}) if isinstance(analysis, dict) else {}
+        logger.debug(
+            f"[DEBUG Etapa 2] template_name={template_name!r} branch={branch!r} "
+            f"analysis_keys={analysis_keys}"
+        )
+        logger.debug(
+            f"[DEBUG Etapa 2] drivers: maturity_score="
+            f"{analysis.get('maturity_score')!r} "
+            f"technologies={len(entities.get('technologies', []) or [])} "
+            f"deliverables={len(entities.get('deliverables', []) or [])} "
+            f"constraints={len(entities.get('constraints', []) or [])} "
+            f"gaps={len(analysis.get('gaps', []) or [])}"
+        )
+
+        analysis_json = json.dumps(analysis, indent=2)
+
         prompt = self._render_prompt(
             template_name,
-            analysis_json=json.dumps(analysis, indent=2),
+            analysis_json=analysis_json,
+        )
+
+        logger.debug(
+            f"[DEBUG Etapa 2] render OK: template_output_len={len(prompt)} "
+            f"input_json_len={len(analysis_json)} "
+            f"first_200={prompt[:200]!r}"
         )
 
         logger.info(f"🤖 Etapa 2 — estimación técnica (branch={branch})...")

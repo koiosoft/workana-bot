@@ -1,77 +1,113 @@
-{#
+{#- Jinja2 template: estimate-discovery.j2
   Stage 2B – Discovery-Mode Technical Estimate
   ---------------------------------------------
   Consumes: analysis_json (Stage 1 RequirementAnalysis output where
-             maturity_score < threshold).
-  Produces: JSON with scope_matrix, phase0_hours,
+             maturity_score < threshold, i.e. branch == 'discovery').
+
+  Stage 1 output shape (app/models/analysis.py):
+    {
+      "maturity_score": int,         // 1-10
+      "maturity_reason": str,
+      "entities": {
+        "technologies": [str],
+        "deliverables": [str],
+        "constraints":  [str]
+      },
+      "gaps": [str],                 // each gap becomes an open_question
+      "branch": "discovery" | "full"
+    }
+
+  Produces: JSON with estimate_type, scope_matrix, phase0_hours,
              post_discovery_hourly_rate, open_questions.
   Strictly technical — no commercial or persuasive language.
   Used as input to Stage 3.
+
+  FIX (TASK008 debug): This template used to be a bag of `{% macro %}`
+  definitions with no top-level invocation. Jinja emits *nothing* for a macro
+  definition, so `render()` returned `""` for every input and OpenRouter then
+  rejected the blank prompt (`400 — Input must have at least 1 token`). The
+  body is now INLINE at top level. Three further defects are fixed here:
+    1. Context type. Callers pass `analysis_json=json.dumps(analysis)` — a JSON
+       *string*. The old code called `analysis_json.get("entities", {})`, a
+       Python dict method, which raised
+       `UndefinedError: 'str object' has no attribute 'get'`. Normalisation now
+       mirrors estimate-full.j2: `is mapping` → use, `is string` → `| fromjson`,
+       else `{}`.
+    2. Serialisation. `{{ questions }}` rendered the Python repr of the list
+       inside quotes (`"['g1', 'g2']"`), which is not valid JSON. Lists go
+       through `| tojson` now.
+    3. Contract fields. `TechnicalEstimateDiscovery` requires `estimate_type:
+       Literal["discovery"]`; it was absent entirely.
 -#}
-{%- macro estimate_discovery(analysis_json) -%}
+{%- set POST_DISCOVERY_HOURLY_RATE = 25.0 -%}
+{%- set PHASE0_HOURS_PER_GAP = 4 -%}
+{%- set PHASE0_MINIMUM_HOURS = 8 -%}
+
+{#- ------------------------------------------------------------------ -#}
+{#- Normalise context: accept a mapping OR a JSON string                -#}
+{#- ------------------------------------------------------------------ -#}
+{%- set _raw_analysis = analysis_json -%}
+{%- if _raw_analysis is mapping -%}
+  {%- set analysis = _raw_analysis -%}
+{%- elif _raw_analysis is string and _raw_analysis | length > 0 -%}
+  {#- Callers pass json.dumps(analysis); parse it so attribute access works. -#}
+  {%- set analysis = _raw_analysis | fromjson -%}
+{%- else -%}
+  {%- set analysis = {} -%}
+{%- endif -%}
+{%- set entities = analysis.entities if analysis.entities is mapping else {} -%}
+
+{%- set technologies = entities.technologies | default([], true) -%}
+{%- set deliverables = entities.deliverables | default([], true) -%}
+{%- set constraints = entities.constraints | default([], true) -%}
+{%- set gaps = analysis.gaps | default([], true) -%}
+
+{#- ------------------------------------------------------------------ -#}
+{#- Phase 0 sizing: bounded discovery slice, floored so it stays billable -#}
+{#- ------------------------------------------------------------------ -#}
+{%- set gap_count = gaps | length -%}
+{%- set computed_hours = gap_count * PHASE0_HOURS_PER_GAP -%}
+{%- set phase0_hours = [computed_hours, PHASE0_MINIMUM_HOURS] | max -%}
+
+{#- One open question per gap; never empty — Stage 2B exists to ask them. -#}
+{%- set open_questions = gaps | map('string') | list -%}
+{%- if open_questions | length == 0 -%}
+  {%- set open_questions = ["Confirmar el alcance funcional y técnico del proyecto antes de estimar."] -%}
+{%- endif -%}
+
+{#- in_scope/out_of_scope must stay disjoint: validate_scope_disjoint computes
+    {i.strip() for i in in_scope} & {o.strip() for o in out_of_scope}, so an item
+    that appears as both a technology/deliverable and a constraint would abort the
+    run with a ValidationError -> PipelineError. The comparison key below mirrors
+    the validator's own normalisation (trim + casefold) and constraints lose the
+    tiebreak, because 'what we will NOT do' is the safer reading of a Stage 1
+    constraint list. -#}
+{%- set in_scope_raw = [] -%}
+{%- set seen_keys = [] -%}
+{%- for item in (technologies + deliverables) -%}
+  {%- set text = item | string | trim -%}
+  {%- set key = text | lower -%}
+  {%- if text | length > 0 and key not in seen_keys -%}
+    {%- set _ = seen_keys.append(key) -%}
+    {%- set _ = in_scope_raw.append(text) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- set out_of_scope_raw = [] -%}
+{%- for item in constraints -%}
+  {%- set text = item | string | trim -%}
+  {%- set key = text | lower -%}
+  {%- if text | length > 0 and key not in seen_keys -%}
+    {%- set _ = seen_keys.append(key) -%}
+    {%- set _ = out_of_scope_raw.append(text) -%}
+  {%- endif -%}
+{%- endfor -%}
 {
+  "estimate_type": "discovery",
   "scope_matrix": {
-    "in_scope": {{ _extract_in_scope(analysis_json.requirements) | tojson }},
-    "out_of_scope": {{ _extract_out_of_scope(analysis_json.requirements) | tojson }}
+    "in_scope": {{ in_scope_raw | tojson }},
+    "out_of_scope": {{ out_of_scope_raw | tojson }}
   },
-  "phase0_hours": {{ _compute_phase0_hours(analysis_json) }},
-  "post_discovery_hourly_rate": {{ _compute_post_discovery_rate(analysis_json) }},
-  "open_questions": {{ _extract_open_questions(analysis_json) | tojson }}
+  "phase0_hours": {{ phase0_hours | int }},
+  "post_discovery_hourly_rate": {{ POST_DISCOVERY_HOURLY_RATE }},
+  "open_questions": {{ open_questions | tojson }}
 }
-{%- endmacro -%}
-
-{%- macro _extract_in_scope(requirements) -%}
-{%-   set results = [] -%}
-{%-   for req in requirements -%}
-{%-     if req.get("disposition", "out") == "in" -%}
-{%-       set _ = results.append(req.get("id", req.get("title", "unnamed"))) -%}
-{%-     endif -%}
-{%-   endfor -%}
-{{ results }}
-{%- endmacro -%}
-
-{%- macro _extract_out_of_scope(requirements) -%}
-{%-   set results = [] -%}
-{%-   for req in requirements -%}
-{%-     if req.get("disposition", "out") == "out" -%}
-{%-       set _ = results.append(req.get("id", req.get("title", "unnamed"))) -%}
-{%-     endif -%}
-{%-   endfor -%}
-{{ results }}
-{%- endmacro -%}
-
-{%- macro _compute_phase0_hours(analysis_json) -%}
-{%-   set base = analysis_json.get("estimated_base_hours", 40) -%}
-{%-   set complexity = analysis_json.get("complexity_factor", 1.0) -%}
-{%-   set unknowns = analysis_json.get("unknown_requirement_count", 0) -%}
-{%-   set total = (base * complexity + unknowns * 8) | round(0, "ceil") | int -%}
-{{ total }}
-{%- endmacro -%}
-
-{%- macro _compute_post_discovery_rate(analysis_json) -%}
-{%-   set base_rate = analysis_json.get("base_hourly_rate", 150.0) -%}
-{%-   set risk_markup = analysis_json.get("risk_markup_factor", 1.0) -%}
-{%-   set rate = (base_rate * risk_markup * 1.0) | round(2) -%}
-{{ rate }}
-{%- endmacro -%}
-
-{%- macro _extract_open_questions(analysis_json) -%}
-{%-   set questions = analysis_json.get("open_questions", []) -%}
-{%-   if questions | length == 0 -%}
-{%-     set questions = _derive_questions(analysis_json) -%}
-{%-   endif -%}
-{{ questions }}
-{%- endmacro -%}
-
-{%- macro _derive_questions(analysis_json) -%}
-{%-   set derived = [] -%}
-{%-   for req in analysis_json.get("requirements", []) -%}
-{%-     if req.get("clarity", "unclear") == "unclear" and req.get("disposition", "out") == "in" -%}
-{%-       set _ = derived.append("Clarify: " ~ req.get("id", req.get("title", "unnamed"))) -%}
-{%-     endif -%}
-{%-   endfor -%}
-{%-   if derived | length == 0 -%}
-{%-     set _ = derived.append("No open questions at this stage") -%}
-{%-   endif -%}
-{{ derived }}
-{%- endmacro -%}

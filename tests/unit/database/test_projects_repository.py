@@ -523,6 +523,50 @@ class TestGetProjectsForDeepAnalysis:
             result = await repo.get_projects_for_deep_analysis(min_score=10, limit=5)
             assert result == []
 
+    @pytest.mark.asyncio
+    async def test_debug_filter_returns_only_matching_link_hash(self):
+        """When DEBUG_FILTER_LINK_HASH is set, only that project survives."""
+        repo = ProjectsRepository()
+        rows = [
+            {"link_hash": "abc", "title": "P1"},
+            {"link_hash": "def", "title": "P2"},
+        ]
+        with patch("app.database.projects_repository.get_database") as mock_get_db, patch.dict(
+            "os.environ", {"DEBUG_FILTER_LINK_HASH": "def"}
+        ):
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"projects": mock_col}
+            cursor_mock = MagicMock()
+            cursor_mock.limit.return_value = cursor_mock
+            cursor_mock.to_list = AsyncMock(return_value=rows)
+            mock_col.find.return_value = cursor_mock
+
+            result = await repo.get_projects_for_deep_analysis(min_score=5, limit=10)
+
+            assert result == [{"link_hash": "def", "title": "P2"}]
+
+    @pytest.mark.asyncio
+    async def test_debug_filter_disabled_when_env_var_unset(self):
+        """With no DEBUG_FILTER_LINK_HASH, all projects pass through unfiltered."""
+        repo = ProjectsRepository()
+        expected = [
+            {"link_hash": "abc", "title": "P1"},
+            {"link_hash": "def", "title": "P2"},
+        ]
+        with patch("app.database.projects_repository.get_database") as mock_get_db, patch.dict(
+            "os.environ", {}, clear=True
+        ):
+            mock_col = _make_mock_collection()
+            mock_get_db.return_value = {"projects": mock_col}
+            cursor_mock = MagicMock()
+            cursor_mock.limit.return_value = cursor_mock
+            cursor_mock.to_list = AsyncMock(return_value=expected)
+            mock_col.find.return_value = cursor_mock
+
+            result = await repo.get_projects_for_deep_analysis(min_score=5, limit=10)
+
+            assert result == expected
+
 
 # ---------------------------------------------------------------------------
 # update_full_details
