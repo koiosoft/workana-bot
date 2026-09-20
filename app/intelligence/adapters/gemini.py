@@ -540,7 +540,7 @@ class GeminiAdapter(IntelligencePort):
         prompt = self._render_prompt(
             template_name,
             analysis_json=json.dumps(analysis, indent=2),
-            hourly_rate=int(os.getenv("HOURLY_RATE", "18")),
+            hourly_rate=int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18")),
             post_discovery_hourly_rate=float(os.getenv("POST_DISCOVERY_HOURLY_RATE", "18")),
         )
 
@@ -598,7 +598,7 @@ class GeminiAdapter(IntelligencePort):
                             for t in tasks.values() if isinstance(t, dict)
                         )
                         ms.setdefault("hours_with_overhead", total_ms)
-                        ms.setdefault("subtotal", total_ms * int(os.getenv("HOURLY_RATE", "18")))
+                        ms.setdefault("subtotal", total_ms * int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18")))
 
             if branch == "full":
                 validated = TechnicalEstimateFull.model_validate(raw_json)
@@ -649,7 +649,7 @@ class GeminiAdapter(IntelligencePort):
         The ``technical_estimate`` dict (pre-validated by Stage 2) is injected
         verbatim — no numeric recomputation occurs here.
         """
-        hourly_rate = int(os.getenv("HOURLY_RATE", "18"))
+        hourly_rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
         my_skills = [
             "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
             "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",

@@ -323,7 +323,7 @@ class OpenRouterAdapter(IntelligencePort):
         (with ``version_number = MAX + 1``) instead of being stored as an
         embedded document on the project.
         """
-        hourly_rate = int(os.getenv("HOURLY_RATE", "25"))
+        hourly_rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
         contract_type: str = project.get("contract_type", "project_fixed")
 
         logger.info(f"Generando propuesta para tipo de contrato: {contract_type}")
@@ -427,7 +427,7 @@ class OpenRouterAdapter(IntelligencePort):
         When *contract_type* is ``"staff_augmentation"``, the
         ``s4-refine/refine-proposal-staffing.j2`` template is selected.
         """
-        hourly_rate = int(os.getenv("HOURLY_RATE", "25"))
+        hourly_rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
         my_skills = [
             "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
             "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
@@ -738,7 +738,7 @@ class OpenRouterAdapter(IntelligencePort):
         prompt = self._render_prompt(
             template_name,
             analysis_json=analysis_json,
-            hourly_rate=int(os.getenv("HOURLY_RATE", "18")),
+            hourly_rate=int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18")),
             post_discovery_hourly_rate=float(os.getenv("POST_DISCOVERY_HOURLY_RATE", "18")),
         )
 
@@ -803,7 +803,7 @@ class OpenRouterAdapter(IntelligencePort):
                         for t in tasks.values() if isinstance(t, dict)
                     )
                     ms.setdefault("hours_with_overhead", total_ms)
-                    ms.setdefault("subtotal", total_ms * int(os.getenv("HOURLY_RATE", "18")))
+                    ms.setdefault("subtotal", total_ms * int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18")))
 
         try:
             if branch == "full":
@@ -845,7 +845,7 @@ class OpenRouterAdapter(IntelligencePort):
         ``technical_estimate`` sobre la salida del modelo, tal y como exige el
         contrato del dashboard de Workana.
         """
-        hourly_rate = int(os.getenv("HOURLY_RATE", "25"))
+        hourly_rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
         my_skills: list[str] = [
             "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
             "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
