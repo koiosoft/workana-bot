@@ -204,24 +204,52 @@ class TechnicalEstimateFull(_EstimateBase):
 class TechnicalEstimateDiscovery(_EstimateBase):
     """Validated Stage 2B output (`branch == 'discovery'`).
 
-    Phase 0 is a paid discovery slice, not a project plan: it prices a bounded
-    clarification phase and defers the rest, so there are no milestones and no
-    budget.  The three numeric/list fields mirror `estimate-discovery.j2`
-    (TASK009) one-to-one.
+    DISENO B (estimacion parcial): el requerimiento esta parcialmente claro, asi
+    que la estimacion tiene DOS partes:
+
+      1. La parte que SI se conoce y se puede presupuestar -> `milestones` +
+         `summary` (mismos tipos que la rama 'full', reutilizados de
+         `app.models.project`, para que Stage 3 los copie verbatim). Puede ser
+         una lista vacia cuando aun no hay NINGUNA parte estimable.
+      2. La parte desconocida -> se deja para discovery/reuniones: `scope_matrix`
+         (que quedo dentro/fuera), `discovery_hours` (horas de consultoria/
+         reunion) y `post_discovery_hourly_rate` (tarifa para el trabajo
+         posterior, tipicamente por horas).
+
+    `summary.total_budget` cubre SOLO la parte estimable (los hitos); las horas
+    de discovery se presupuestan aparte como `discovery_hours` x
+    `post_discovery_hourly_rate`.
 
     Cross-field rules enforced beyond the declared types:
-      - `phase0_hours` >= 1;
+      - `discovery_hours` >= 1;
       - `post_discovery_hourly_rate` > 0;
+      - `summary.total_hours` == suma de las horas de los hitos (tolerancia 0.5h)
+        cuando hay hitos;
       - at least one open question (Stage 2B exists to ask them);
       - `in_scope` and `out_of_scope` disjoint.
     """
 
     estimate_type: Literal["discovery"]
 
+    # --- Parte 1: lo que SI se estima y se presupuesta ---
+    milestones: List[Milestone] = Field(default_factory=list)
+    summary: MilestoneProposalSummary
+
+    # --- Parte 2: lo desconocido -> discovery/reuniones ---
     scope_matrix: ScopeMatrix = Field(default_factory=ScopeMatrix)
-    phase0_hours: int = Field(..., ge=1)
+    discovery_hours: int = Field(..., ge=1)
     post_discovery_hourly_rate: float = Field(..., gt=0)
     open_questions: List[str] = Field(..., min_length=1)
+
+    @field_validator("milestones", mode="before")
+    @classmethod
+    def _coerce_milestone_hours(cls, value: Any) -> Any:
+        return _ceil_hours_in(value)
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def _coerce_summary_hours(cls, value: Any) -> Any:
+        return _ceil_hours_in(value)
 
     @field_validator("open_questions")
     @classmethod
@@ -246,6 +274,30 @@ class TechnicalEstimateDiscovery(_EstimateBase):
                 f"in_scope and out_of_scope: {sorted(overlap)}"
             )
         return scope
+
+    def validate_hours_consistency(self) -> None:
+        """Check `summary.total_hours` against the estimated milestone hours.
+
+        Solo aplica cuando hay hitos (parte estimable). Si `milestones` esta
+        vacio, no hay nada que cuadrar: el proyecto entero queda para discovery.
+        """
+        if not self.milestones:
+            return
+        milestone_hours = sum(m.hours_with_overhead for m in self.milestones)
+        total = self.summary.total_hours
+        if abs(total - milestone_hours) > 0.5:
+            raise ValueError(
+                f"summary.total_hours ({total}) does not match the sum of the "
+                f"estimated milestone hours_with_overhead ({milestone_hours})"
+            )
+        for milestone in self.milestones:
+            rollup = sum(t.hours_with_overhead for t in milestone.tasks.values())
+            if abs(rollup - milestone.hours_with_overhead) > 0.5:
+                raise ValueError(
+                    f"milestone step {milestone.step} ({milestone.name!r}) reports "
+                    f"hours_with_overhead={milestone.hours_with_overhead} but its "
+                    f"tasks sum to {rollup}"
+                )
 
 
 def _ceil_hours_in(value: Any) -> Any:

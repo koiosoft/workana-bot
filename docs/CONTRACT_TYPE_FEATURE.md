@@ -108,6 +108,11 @@ Genera propuestas con:
 - Presupuesto total y horas estimadas
 - Enfoque en arquitectura y entregables
 
+> **Nota:** este template es la **Etapa 3** del pipeline por etapas. Los
+> ``milestones`` y ``summary`` los produce la Etapa 2 (STANDARD) y se inyectan
+> **verbatim**; este template solo redacta los textos comerciales. Ver
+> ``docs/PIPELINE_PROPUESTAS_POR_ETAPAS.md``.
+
 #### 🔧 `s3-commercial/write-proposal-staffing.j2` - Staff Augmentation
 Genera propuestas con:
 - Carta de presentación del perfil profesional

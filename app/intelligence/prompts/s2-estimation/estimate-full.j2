@@ -1,223 +1,102 @@
 {#- Jinja2 template: estimate-full.j2
-  Stage 2A — Technical Estimate Generator
-  ---------------------------------------
-  Consumes the Stage 1 ``RequirementAnalysis`` payload and produces purely
-  technical numbers + structure (milestones / summary) consumed by Stage 3.
-  No commercial or persuasive text is generated in this stage.
+  Stage 2A — Estimacion COMPLETA (requerimiento maduro)
+  -----------------------------------------------------
+  Mentalidad: NO se estiman "horas de programar codigo a mano". Se estiman
+  "Horas de IA Supervisada": el tiempo humano real invertido en DIRIGIR y
+  VALIDAR a un modelo LLM (prompting/arquitectura, iteracion, auditoria/QA,
+  integracion), NO en escribir el codigo.
 
-  REAL Stage 1 fields consumed (see app/models/analysis.py):
-    - maturity_score            int, 1-10
-    - maturity_reason           str
-    - entities.technologies     list[str]
-    - entities.deliverables     list[str]
-    - entities.constraints      list[str]
-    - gaps                      list[str]
-    - branch                    "full" | "discovery"
+  Consume: analysis_json (Stage 1 RequirementAnalysis, branch == 'full').
+  Produce: JSON del contrato `TechnicalEstimateFull` (formato SIN cambios):
+    {
+      "estimate_type": "full",
+      "milestones": [ { step, name, tasks{desc,hours_with_overhead},
+                        hours_with_overhead, subtotal } ],
+      "summary": { total_hours, total_budget, delivery_time_weeks, hourly_rate_applied }
+    }
 
-  BUG FIXES applied in this revision
-  ==================================
-  1. Phantom fields. The previous version read ``analysis.requirements``,
-     ``analysis.complexity``, ``analysis.delivery_pace`` and
-     ``analysis.estimated_base_hours`` — none of which exist on the
-     ``RequirementAnalysis`` model. They are now derived from real fields:
-         req_count      = len(technologies) + len(deliverables)
-         complexity     = high   if maturity_score >= 7
-                          medium if 4 <= maturity_score <= 6
-                          low    if maturity_score <= 3
-         delivery_pace  = urgent    if len(gaps) >= 4
-                          expedited if len(gaps) >= 2
-                          standard  otherwise
+  REGLA DE CUADRE (el guard rail lo exige): la suma de
+  `milestones[].hours_with_overhead` DEBE igualar `summary.total_hours`
+  (tolerancia 0.5h), y cada hito DEBE cuadrar con la suma de sus tareas.
 
-  2. Context type. Callers pass ``analysis_json=json.dumps(analysis)`` — i.e. a
-     JSON *string*. In Jinja, attribute access on a string yields Undefined
-     rather than raising, so every field above silently resolved to its default
-     and the arithmetic collapsed. The block below therefore accepts either a
-     mapping or a JSON string and normalises to a mapping.
-
-  3. Hours invariant. ``_assert_hours_consistency`` requires
-     ``summary.total_hours`` to equal the sum of the milestone hours (tolerance
-     0.5h) AND each milestone's hours to equal the sum of its own tasks. The old
-     template applied the overhead multiplier per milestone on top of an already
-     safety-loaded total, inflating the rollup ~24% over ``total_hours`` and
-     guaranteeing a PipelineError. Overhead is now applied exactly once at the
-     total level, then split across milestones with the remainder distributed so
-     the sums reconcile to the unit. Task slices inherit their parent
-     milestone's hours for the same reason.
-
-  4. Filter misuse. ``min``/``max`` are sequence-only filters in Jinja; the
-     two-argument forms used previously (``x | min(y)``) raised
-     ``TypeError: 'int' object is not iterable``. Clamping now uses
-     ``[a, b] | max`` list form or explicit comparisons.
-
-  5. Rounding. Every value that reaches ``| round`` is coerced with ``| int``
-     first, so a string-typed input cannot raise
-     ``jinja2.exceptions.UndefinedError: str object has no attribute ...`` /
-     "str doesn't define __round__ method".
+  NO se aplican suelos rigidos (270h, minimos de 6h) ni overhead fijo (1.25):
+  eran artefactos del modelo "humano programando". El requisito llego a 'full'
+  porque YA es maduro y claro; el objetivo es un numero REALISTA pegado al
+  alcance, ni inflado ni flojo.
 -#}
-{%- set HOURLY_RATE = 45 -%}
-{%- set MINIMUM_HOURS = 270 -%}
+{%- set HOURLY_RATE = (hourly_rate | default(18)) | int -%}
 {%- set BASE_WEEKLY_HOURS = 40 -%}
-{%- set OVERHEAD_MULTIPLIER = 1.25 -%}
-{%- set COMPLEXITY_MULTIPLIERS = {"low": 1.0, "medium": 1.2, "high": 1.5} -%}
-{%- set DELIVERY_MULTIPLIERS = {"standard": 1.0, "expedited": 1.3, "urgent": 1.6} -%}
-{%- set MILESTONE_NAMES = ["Foundation & Setup", "Core Implementation", "Integration & Polish", "Deployment & Handover"] -%}
 
-{#- ------------------------------------------------------------------ -#}
-{#- Normalise context: accept a mapping OR a JSON string                -#}
-{#- ------------------------------------------------------------------ -#}
-{%- set _raw_analysis = analysis_json -%}
-{%- if _raw_analysis is mapping -%}
-  {%- set analysis = _raw_analysis -%}
-{%- elif _raw_analysis is string and _raw_analysis | length > 0 -%}
-  {#- Callers pass json.dumps(analysis); parse it so attribute access works. -#}
-  {%- set analysis = _raw_analysis | fromjson -%}
+{%- set _raw = analysis_json -%}
+{%- if _raw is mapping -%}
+  {%- set analysis = _raw -%}
+{%- elif _raw is string and _raw | length > 0 -%}
+  {%- set analysis = _raw | fromjson -%}
 {%- else -%}
   {%- set analysis = {} -%}
 {%- endif -%}
 {%- set entities = analysis.entities if analysis.entities is mapping else {} -%}
-
-{#- ------------------------------------------------------------------ -#}
-{#- Derive every driver from REAL Stage 1 fields                        -#}
-{#- ------------------------------------------------------------------ -#}
 {%- set technologies = entities.technologies | default([], true) -%}
 {%- set deliverables = entities.deliverables | default([], true) -%}
 {%- set constraints = entities.constraints | default([], true) -%}
 {%- set gaps = analysis.gaps | default([], true) -%}
 
-{%- set tech_count = technologies | length -%}
-{%- set deliv_count = deliverables | length -%}
-{%- set gap_count = gaps | length -%}
-{%- set req_count = tech_count + deliv_count -%}
+Eres un **Arquitecto de Software Senior** con más de 24 años de experiencia, especializado en **estimar proyectos que se construyen con asistencia de IA**.
 
-{%- set raw_score = analysis.maturity_score | default(5) | int -%}
-{%- if raw_score >= 7 -%}
-  {%- set complexity = "high" -%}
-{%- elif raw_score >= 4 -%}
-  {%- set complexity = "medium" -%}
-{%- else -%}
-  {%- set complexity = "low" -%}
-{%- endif -%}
+## EL CAMBIO DE MENTALIDAD (lo más importante)
 
-{%- if gap_count >= 4 -%}
-  {%- set delivery_pace = "urgent" -%}
-{%- elif gap_count >= 2 -%}
-  {%- set delivery_pace = "expedited" -%}
-{%- else -%}
-  {%- set delivery_pace = "standard" -%}
-{%- endif -%}
+**NO estimas "horas de programar código a mano".** Hoy el trabajo lo ejecuta un modelo LLM; el humano **dirige y valida**. Estimas **Horas de IA Supervisada**: el tiempo humano real dedicado a:
 
-{%- set complexity_mult = COMPLEXITY_MULTIPLIERS[complexity] | default(1.2) -%}
-{%- set delivery_mult = DELIVERY_MULTIPLIERS[delivery_pace] | default(1.0) -%}
+1. **Prompting y arquitectura** — definir contexto, restricciones y la estructura que la IA generará.
+2. **Generación e iteración asistida** — ejecutar, probar en caliente y re-indicar a la IA hasta que el output sirve.
+3. **Auditoría y QA humano** — revisar lógica de negocio, seguridad y pruebas de integración.
+4. **Integración al sistema** — acoplar el bloque generado con el resto del software.
 
-{#- ------------------------------------------------------------------ -#}
-{#- Hour math. Overhead is applied ONCE here, so total_hours and the    -#}
-{#- milestone rollup can never drift apart.                            -#}
-{#- ------------------------------------------------------------------ -#}
-{%- set effective_req_count = [req_count, 1] | max -%}
-{%- set base_hours = (effective_req_count * 16 * complexity_mult * delivery_mult) | int -%}
-{%- set core_hours = [base_hours, MINIMUM_HOURS] | max -%}
-{%- set total_hours = (core_hours * OVERHEAD_MULTIPLIER) | int -%}
+La IA acelera la *escritura*, pero **el cuello de botella ahora es la supervisión**. Tus horas reflejan ese esfuerzo humano, no la velocidad de tipeo.
 
-{%- if total_hours < 200 -%}
-  {%- set milestone_count = 2 -%}
-{%- elif total_hours <= 500 -%}
-  {%- set milestone_count = 3 -%}
-{%- else -%}
-  {%- set milestone_count = 4 -%}
-{%- endif -%}
-{%- set milestone_count = [milestone_count, MILESTONE_NAMES | length] | min -%}
+## TU TAREA
 
-{#- Integer split; the remainder is spread one hour at a time over the   -#}
-{#- leading milestones so that sum(milestone hours) == total_hours       -#}
-{#- exactly, which is what validate_hours_consistency asserts.           -#}
-{%- set milestone_base = (total_hours / milestone_count) | int -%}
-{%- set remainder = total_hours - (milestone_base * milestone_count) -%}
+El requerimiento está **maduro y claro** (branch = `full`). Produce una estimación por hitos con horas de IA supervisada, **realista y pegada al alcance**. No infles: el objetivo es el número defendible ante el cliente, no el máximo posible.
 
-{%- set delivery_weeks = [(total_hours / BASE_WEEKLY_HOURS) | round(0, 'ceil') | int, 1] | max -%}
-{%- set total_budget = (total_hours * HOURLY_RATE) | round(2) -%}
+## CONTEXTO DEL REQUERIMIENTO (Stage 1)
 
-{#- ------------------------------------------------------------------ -#}
-{#- Milestone construction                                              -#}
-{#- ------------------------------------------------------------------ -#}
-{%- set all_items = [] -%}
-{%- for item in technologies -%}{%- set _ = all_items.append(item | string) -%}{%- endfor -%}
-{%- for item in deliverables -%}{%- set _ = all_items.append(item | string) -%}{%- endfor -%}
-{%- set item_count = all_items | length -%}
+- `maturity_score`: {{ analysis.maturity_score }} (alto = maduro y estimable)
+- `maturity_reason`: {{ analysis.maturity_reason }}
+- Tecnologías mencionadas: {{ technologies | tojson }}
+- Entregables mencionados: {{ deliverables | tojson }}
+- Restricciones mencionadas: {{ constraints | tojson }}
+- Vacíos menores: {{ gaps | tojson }}
 
-{%- set milestones = [] -%}
-{%- for i in range(milestone_count) -%}
-  {%- set step = i + 1 -%}
-  {%- set ms_name = MILESTONE_NAMES[i] -%}
-  {%- set ms_hours = milestone_base + (1 if i < remainder else 0) -%}
-  {%- set ms_subtotal = (ms_hours * HOURLY_RATE) | round(2) -%}
+## CÓMO ESTIMAR
 
-  {#- Slice the extracted items across milestones. When there are fewer    -#}
-  {#- items than milestones the later milestones fall back to a generic    -#}
-  {#- task, but the milestone's own hours always equal its task sum.       -#}
-  {%- if item_count > 0 -%}
-    {%- set slice_start = ((i * item_count) / milestone_count) | int -%}
-    {%- set slice_end = (((i + 1) * item_count) / milestone_count) | int -%}
-  {%- else -%}
-    {%- set slice_start = 0 -%}
-    {%- set slice_end = 0 -%}
-  {%- endif -%}
-  {%- set slice_size = [slice_end - slice_start, 1] | max -%}
-  {%- set task_hours = (ms_hours / slice_size) | int -%}
-  {%- set task_remainder = ms_hours - (task_hours * slice_size) -%}
+1. **Hitos (`milestones`):** entre 2 y 4 hitos lógicos y entregables (saltos de valor, no "días de código"). Cada hito:
+   - `step`: entero 1..N, único y consecutivo.
+   - `name`: nombre corto del hito.
+   - `tasks`: diccionario `{ "clave": { "description": str, "hours_with_overhead": int } }`.
+   - `hours_with_overhead`: entero, suma EXACTA de las Horas de IA Supervisada de sus tareas. (El nombre del campo es del contrato de Workana; su valor NO incluye ningún colchón artificial.)
+   - `subtotal`: horas × {{ HOURLY_RATE }}.
 
-  {%- set tasks = {} -%}
-  {%- if slice_end > slice_start -%}
-    {%- for j in range(slice_start, slice_end) -%}
-      {%- set item = all_items[j] -%}
-      {%- set bonus = task_remainder if j == slice_start else 0 -%}
-      {#- La clave incluye el indice global ``j`` a proposito: Stage 1 puede
-          devolver items repetidos, y dos tareas con el mismo nombre colapsarian
-          en una sola dict key, perdiendo horas y rompiendo
-          validate_hours_consistency (milestone != suma de sus tasks). -#}
-      {%- set _ = tasks.update({("task_" ~ (j + 1)): {
-        "description": "Implementation of " ~ item,
-        "hours_with_overhead": task_hours + bonus
-      }}) -%}
-    {%- endfor -%}
-  {%- else -%}
-    {%- set _ = tasks.update({("implementation_step_" ~ step): {
-      "description": "General implementation work for " ~ ms_name,
-      "hours_with_overhead": ms_hours
-    }}) -%}
-  {%- endif -%}
+2. **Tareas:** cada tarea describe un bloque concreto de trabajo. En su `description`, indica el desglose de dónde vienen las horas, así:
+   `"<qué se hace>. Fases: prompting/arq Xh + iteración Yh + auditoría Zh + integración Wh"`
+   El valor de `hours_with_overhead` de la tarea es la **suma** de esas fases.
 
-  {%- set _ = milestones.append({
-    "step": step,
-    "name": ms_name,
-    "tasks": tasks,
-    "hours_with_overhead": ms_hours,
-    "subtotal": ms_subtotal
-  }) -%}
-{%- endfor -%}
+3. **Magnitud de las horas (guía realista: Horas de IA Supervisada):**
+   - Una tarea típica de coordinación de IA: **1 a 4 horas** (no 8-16 como un developer manual).
+   - Tareas de alta incertidumbre o mucha auditoría: hasta **6-8 horas**.
+   - NO apliques ningún multiplicador ni colchón: las fases de auditoría ya son el esfuerzo real de supervisión.
+   - NO apliques suelos globales (nada de "mínimo 270h"): eso era del modelo antiguo.
+   - `hours_with_overhead` DEBE ser entero (`integer`). Aplica `ceiling`.
 
-{#- ------------------------------------------------------------------ -#}
-{#- Derived signals echoed for Stage 3 / audit traceability             -#}
-{#- ------------------------------------------------------------------ -#}
-{%- set rationale = "Derived from Stage 1: maturity_score=" ~ raw_score ~ " -> complexity=" ~ complexity ~ "; gaps=" ~ gap_count ~ " -> delivery_pace=" ~ delivery_pace ~ "; req_count=" ~ req_count ~ " (" ~ tech_count ~ " technologies + " ~ deliv_count ~ " deliverables)." -%}
-{
-  "estimate_type": "full",
-  "milestones": {{ milestones | tojson(indent=2) }},
-  "summary": {
-    "total_hours": {{ total_hours | int }},
-    "total_budget": {{ total_budget }},
-    "delivery_time_weeks": {{ delivery_weeks | int }},
-    "hourly_rate_applied": {{ HOURLY_RATE | int }}
-  },
-  "assumptions": {{ ([rationale] + constraints | map('string') | list) | tojson }},
-  "_debug": {
-    "maturity_score": {{ raw_score | int }},
-    "complexity": {{ complexity | tojson }},
-    "delivery_pace": {{ delivery_pace | tojson }},
-    "req_count": {{ req_count | int }},
-    "gap_count": {{ gap_count | int }},
-    "base_hours": {{ base_hours | int }},
-    "core_hours": {{ core_hours | int }},
-    "total_hours": {{ total_hours | int }},
-    "milestone_count": {{ milestone_count | int }}
-  }
-}
+4. **Resumen (`summary`):**
+   - `total_hours`: suma EXACTA de `hours_with_overhead` de todos los hitos (entero).
+   - `total_budget`: `total_hours` × {{ HOURLY_RATE }} (float).
+   - `delivery_time_weeks`: `ceil(total_hours / {{ BASE_WEEKLY_HOURS }})`, mínimo 1.
+   - `hourly_rate_applied`: {{ HOURLY_RATE }}.
+
+5. **Cuadre (crítico):** `summary.total_hours` == suma de horas de los hitos; cada hito == suma de sus tareas. Un descuadre aborta el pipeline.
+
+**IMPORTANTE:** No generes texto comercial ni persuasivo. Solo números y estructura técnica.
+
+## INSTRUCCIÓN FINAL
+
+Responde **exclusivamente** con el objeto JSON del contrato (sin prosa, sin markdown, sin ```). El JSON debe ser válido, incluir **obligatoriamente** el campo `"estimate_type": "full"` y tener exactamente los campos descritos.

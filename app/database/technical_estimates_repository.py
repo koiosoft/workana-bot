@@ -25,9 +25,12 @@ is owned by the Pydantic contract in ``app.models.estimate``:
       "milestones": [ {step, name, tasks, hours_with_overhead, subtotal} ],
       "summary": { total_hours, total_budget, delivery_time_weeks,
                    hourly_rate_applied },
-      # --- branch 'discovery' (2B) ---
+      # --- branch 'discovery' (2B, Diseno B: estimacion parcial) ---
+      "milestones": [ {step, name, tasks, hours_with_overhead, subtotal} ],
+      "summary": { total_hours, total_budget, delivery_time_weeks,
+                   hourly_rate_applied },
       "scope_matrix": { in_scope: [], out_of_scope: [] },
-      "phase0_hours": int,
+      "discovery_hours": int,
       "post_discovery_hourly_rate": float,
       "open_questions": [ str ],
       # --- common ---
@@ -35,9 +38,10 @@ is owned by the Pydantic contract in ``app.models.estimate``:
       "created_at": ISODate
     }
 
-The two branches are mutually exclusive: a ``full`` document never carries
-``scope_matrix``/``phase0_hours``/… and a ``discovery`` document never carries
-``milestones``/``summary``.  That exclusivity is enforced here with
+The two branches are mutually exclusive on ``estimate_type``: a ``full``
+document never carries ``scope_matrix``/``discovery_hours``/…, and a
+``discovery`` document (Diseno B) carries BOTH the estimable part
+(``milestones``/``summary``) and the discovery fields.  That exclusivity is
 ``extra="forbid"`` contracts rather than with an if/else list of key names, so
 the persisted shape cannot drift from ``TechnicalEstimateFull`` /
 ``TechnicalEstimateDiscovery`` without one of the two models changing first.
@@ -102,11 +106,17 @@ class _FullContract(_EstimateEnvelope):
 
 
 class _DiscoveryContract(_EstimateEnvelope):
-    """Persistable form of :class:`app.models.estimate.TechnicalEstimateDiscovery`."""
+    """Persistable form of :class:`app.models.estimate.TechnicalEstimateDiscovery`.
+
+    Diseno B: lleva la parte estimable (`milestones` + `summary`) ademas de la
+    parte de discovery (`scope_matrix`, `discovery_hours`, tarifa, preguntas).
+    """
 
     estimate_type: Literal["discovery"]
+    milestones: List[Milestone] = Field(default_factory=list)
+    summary: MilestoneProposalSummary
     scope_matrix: ScopeMatrix = Field(default_factory=ScopeMatrix)
-    phase0_hours: int = Field(..., ge=1)
+    discovery_hours: int = Field(..., ge=1)
     post_discovery_hourly_rate: float = Field(..., gt=0)
     open_questions: List[str] = Field(..., min_length=1)
 
@@ -256,10 +266,11 @@ class TechnicalEstimatesRepository:
                 ``estimate_type`` ('full' | 'discovery'), ``analysis`` (the full
                 nested Stage 1 object), ``model_used`` and an optional
                 ``created_at`` (UTC ``datetime``; defaults to now), plus the
-                branch payload: ``milestones`` + ``summary`` for 'full', or
-                ``scope_matrix`` + ``phase0_hours`` +
-                ``post_discovery_hourly_rate`` + ``open_questions`` for
-                'discovery'.
+                branch payload: ``milestones`` + ``summary`` for 'full'; for
+                'discovery' (Diseno B) ``milestones`` + ``summary`` (parte
+                estimable, puede ir vacia) + ``scope_matrix`` +
+                ``discovery_hours`` + ``post_discovery_hourly_rate`` +
+                ``open_questions``.
 
         Returns:
             String representation of the inserted document's ``_id``.
@@ -315,8 +326,10 @@ class TechnicalEstimatesRepository:
 _BRANCH_FIELDS: Dict[str, tuple] = {
     "full": ("milestones", "summary"),
     "discovery": (
+        "milestones",
+        "summary",
         "scope_matrix",
-        "phase0_hours",
+        "discovery_hours",
         "post_discovery_hourly_rate",
         "open_questions",
     ),

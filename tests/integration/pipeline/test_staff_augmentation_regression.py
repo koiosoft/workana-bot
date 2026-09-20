@@ -188,7 +188,7 @@ async def test_staff_augmentation_handler_routes_to_generate_proposal(
         }
     )
     # The project_fixed pipeline must NOT be called for staffing
-    mock_premium.generate_project_fixed_proposal = AsyncMock()
+    mock_pipeline = AsyncMock()
 
     from app.database.requirement_analyses_repository import RequirementAnalysesRepository
     from app.database.technical_estimates_repository import TechnicalEstimatesRepository
@@ -204,13 +204,16 @@ async def test_staff_augmentation_handler_routes_to_generate_proposal(
         RequirementAnalysesRepository, "insert", AsyncMock(return_value="id1"),
     ), patch.object(
         TechnicalEstimatesRepository, "insert", AsyncMock(return_value="id2"),
+    ), patch(
+        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        mock_pipeline,
     ):
         await process_projects(mock_update, mock_context)
 
     # Verify staff augmentation route was taken
     mock_premium.generate_proposal.assert_awaited_once()
     # Verify project_fixed pipeline was NOT called
-    mock_premium.generate_project_fixed_proposal.assert_not_awaited()
+    mock_pipeline.assert_not_awaited()
 
     # Verify the proposal was persisted via update_project_proposal
     mock_repo.update_project_proposal.assert_called_once()

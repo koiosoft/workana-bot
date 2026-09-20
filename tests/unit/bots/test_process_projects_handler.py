@@ -12,8 +12,8 @@ from app.exceptions import (
 
 # A dummy project list for testing
 DUMMY_PROJECTS = [
-    {"link": "http://test.com/1", "link_hash": "1", "title": "Project 1"},
-    {"link": "http://test.com/2", "link_hash": "2", "title": "Project 2"},
+    {"link": "http://test.com/1", "link_hash": "1", "title": "Project 1", "contract_type": "staff_augmentation"},
+    {"link": "http://test.com/2", "link_hash": "2", "title": "Project 2", "contract_type": "staff_augmentation"},
 ]
 
 @pytest.fixture

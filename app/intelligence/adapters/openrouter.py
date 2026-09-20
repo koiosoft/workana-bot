@@ -29,6 +29,17 @@ PREMIUM_MODEL = "deepseek/deepseek-v4-pro"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
+def _one_line(value: Any) -> str:
+    """Aplana *value* a una sola linea para las trazas [PIPELINE].
+
+    Los prompts y las respuestas del LLM contienen saltos de linea; si se
+    vuelcan tal cual, loguru escribe varias lineas por traza y un `grep` solo
+    ve la primera. Los saltos se escapan como `\\n` para conservar el
+    contenido completo en una unica linea legible.
+    """
+    return str(value).replace("\n", "\\n").replace("\r", "\\r")
+
+
 class OpenRouterAdapter(IntelligencePort):
     """
     Adaptador de inteligencia artificial que utiliza OpenRouter como proveedor.
@@ -140,16 +151,28 @@ class OpenRouterAdapter(IntelligencePort):
 
         last_error: Exception | None = None
 
+        # Timeout global por intento. `httpx.Timeout` NO cubre todos los estados
+        # de socket semi-abiertos (p.ej. el peer cierra a mitad del chunked stream y
+        # el cierre del cliente se queda bloqueado). `asyncio.wait_for` garantiza
+        # que ningun `await` de httpx pueda colgarse indefinidamente: si vence,
+        # se cancela la coroutine y se trata como error transitorio reintentable.
+        per_attempt_timeout = 100.0  # > httpx read (90s) para dar margen limpio
+
         for attempt in range(self._MAX_RETRIES + 1):
             try:
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(90.0, connect=15.0)
-                ) as client:
-                    response = await client.post(
-                        f"{OPENROUTER_BASE_URL}/chat/completions",
-                        headers=headers,
-                        json=payload,
-                    )
+                async def _do_request() -> httpx.Response:
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(90.0, connect=15.0)
+                    ) as client:
+                        return await client.post(
+                            f"{OPENROUTER_BASE_URL}/chat/completions",
+                            headers=headers,
+                            json=payload,
+                        )
+
+                response = await asyncio.wait_for(
+                    _do_request(), timeout=per_attempt_timeout
+                )
 
                 if response.status_code != 200:
                     logger.error(
@@ -173,7 +196,7 @@ class OpenRouterAdapter(IntelligencePort):
 
                 return choices[0].get("message", {}).get("content", "")
 
-            except (httpx.RemoteProtocolError, httpx.TimeoutException) as e:
+            except (httpx.RemoteProtocolError, httpx.TimeoutException, asyncio.TimeoutError) as e:
                 last_error = e
                 logger.warning(
                     f"Intento {attempt + 1}/{self._MAX_RETRIES + 1} "
@@ -550,12 +573,18 @@ class OpenRouterAdapter(IntelligencePort):
 
             text_response = await self._chat_completion(prompt, circuit_breaker)
 
-            if text_response:
+            # BUGFIX B2: `if text_response` es truthy para whitespace ("   ", "\n"),
+            # y `.strip()` lo reduce a "". Eso BORRABA la descripcion real del
+            # scraper (se guardaba ""). Ahora se exige contenido no-blanco; si el
+            # modelo no aporta texto util, se conserva la descripcion original.
+            formatted = text_response.strip() if text_response else ""
+            if formatted:
                 logger.success("✅ Descripción formateada exitosamente.")
-                return text_response.strip()
+                return formatted
 
             logger.warning(
-                "La IA de formateo no devolvió texto. Usando descripción original."
+                "La IA de formateo no devolvió texto útil (vacío/whitespace). "
+                "Usando descripción original."
             )
             return description
 
@@ -611,16 +640,27 @@ class OpenRouterAdapter(IntelligencePort):
             full_description=full_description,
             threshold=maturity_threshold,
         )
+        link_hash = project.get("link_hash", "?")
+        title = project.get("title", "?")
 
         logger.info("🤖 Etapa 1 — analizando requerimiento...")
         self._select_model(self.flash_strategy)
         self._set_delay(self.flash_strategy)
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA1][INPUT] "
+            f"model={self.model_id} threshold={maturity_threshold} "
+            f"title={title!r} prompt_len={len(prompt)} "
+            f"PROMPT={_one_line(prompt)}"
+        )
 
         try:
             text_response = await self._chat_completion(prompt, circuit_breaker)
         except AIConnectionError:
             raise
-
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA1][RAW_RESPONSE] "
+            f"model={self.model_id} RESPONSE={_one_line(text_response)}"
+        )
         if not text_response:
             logger.warning("La IA no devolvió texto en analyze_requirement.")
             raise PipelineError("analyze_requirement: LLM returned no text")
@@ -636,11 +676,18 @@ class OpenRouterAdapter(IntelligencePort):
         try:
             validated = RequirementAnalysis.model_validate(raw_json)
         except ValidationError as e:
-            logger.error(f"Etapa 1 Pydantic validation failed: {e}")
+            logger.error(
+                f"Etapa 1 Pydantic validation failed: {e} | "
+                f"raw={text_response!r}"
+            )
             raise PipelineError(
                 f"analyze_requirement: Pydantic validation failed — {e}"
             ) from e
 
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA1][VALIDATED] "
+            f"{json.dumps(validated.model_dump(mode='json'), ensure_ascii=False)}"
+        )
         logger.success("✅ Etapa 1 superó la validación Pydantic.")
         return cast(dict[str, Any], validated.model_dump(mode="json"))
 
@@ -674,11 +721,11 @@ class OpenRouterAdapter(IntelligencePort):
         analysis_keys = sorted(analysis.keys()) if isinstance(analysis, dict) else []
         entities = analysis.get("entities", {}) if isinstance(analysis, dict) else {}
         logger.debug(
-            f"[DEBUG Etapa 2] template_name={template_name!r} branch={branch!r} "
-            f"analysis_keys={analysis_keys}"
+            f"[PIPELINE][ETAPA2][DRIVERS] template_name={template_name!r} "
+            f"branch={branch!r} analysis_keys={analysis_keys}"
         )
         logger.debug(
-            f"[DEBUG Etapa 2] drivers: maturity_score="
+            f"[PIPELINE][ETAPA2][DRIVERS] maturity_score="
             f"{analysis.get('maturity_score')!r} "
             f"technologies={len(entities.get('technologies', []) or [])} "
             f"deliverables={len(entities.get('deliverables', []) or [])} "
@@ -691,23 +738,33 @@ class OpenRouterAdapter(IntelligencePort):
         prompt = self._render_prompt(
             template_name,
             analysis_json=analysis_json,
+            hourly_rate=int(os.getenv("HOURLY_RATE", "18")),
+            post_discovery_hourly_rate=float(os.getenv("POST_DISCOVERY_HOURLY_RATE", "18")),
         )
 
-        logger.debug(
-            f"[DEBUG Etapa 2] render OK: template_output_len={len(prompt)} "
-            f"input_json_len={len(analysis_json)} "
-            f"first_200={prompt[:200]!r}"
-        )
+        link_hash = project.get("link_hash", "?")
+        title = project.get("title", "?")
 
         logger.info(f"🤖 Etapa 2 — estimación técnica (branch={branch})...")
         self._select_model(self.flash_strategy)
         self._set_delay(self.flash_strategy)
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA2][INPUT] "
+            f"model={self.model_id} branch={branch!r} template={template_name!r} "
+            f"title={title!r} maturity_score={analysis.get('maturity_score')!r} "
+            f"input_json_len={len(analysis_json)} template_output_len={len(prompt)} "
+            f"RENDERED={_one_line(prompt)}"
+        )
 
         try:
             text_response = await self._chat_completion(prompt, circuit_breaker)
         except AIConnectionError:
             raise
-
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA2][RAW_RESPONSE] "
+            f"model={self.model_id} branch={branch!r} "
+            f"RESPONSE={_one_line(text_response)}"
+        )
         if not text_response:
             logger.warning("La IA no devolvió texto en estimate_technical.")
             raise PipelineError("estimate_technical: LLM returned no text")
@@ -715,10 +772,38 @@ class OpenRouterAdapter(IntelligencePort):
         try:
             raw_json = json.loads(self._extract_json_object(text_response))
         except json.JSONDecodeError as e:
-            logger.error(f"Etapa 2 JSON parse error: {e}")
+            logger.error(f"Etapa 2 JSON parse error: {e} | raw={text_response!r}")
             raise PipelineError(
                 f"estimate_technical: invalid JSON from LLM — {e}"
             ) from e
+
+        # El contrato `_EstimateBase`/`_EstimateEnvelope` exige `analysis`
+        # (subdocumento de Etapa 1) y `model_used` (traza de auditoria). La
+        # plantilla es un prompt, no emite esos campos, asi que se inyectan
+        # antes de validar.
+        if isinstance(raw_json, dict):
+            logger.debug(
+                f"[PIPELINE][link_hash={link_hash}][ETAPA2]"
+                f"[RAW_LLM_KEYS_PRE_INJECTION] {sorted(raw_json.keys())}"
+            )
+            raw_json.setdefault("analysis", analysis)
+            raw_json.setdefault("model_used", self.model_id)
+            # `estimate_type` lo conoce el orquestador (segun la rama), no el LLM:
+            # si el modelo lo omite, se inyecta deterministicamente.
+            raw_json.setdefault("estimate_type", branch)
+            # Normalizacion determinista de hitos: si el LLM omite campos
+            # calculables, se rellenan aqui (no dependemos de que los emita).
+            for ms in raw_json.get("milestones", []) or []:
+                if not isinstance(ms, dict):
+                    continue
+                tasks = ms.get("tasks") or {}
+                if isinstance(tasks, dict):
+                    total_ms = sum(
+                        (t.get("hours_with_overhead", 0) or 0)
+                        for t in tasks.values() if isinstance(t, dict)
+                    )
+                    ms.setdefault("hours_with_overhead", total_ms)
+                    ms.setdefault("subtotal", total_ms * int(os.getenv("HOURLY_RATE", "18")))
 
         try:
             if branch == "full":
@@ -726,12 +811,21 @@ class OpenRouterAdapter(IntelligencePort):
                 validated = _assert_hours_consistent(validated)
             else:
                 validated = TechnicalEstimateDiscovery.model_validate(raw_json)
+                validated = _assert_hours_consistent(validated)
         except ValidationError as e:
-            logger.error(f"Etapa 2 Pydantic validation failed: {e}")
+            logger.error(
+                f"Etapa 2 Pydantic validation failed: {e} | "
+                f"raw={text_response!r}"
+            )
             raise PipelineError(
                 f"estimate_technical: Pydantic validation failed — {e}"
             ) from e
 
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA2][VALIDATED] "
+            f"branch={branch!r} "
+            f"{json.dumps(validated.model_dump(mode='json'), ensure_ascii=False)}"
+        )
         logger.success(
             f"✅ Etapa 2 (branch={branch}) superó la validación Pydantic."
         )
@@ -775,15 +869,26 @@ class OpenRouterAdapter(IntelligencePort):
             project_payload_json=json.dumps(project_payload, indent=2),
             technical_estimate_json=json.dumps(technical_estimate, indent=2),
         )
+        link_hash = project.get("link_hash", "?")
+
 
         logger.info("🤖 Etapa 3 — redactando propuesta comercial (PREMIUM)...")
         self._select_model(self.pro_strategy)
         self._set_delay(self.pro_strategy)
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA3][INPUT] "
+            f"model={self.model_id} prompt_len={len(prompt)} "
+            f"PROMPT={_one_line(prompt)}"
+        )
 
         try:
             text_response = await self._chat_completion(prompt, circuit_breaker)
         except AIConnectionError:
             raise
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA3][RAW_RESPONSE] "
+            f"model={self.model_id} RESPONSE={_one_line(text_response)}"
+        )
 
         if not text_response:
             logger.warning(
@@ -812,59 +917,10 @@ class OpenRouterAdapter(IntelligencePort):
         if "summary" in technical_estimate:
             proposal_data["summary"] = technical_estimate["summary"]
 
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA3][VALIDATED] "
+            f"{json.dumps(proposal_data, ensure_ascii=False)}"
+        )
         return proposal_data
 
-    async def generate_project_fixed_proposal(
-        self,
-        project: dict,
-        circuit_breaker: Optional["CircuitBreaker"] = None,
-    ) -> dict[str, Any]:
-        """Orquestador completo del pipeline 'project_fixed'.
-        
-        Ejecuta ``analyze_requirement`` → ``estimate_technical`` →
-        ``write_commercial_proposal`` en secuencia y devuelve el JSON acumulado
-        (analysis + estimate + proposal).
-
-        Si la Etapa 1 o la Etapa 2 lanzan ``PipelineError``, este orquestador
-        aborta **antes** de invocar ``write_commercial_proposal`` (Etapa 3 /
-        PREMIUM), que es precisamente el punto donde se factura el modelo caro.
-        
-        La persistencia en ``requirement_analyses``, ``technical_estimates`` y
-        ``proposal_versions`` NO es responsabilidad del orquestador: el handler
-        de Telegram (TASK016) persiste las tres colecciones.
-        """
-        threshold = get_maturity_threshold()
-        logger.info(
-            f"🚀 Pipeline project_fixed con maturity_threshold={threshold}"
-        )
-
-        # Etapa 1 (STANDARD) — un PipelineError propaga y corta aquí.
-        analysis = await self.analyze_requirement(
-            project=project,
-            maturity_threshold=threshold,
-            circuit_breaker=circuit_breaker,
-        )
-        logger.success("✅ Etapa 1 completa — análisis de requerimientos.")
-
-        # Etapa 2 (STANDARD) — PipelineError => nunca se llega a Etapa 3.
-        estimate = await self.estimate_technical(
-            project=project,
-            analysis=analysis,
-            circuit_breaker=circuit_breaker,
-        )
-        logger.success("✅ Etapa 2 completa — estimación técnica.")
-
-        # Etapa 3 (PREMIUM).
-        proposal = await self.write_commercial_proposal(
-            project=project,
-            technical_estimate=estimate,
-            circuit_breaker=circuit_breaker,
-        )
-        logger.success("✅ Etapa 3 completa — propuesta comercial.")
-
-        return {
-            "analysis": analysis,
-            "estimate": estimate,
-            "proposal": proposal,
-        }
 

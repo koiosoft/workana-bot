@@ -21,6 +21,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.exceptions import PipelineError
 from app.intelligence.adapters.openrouter import OpenRouterAdapter
 from app.intelligence.config import get_maturity_threshold
+from app.intelligence.pipeline import generate_project_fixed_proposal
 from app.intelligence.factory import (
     select_estimation_template,
     select_initial_proposal_template,
@@ -123,7 +124,7 @@ VALID_ESTIMATE_DISCOVERY_JSON = json.dumps({
         "out_of_scope": ["Frontend implementation", "Testing"],
         "unknown": ["Third-party integrations"],
     },
-    "phase0_hours": 40,
+    "discovery_hours": 40,
     "post_discovery_hourly_rate": 30,
     "open_questions": [
         "What is the expected number of concurrent users?",
@@ -136,6 +137,9 @@ VALID_ESTIMATE_DISCOVERY_JSON = json.dumps({
         "gaps": ["Missing integration scope"],
         "branch": "discovery",
     },
+    "milestones": [],
+    "summary": {"total_hours": 0, "total_budget": 0.0, "delivery_time_weeks": 0, "hourly_rate_applied": 18.0},
+    "discovery_hours": 40,
     "model_used": "deepseek/deepseek-v4-pro",
 })
 
@@ -191,8 +195,10 @@ async def test_full_pipeline_end_to_end(
         adapter, "_chat_completion",
         _mock_chat_completion([analysis_response, estimate_response, proposal_response]),
     ), patch.object(adapter, "_render_prompt", return_value="prompt"):
-        result = await adapter.generate_project_fixed_proposal(
+        result = await generate_project_fixed_proposal(
             SAMPLE_PROJECT,
+            standard_adapter=adapter,
+            premium_adapter=adapter,
         )
 
     # All three keys must be present
@@ -292,7 +298,7 @@ async def test_maturity_branching_discovery_estimate(
 
     assert result["estimate_type"] == "discovery"
     assert "scope_matrix" in result, "Discovery estimate must include scope_matrix"
-    assert "phase0_hours" in result, "Discovery estimate must include phase0_hours"
+    assert "discovery_hours" in result, "Discovery estimate must include discovery_hours"
     assert "post_discovery_hourly_rate" in result, (
         "Discovery estimate must include post_discovery_hourly_rate"
     )
@@ -352,8 +358,10 @@ async def test_guard_rail_invalid_json_in_stage1_raises_pipeline_error(
         with patch.object(adapter, "estimate_technical", mock_stage2):
             with patch.object(adapter, "write_commercial_proposal", mock_stage3):
                 with pytest.raises(PipelineError, match="invalid JSON"):
-                    await adapter.generate_project_fixed_proposal(
+                    await generate_project_fixed_proposal(
                         SAMPLE_PROJECT,
+                        standard_adapter=adapter,
+                        premium_adapter=adapter,
                     )
 
                 # Stage 2 must NOT have been called
@@ -379,8 +387,10 @@ async def test_guard_rail_invalid_json_in_stage2_raises_pipeline_error(
         mock_stage3 = AsyncMock()
         with patch.object(adapter, "write_commercial_proposal", mock_stage3):
             with pytest.raises(PipelineError, match="invalid JSON"):
-                await adapter.generate_project_fixed_proposal(
+                await generate_project_fixed_proposal(
                     SAMPLE_PROJECT,
+                    standard_adapter=adapter,
+                    premium_adapter=adapter,
                 )
 
             # Stage 3 (PREMIUM) must NOT have been called
@@ -399,8 +409,10 @@ async def test_guard_rail_llm_no_text_in_stage1_raises_pipeline_error(
         mock_stage3 = AsyncMock()
         with patch.object(adapter, "write_commercial_proposal", mock_stage3):
             with pytest.raises(PipelineError, match="no text"):
-                await adapter.generate_project_fixed_proposal(
+                await generate_project_fixed_proposal(
                     SAMPLE_PROJECT,
+                    standard_adapter=adapter,
+                    premium_adapter=adapter,
                 )
             mock_stage3.assert_not_awaited()
 
@@ -431,8 +443,10 @@ async def test_idempotency_retry_after_stage3_failure(
         adapter, "_chat_completion",
         _mock_chat_completion([analysis_response, estimate_response, '{"error": "LLM failed"}']),
     ), patch.object(adapter, "_render_prompt", return_value="prompt"):
-        result1 = await adapter.generate_project_fixed_proposal(
+        result1 = await generate_project_fixed_proposal(
             SAMPLE_PROJECT,
+            standard_adapter=adapter,
+            premium_adapter=adapter,
         )
 
     # The result should still have analysis and estimate — Stage 3 just got
@@ -447,8 +461,10 @@ async def test_idempotency_retry_after_stage3_failure(
         adapter, "_chat_completion",
         _mock_chat_completion([analysis_response, estimate_response, proposal_response]),
     ), patch.object(adapter, "_render_prompt", return_value="prompt"):
-        result2 = await adapter.generate_project_fixed_proposal(
+        result2 = await generate_project_fixed_proposal(
             SAMPLE_PROJECT,
+            standard_adapter=adapter,
+            premium_adapter=adapter,
         )
 
     # Stage 1+2 results should be idempotent (same input = same output)
@@ -482,8 +498,10 @@ async def test_idempotency_reuse_stage1_and_2_when_stage3_fails_with_error_key(
         adapter, "_chat_completion",
         _mock_chat_completion([analysis_response, estimate_response, ""]),
     ), patch.object(adapter, "_render_prompt", return_value="prompt"):
-        result = await adapter.generate_project_fixed_proposal(
+        result = await generate_project_fixed_proposal(
             SAMPLE_PROJECT,
+            standard_adapter=adapter,
+            premium_adapter=adapter,
         )
 
     # Even with empty Stage 3 response, accumulated result has analysis+estimate

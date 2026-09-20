@@ -12,6 +12,7 @@ from app.database.requirement_analyses_repository import RequirementAnalysesRepo
 from app.database.technical_estimates_repository import TechnicalEstimatesRepository
 from app.intelligence.config import get_maturity_threshold
 from app.intelligence.factory import create_intelligence_service
+from app.intelligence.pipeline import generate_project_fixed_proposal
 from .messages import send_long_message
 from app.bots.telegram.circuit_breaker import CircuitBreaker
 from app.exceptions import (
@@ -440,15 +441,27 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             full_detail.update({
                 "contract_type": project.get("contract_type", "project_fixed"),
-                "strategy": project.get("strategy", "none")
+                "strategy": project.get("strategy", "none"),
+                # BUGFIX B3: `full_detail` viene del scraper y no incluye la
+                # identidad del proyecto, por lo que las trazas del pipeline
+                # salian con link_hash/title='?'. Se propagan para trazabilidad.
+                "link_hash": link_hash,
+                "title": title,
             })
 
             contract_type = full_detail.get("contract_type", "project_fixed")
 
             if contract_type == "project_fixed":
                 # --- Project-fixed: staged pipeline with 3-collection persistence ---
-                accumulated = await adapters["PREMIUM"].generate_project_fixed_proposal(
-                    full_detail, circuit_breaker=circuit_breaker
+                # BUGFIX B1: el pipeline se orquesta FUERA de los adapters para
+                # que cada etapa pueda usar un provider distinto. Etapas 1-2 ->
+                # STANDARD; Etapa 3 -> PREMIUM. Antes corria entero dentro del
+                # adapter PREMIUM, forzando el modelo premium en las 3 etapas.
+                accumulated = await generate_project_fixed_proposal(
+                    full_detail,
+                    standard_adapter=adapters["STANDARD"],
+                    premium_adapter=adapters["PREMIUM"],
+                    circuit_breaker=circuit_breaker,
                 )
 
                 if accumulated and "error" not in accumulated:
@@ -491,8 +504,12 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         estimate_payload["milestones"] = estimate.get("milestones", [])
                         estimate_payload["summary"] = estimate.get("summary", {})
                     else:
+                        # Diseno B: discovery tambien lleva la parte estimable
+                        # (milestones + summary) ademas de la fase de discovery.
+                        estimate_payload["milestones"] = estimate.get("milestones", [])
+                        estimate_payload["summary"] = estimate.get("summary", {})
                         estimate_payload["scope_matrix"] = estimate.get("scope_matrix", {})
-                        estimate_payload["phase0_hours"] = estimate.get("phase0_hours", 0)
+                        estimate_payload["discovery_hours"] = estimate.get("discovery_hours", 0)
                         estimate_payload["post_discovery_hourly_rate"] = estimate.get("post_discovery_hourly_rate", 0)
                         estimate_payload["open_questions"] = estimate.get("open_questions", [])
                     await tech_repo.insert(estimate_payload)

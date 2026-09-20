@@ -39,3 +39,4 @@ plans
 .sdd/logs/openai
 .sdd/logs/*
 .sdd/logs/agents/
+.codebase-memory/

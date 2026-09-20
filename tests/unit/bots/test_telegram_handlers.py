@@ -263,7 +263,8 @@ async def test_process_project_fixed_routes_to_staged_pipeline(
         return_value="Formatted description"
     )
     mock_premium = MagicMock()
-    mock_premium.generate_project_fixed_proposal = AsyncMock(
+
+    mock_pipeline = AsyncMock(
         return_value={
             "analysis": {"branch": "full", "maturity_score": 8},
             "estimate": {"estimate_type": "full", "milestones": [], "summary": {}},
@@ -278,6 +279,9 @@ async def test_process_project_fixed_routes_to_staged_pipeline(
             "PREMIUM": mock_premium,
             "FILTER": mock_standard,
         })
+    ), patch(
+        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        mock_pipeline,
     ), patch.object(
         RequirementAnalysesRepository, "insert", AsyncMock(return_value="id1")
     ), patch.object(
@@ -287,11 +291,14 @@ async def test_process_project_fixed_routes_to_staged_pipeline(
         await process_projects(mock_update, mock_context)
 
     # Verify the staged pipeline was called
-    mock_premium.generate_project_fixed_proposal.assert_awaited_once()
+    mock_pipeline.assert_awaited_once()
     # The project dict should have contract_type and full_description
-    call_arg = mock_premium.generate_project_fixed_proposal.call_args[0][0]
+    call_arg = mock_pipeline.call_args[0][0]
     assert call_arg.get("contract_type") == "project_fixed"
     assert "full_description" in call_arg
+    # Etapas 1-2 -> STANDARD; Etapa 3 -> PREMIUM
+    assert mock_pipeline.call_args.kwargs["standard_adapter"] is mock_standard
+    assert mock_pipeline.call_args.kwargs["premium_adapter"] is mock_premium
 
 
 @pytest.mark.asyncio
@@ -350,6 +357,8 @@ async def test_process_staff_augmentation_routes_to_generate_proposal(
     mock_premium.generate_proposal = AsyncMock(
         return_value={"cover_letter": "Dear client", "budget_summary": {}}
     )
+    mock_pipeline = AsyncMock()
+
 
     with patch(
         "app.bots.telegram.handlers.create_intelligence_service",
@@ -358,11 +367,14 @@ async def test_process_staff_augmentation_routes_to_generate_proposal(
             "PREMIUM": mock_premium,
             "FILTER": mock_standard,
         })
+    ), patch(
+        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        mock_pipeline,
     ):
         from app.bots.telegram.handlers import process_projects
         await process_projects(mock_update, mock_context)
 
     # Verify the legacy generate_proposal was called (staffing path)
     mock_premium.generate_proposal.assert_awaited_once()
-    # Verify project_fixed pipeline was NOT called
-    assert mock_premium.generate_project_fixed_proposal.call_count == 0
+    # Verify the project_fixed pipeline was NOT called
+    mock_pipeline.assert_not_awaited()

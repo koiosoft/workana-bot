@@ -11,6 +11,7 @@ import pytest
 from app.bots.telegram.circuit_breaker import CircuitBreaker
 from app.exceptions import AIConnectionError, PipelineError
 from app.intelligence.adapters.openrouter import STANDARD_MODEL, OpenRouterAdapter
+from app.intelligence.pipeline import generate_project_fixed_proposal
 
 
 @pytest.fixture
@@ -617,8 +618,10 @@ async def test_generate_project_fixed_proposal_accumulates(
     with patch.object(adapter, "analyze_requirement", AsyncMock(return_value=mock_analysis)):
         with patch.object(adapter, "estimate_technical", AsyncMock(return_value=mock_estimate)):
             with patch.object(adapter, "write_commercial_proposal", AsyncMock(return_value=mock_proposal)):
-                result = await adapter.generate_project_fixed_proposal(
-                    project={"title": "Test"},
+                result = await generate_project_fixed_proposal(
+                    {"title": "Test"},
+                    standard_adapter=adapter,
+                    premium_adapter=adapter,
                 )
 
     assert "analysis" in result
@@ -845,8 +848,10 @@ class TestPipelineGuardRails:
                 adapter, "write_commercial_proposal", mock_write
             ):
                 with pytest.raises(PipelineError):
-                    await adapter.generate_project_fixed_proposal(
-                        project={"title": "Test"},
+                    await generate_project_fixed_proposal(
+                        {"title": "Test"},
+                        standard_adapter=adapter,
+                        premium_adapter=adapter,
                         circuit_breaker=cb,
                     )
                 mock_write.assert_not_awaited()
@@ -873,8 +878,10 @@ class TestPipelineGuardRails:
                     adapter, "write_commercial_proposal", mock_write
                 ):
                     with pytest.raises(PipelineError):
-                        await adapter.generate_project_fixed_proposal(
-                            project={"title": "Test"},
+                        await generate_project_fixed_proposal(
+                            {"title": "Test"},
+                            standard_adapter=adapter,
+                            premium_adapter=adapter,
                             circuit_breaker=cb,
                         )
                     mock_write.assert_not_awaited()

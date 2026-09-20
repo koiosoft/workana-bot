@@ -25,6 +25,17 @@ FILTER_MODEL = "models/gemma-4-31b-it"      # 15 RPM - Gratis
 STANDARD_MODEL = "models/gemini-2.5-flash" # 2000 RPM - Pago (muy barato)
 PREMIUM_MODEL = "models/gemini-2.5-pro"    # 2 RPM - Pago (1.5 centavos)
 
+
+def _one_line(value: Any) -> str:
+    """Aplana *value* a una sola linea para las trazas [PIPELINE].
+
+    Los prompts y las respuestas del LLM contienen saltos de linea; si se
+    vuelcan tal cual, loguru escribe varias lineas por traza y un `grep` solo
+    ve la primera. Los saltos se escapan como `\\n` para conservar el
+    contenido completo en una unica linea legible (espejo de openrouter).
+    """
+    return str(value).replace("\n", "\\n").replace("\r", "\\r")
+
 class GeminiAdapter(IntelligencePort):
     def __init__(
         self,
@@ -397,11 +408,18 @@ class GeminiAdapter(IntelligencePort):
             if circuit_breaker:
                 circuit_breaker.record_success()
             
-            if response.text:
+            # BUGFIX B2 (espejo de OpenRouter): `if response.text` es truthy para
+            # whitespace, y `.strip()` lo reduce a "" — borrando la descripcion
+            # real. Se exige contenido no-blanco; si no, se conserva la original.
+            formatted = response.text.strip() if response.text else ""
+            if formatted:
                 logger.success("✅ Descripción formateada exitosamente.")
-                return response.text.strip()
-            
-            logger.warning("La IA de formateo no devolvió texto. Usando descripción original.")
+                return formatted
+
+            logger.warning(
+                "La IA de formateo no devolvió texto útil (vacío/whitespace). "
+                "Usando descripción original."
+            )
             return description
 
         except google.genai.errors.APIError as e:
@@ -435,10 +453,19 @@ class GeminiAdapter(IntelligencePort):
             full_description=full_description,
             threshold=maturity_threshold,
         )
+        link_hash = project.get("link_hash", "?")
+        title = project.get("title", "?")
 
         logger.info("🤖 Stage 1 — analyzing requirement...")
         self.set_gemini_model(self.flash_strategy)
         await asyncio.sleep(self.delay_model)
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA1][INPUT] "
+            f"model={self.model_id} threshold={maturity_threshold} "
+            f"title={title!r} prompt_len={len(prompt)} "
+            f"PROMPT={_one_line(prompt)}"
+        )
+
 
         try:
             response = self.client.models.generate_content(
@@ -455,7 +482,15 @@ class GeminiAdapter(IntelligencePort):
                 raise PipelineError("analyze_requirement: LLM returned no text")
 
             raw_json = json.loads(response.text.strip())
+            logger.debug(
+                f"[PIPELINE][link_hash={link_hash}][ETAPA1][RAW_RESPONSE] "
+                f"model={self.model_id} RESPONSE={_one_line(response.text)}"
+            )
             validated = RequirementAnalysis.model_validate(raw_json)
+            logger.debug(
+                f"[PIPELINE][link_hash={link_hash}][ETAPA1][VALIDATED] "
+                f"{json.dumps(validated.model_dump(mode='json'), ensure_ascii=False)}"
+            )
             logger.success("✅ Requirement analysis passed Pydantic validation.")
             return validated.model_dump(mode="json")
 
@@ -505,6 +540,17 @@ class GeminiAdapter(IntelligencePort):
         prompt = self._render_prompt(
             template_name,
             analysis_json=json.dumps(analysis, indent=2),
+            hourly_rate=int(os.getenv("HOURLY_RATE", "18")),
+            post_discovery_hourly_rate=float(os.getenv("POST_DISCOVERY_HOURLY_RATE", "18")),
+        )
+
+        link_hash = project.get("link_hash", "?")
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA2][INPUT] "
+            f"branch={branch!r} template={template_name!r} "
+            f"title={project.get('title')!r} "
+            f"input_json_len={len(json.dumps(analysis))} "
+            f"template_output_len={len(prompt)}"
         )
 
         logger.info(f"🤖 Stage 2 — technical estimate (branch={branch})...")
@@ -526,21 +572,54 @@ class GeminiAdapter(IntelligencePort):
                 raise PipelineError("estimate_technical: LLM returned no text")
 
             raw_json = json.loads(response.text.strip())
+            logger.debug(
+                f"[PIPELINE][link_hash={link_hash}][ETAPA2][RAW_RESPONSE] "
+                f"model={self.model_id} branch={branch!r} "
+                f"RESPONSE={_one_line(response.text)}"
+            )
+
+            # `_EstimateBase`/`_EstimateEnvelope` exigen `analysis` y `model_used`.
+            # La plantilla es un prompt, no emite esos campos; se inyectan antes
+            # de validar.
+            if isinstance(raw_json, dict):
+                raw_json.setdefault("analysis", analysis)
+                raw_json.setdefault("model_used", self.model_id)
+                # `estimate_type` lo conoce el orquestador (segun la rama):
+                # si el modelo lo omite, se inyecta deterministicamente.
+                raw_json.setdefault("estimate_type", branch)
+                # Normalizacion determinista de hitos (espejo de OpenRouter).
+                for ms in raw_json.get("milestones", []) or []:
+                    if not isinstance(ms, dict):
+                        continue
+                    tasks = ms.get("tasks") or {}
+                    if isinstance(tasks, dict):
+                        total_ms = sum(
+                            (t.get("hours_with_overhead", 0) or 0)
+                            for t in tasks.values() if isinstance(t, dict)
+                        )
+                        ms.setdefault("hours_with_overhead", total_ms)
+                        ms.setdefault("subtotal", total_ms * int(os.getenv("HOURLY_RATE", "18")))
 
             if branch == "full":
                 validated = TechnicalEstimateFull.model_validate(raw_json)
                 validated = _assert_hours_consistent(validated)
             else:
                 validated = TechnicalEstimateDiscovery.model_validate(raw_json)
+                validated = _assert_hours_consistent(validated)
 
+            logger.debug(
+                f"[PIPELINE][link_hash={link_hash}][ETAPA2][VALIDATED] "
+                f"branch={branch!r} "
+                f"{json.dumps(validated.model_dump(mode='json'), ensure_ascii=False)}"
+            )
             logger.success(f"✅ Technical estimate (branch={branch}) passed Pydantic validation.")
             return validated.model_dump(mode="json")
 
         except json.JSONDecodeError as e:
-            logger.error(f"Stage 2 JSON parse error: {e}")
+            logger.error(f"Stage 2 JSON parse error: {e} | raw={response.text!r}")
             raise PipelineError(f"estimate_technical: invalid JSON from LLM — {e}") from e
         except ValidationError as e:
-            logger.error(f"Stage 2 Pydantic validation failed: {e}")
+            logger.error(f"Stage 2 Pydantic validation failed: {e} | raw={response.text!r}")
             raise PipelineError(f"estimate_technical: Pydantic validation failed — {e}") from e
         except PipelineError:
             raise
@@ -570,7 +649,7 @@ class GeminiAdapter(IntelligencePort):
         The ``technical_estimate`` dict (pre-validated by Stage 2) is injected
         verbatim — no numeric recomputation occurs here.
         """
-        hourly_rate = 25
+        hourly_rate = int(os.getenv("HOURLY_RATE", "18"))
         my_skills = [
             "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
             "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
@@ -596,6 +675,12 @@ class GeminiAdapter(IntelligencePort):
         logger.info("🤖 Stage 3 — writing commercial proposal (PREMIUM)...")
         self.set_gemini_model(self.pro_strategy)
         await asyncio.sleep(self.delay_model)
+        link_hash = project.get("link_hash", "?")
+        logger.debug(
+            f"[PIPELINE][link_hash={link_hash}][ETAPA3][INPUT] "
+            f"model={self.model_id} prompt_len={len(prompt)} "
+            f"PROMPT={_one_line(prompt)}"
+        )
 
         try:
             response = self.client.models.generate_content(
@@ -611,6 +696,10 @@ class GeminiAdapter(IntelligencePort):
                 return {"error": "No se pudo generar la propuesta, la IA no devolvió contenido."}
 
             text_response = response.text.strip()
+            logger.debug(
+                f"[PIPELINE][link_hash={link_hash}][ETAPA3][RAW_RESPONSE] "
+                f"model={self.model_id} RESPONSE={_one_line(text_response)}"
+            )
             match = re.search(r"```json\s*(\{.*?\})\s*```", text_response, re.DOTALL)
             json_part = match.group(1) if match else text_response[text_response.find("{") : text_response.rfind("}") + 1]
 
@@ -623,6 +712,11 @@ class GeminiAdapter(IntelligencePort):
                 proposal_data["milestones"] = technical_estimate["milestones"]
             if "summary" in technical_estimate:
                 proposal_data["summary"] = technical_estimate["summary"]
+
+            logger.debug(
+                f"[PIPELINE][link_hash={link_hash}][ETAPA3][VALIDATED] "
+                f"{json.dumps(proposal_data, ensure_ascii=False)}"
+            )
 
             return proposal_data
 
@@ -640,56 +734,6 @@ class GeminiAdapter(IntelligencePort):
             logger.error(f"Error inesperado en write_commercial_proposal: {e}")
             raise e
 
-    async def generate_project_fixed_proposal(
-        self,
-        project: dict,
-        circuit_breaker: "CircuitBreaker" | None = None
-    ) -> dict[str, Any]:
-        """Full staged pipeline for project-fixed proposals.
-
-        Calls ``analyze_requirement`` → ``estimate_technical`` →
-        ``write_commercial_proposal`` in sequence and returns the full accumulated
-        JSON (analysis + estimate + proposal).
-
-        If ``analyze_requirement`` or ``estimate_technical`` raises
-        ``PipelineError``, the orchestrator aborts before calling
-        ``write_commercial_proposal`` (Stage 3 / PREMIUM).  Persistence into
-        ``requirement_analyses``, ``technical_estimates`` and
-        ``proposal_versions`` is NOT the orchestrator's responsibility — the
-        Telegram handler (TASK016) persists.
-        """
-        threshold = get_maturity_threshold()
-        logger.info(f"🚀 Starting project-fixed pipeline with maturity_threshold={threshold}")
-
-        # Stage 1
-        analysis = await self.analyze_requirement(
-            project=project,
-            maturity_threshold=threshold,
-            circuit_breaker=circuit_breaker,
-        )
-        logger.success("✅ Stage 1 complete — requirement analysis done.")
-
-        # Stage 2 (may raise PipelineError → aborts before Stage 3)
-        estimate = await self.estimate_technical(
-            project=project,
-            analysis=analysis,
-            circuit_breaker=circuit_breaker,
-        )
-        logger.success("✅ Stage 2 complete — technical estimate done.")
-
-        # Stage 3 (PREMIUM model call)
-        proposal = await self.write_commercial_proposal(
-            project=project,
-            technical_estimate=estimate,
-            circuit_breaker=circuit_breaker,
-        )
-        logger.success("✅ Stage 3 complete — commercial proposal done.")
-
-        return {
-            "analysis": analysis,
-            "estimate": estimate,
-            "proposal": proposal,
-        }
 
     # ── Model helpers ──────────────────────────────────────────────────────
     def set_gemini_model(self, strategy = "none") -> str:

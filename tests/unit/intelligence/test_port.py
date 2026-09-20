@@ -29,7 +29,6 @@ class TestInterfaceCompliance:
             "analyze_requirement",
             "estimate_technical",
             "write_commercial_proposal",
-            "generate_project_fixed_proposal",
         }
         assert IntelligencePort.__abstractmethods__ == expected
 
@@ -43,7 +42,6 @@ class TestInterfaceCompliance:
             "analyze_requirement",
             "estimate_technical",
             "write_commercial_proposal",
-            "generate_project_fixed_proposal",
         ]
 
         for adapter_cls in (GeminiAdapter, OpenRouterAdapter):

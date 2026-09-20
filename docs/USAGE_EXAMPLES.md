@@ -290,7 +290,11 @@ A partir de la versión con pipeline por etapas, los proyectos detectados como `
 | **3** | ``write_commercial_proposal`` | ``s3-commercial/write-proposal.j2`` | PREMIUM (Pro) | Redacción de propuesta comercial con pitch técnico |
 | **4** | ``refine_proposal`` | ``s4-refine/refine-proposal.j2`` | Modelo configurable | Refinamiento de propuesta con feedback del usuario |
 
-El flujo completo se orquesta en ``generate_project_fixed_proposal()``, que encadena Etapa 1 → Etapa 2 → Etapa 3 y devuelve el JSON acumulado (``analysis`` + ``estimate`` + ``proposal``). La Etapa 4 (``refine_proposal``) se invoca por separado cuando el usuario solicita refinamiento.
+El flujo completo se orquesta en ``generate_project_fixed_proposal()`` (módulo ``app/intelligence/pipeline.py``), que encadena Etapa 1 → Etapa 2 → Etapa 3 y devuelve el JSON acumulado (``analysis`` + ``estimate`` + ``proposal``). El orquestador vive **fuera** de los adapters y recibe ``standard_adapter`` (Etapas 1-2) y ``premium_adapter`` (Etapa 3), lo que permite un provider distinto por etapa. La Etapa 4 (``refine_proposal``) se invoca por separado cuando el usuario solicita refinamiento.
+
+> La rama ``discovery`` usa **estimación parcial (Diseño B)**: cotiza lo estimable (``milestones``) y deja lo desconocido para discovery pagado (``scope_matrix`` + ``discovery_hours``).
+> Las horas son **Horas de IA Supervisada** (dirigir/validar al LLM), no horas de programar a mano. Tarifa configurable vía ``HOURLY_RATE`` en ``.env``.
+> Ver el detalle completo en ``docs/PIPELINE_PROPUESTAS_POR_ETAPAS.md``.
 
 ### MATURITY_THRESHOLD y la Regla de Ramificación
 

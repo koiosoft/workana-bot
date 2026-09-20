@@ -84,12 +84,16 @@ def _discovery_document(**overrides) -> dict:
         "estimate_type": "discovery",
         "analysis": _analysis_payload(score=3, branch="discovery"),
         "model_used": "gemini-2.5-flash",
+        "milestones": [
+            {"step": 1, "name": "Integracion", "tasks": {"t1": {"description": "setup", "hours_with_overhead": 4}}, "hours_with_overhead": 4, "subtotal": 72.0},
+        ],
+        "summary": {"total_hours": 4, "total_budget": 72.0, "delivery_time_weeks": 1, "hourly_rate_applied": 18.0},
         "scope_matrix": {
             "in_scope": ["Review"],
             "out_of_scope": ["Implementation"],
         },
-        "phase0_hours": 20,
-        "post_discovery_hourly_rate": 25.0,
+        "discovery_hours": 20,
+        "post_discovery_hourly_rate": 18.0,
         "open_questions": ["What stack?"],
     }
     doc.update(overrides)
@@ -170,7 +174,7 @@ class TestInsert:
         assert "summary" in doc
         # Discovery-only fields must NOT be present
         assert "scope_matrix" not in doc
-        assert "phase0_hours" not in doc
+        assert "discovery_hours" not in doc
 
     async def test_persists_discovery_document_fields(self, mock_db):
         repo = TechnicalEstimatesRepository()
@@ -181,11 +185,11 @@ class TestInsert:
 
         doc = mock_db.insert_one.call_args[0][0]
         assert doc["estimate_type"] == "discovery"
-        assert doc["phase0_hours"] == 20
+        assert doc["discovery_hours"] == 20
         assert "open_questions" in doc
-        # Full-only fields must NOT be present
-        assert "milestones" not in doc
-        assert "summary" not in doc
+        # Diseno B: discovery SI lleva la parte estimable
+        assert doc["milestones"] == [] or doc["milestones"]
+        assert "summary" in doc
 
     async def test_created_at_defaults_to_utc(self, mock_db):
         repo = TechnicalEstimatesRepository()
@@ -267,7 +271,7 @@ class TestInsert:
         """Full document with discovery fields: those fields are simply dropped.
 
         The _normalise method selects only fields declared in
-        _BRANCH_FIELDS['full']; scope_matrix/phase0_hours are excluded
+        _BRANCH_FIELDS['full']; scope_matrix/discovery_hours are excluded
         and the document is inserted without them.
         """
         repo = TechnicalEstimatesRepository()
@@ -278,17 +282,19 @@ class TestInsert:
         )
         doc = mock_db.insert_one.call_args[0][0]
         assert "scope_matrix" not in doc, "scope_matrix should be dropped for full"
-        assert "phase0_hours" not in doc
+        assert "discovery_hours" not in doc
+        assert doc["estimate_type"] == "full"
+        assert "milestones" in doc
+        assert "summary" in doc
         assert doc["estimate_type"] == "full"
         assert "milestones" in doc
         assert "summary" in doc
 
     async def test_drops_branch_foreign_fields_from_discovery(self, mock_db):
-        """Discovery document with full fields: those fields are simply dropped.
+        """Discovery (Diseno B) declara milestones/summary: NO se descartan.
 
-        The _normalise method selects only fields declared in
-        _BRANCH_FIELDS['discovery']; milestones/summary are excluded
-        and the document is inserted without them.
+        _BRANCH_FIELDS['discovery'] incluye milestones/summary + los campos de
+        descubrimiento; un documento discovery valido los conserva todos.
         """
         repo = TechnicalEstimatesRepository()
         mock_db.insert_one.return_value = MagicMock(inserted_id="abc123")
@@ -296,13 +302,13 @@ class TestInsert:
         await repo.insert(
             _discovery_document(
                 estimate_type="discovery",
-                milestones=[{"step": 1, "name": "X", "tasks": {}, "hours_with_overhead": 10, "subtotal": 250}],
-                summary={"total_hours": 10, "total_budget": 250, "delivery_time_weeks": 2, "hourly_rate_applied": 25},
+                milestones=[{"step": 1, "name": "X", "tasks": {"t": {"description": "d", "hours_with_overhead": 10}}, "hours_with_overhead": 10, "subtotal": 180}],
+                summary={"total_hours": 10, "total_budget": 180, "delivery_time_weeks": 1, "hourly_rate_applied": 18},
             )
         )
         doc = mock_db.insert_one.call_args[0][0]
-        assert "milestones" not in doc, "milestones should be dropped for discovery"
-        assert "summary" not in doc
+        assert "milestones" in doc, "discovery conserva su parte estimable"
+        assert "summary" in doc
         assert doc["estimate_type"] == "discovery"
         assert "scope_matrix" in doc
         assert "open_questions" in doc

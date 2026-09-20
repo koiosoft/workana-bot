@@ -22,6 +22,16 @@ TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 ADMIN_ID = os.getenv('MY_TELEGRAM_ID')
 
 logger.add("logs/bot.log", rotation="10 MB", retention="10 days", level="INFO")
+# Post-mortem de debugging del pipeline por etapas: NO es para consumo del
+# bot/Telegram/API. Vuelca a disco el payload enviado a la IA y su respuesta
+# cruda por etapa, para poder auditar un fallo despues de que ocurra.
+logger.add(
+    "logs/pipeline_debug.log",
+    rotation="10 MB",
+    retention="7 days",
+    level="DEBUG",
+    encoding="utf-8",
+)
 
 if __name__ == '__main__':
     if not TOKEN or not ADMIN_ID:

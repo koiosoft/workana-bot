@@ -76,18 +76,3 @@ class IntelligencePort(ABC):
     ) -> dict[str, Any]:
         """Escribe la propuesta comercial basada en la estimación técnica."""
         pass
-    @abstractmethod
-    async def generate_project_fixed_proposal(
-        self,
-        project: dict,
-        circuit_breaker: Optional["CircuitBreaker"] = None,
-    ) -> dict[str, Any]:
-        """Orquesta el pipeline por etapas (Etapa 1 -> 2 -> 3) para project_fixed.
-
-        Devuelve el JSON **acumulado** (``analysis`` + ``estimate`` + ``proposal``).
-        La persistencia en ``requirement_analyses``, ``technical_estimates`` y
-        ``proposal_versions`` NO es responsabilidad del orquestador: la realiza el
-        handler de Telegram (TASK016), único punto con acceso a ``project_id`` y
-        ``link_hash``.
-        """
-        pass

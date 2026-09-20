@@ -261,7 +261,7 @@ async def test_procesar_routes_project_fixed_to_staged_pipeline(
         return_value="Formatted description"
     )
     mock_premium = MagicMock()
-    mock_premium.generate_project_fixed_proposal = AsyncMock(
+    mock_pipeline = AsyncMock(
         return_value={
             "analysis": {"branch": "full", "maturity_score": 8},
             "estimate": {
@@ -280,6 +280,9 @@ async def test_procesar_routes_project_fixed_to_staged_pipeline(
             "PREMIUM": mock_premium,
             "FILTER": mock_standard,
         }),
+    ), patch(
+        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        mock_pipeline,
     ), patch.object(
         RequirementAnalysesRepository, "insert", AsyncMock(return_value="id1"),
     ), patch.object(
@@ -287,7 +290,7 @@ async def test_procesar_routes_project_fixed_to_staged_pipeline(
     ):
         await process_projects(mock_update, mock_context)
 
-    mock_premium.generate_project_fixed_proposal.assert_awaited_once()
+    mock_pipeline.assert_awaited_once()
     # With successful pipeline, the handler calls update_full_details
     # and collection.update_one to set proposal_generated status
     mock_repo.update_full_details.assert_awaited_once()
@@ -344,7 +347,7 @@ async def test_procesar_routes_staff_augmentation_to_generate_proposal(
     mock_premium.generate_proposal = AsyncMock(
         return_value={"cover_letter": "Dear client", "budget_summary": {}}
     )
-    mock_premium.generate_project_fixed_proposal = AsyncMock()
+    mock_pipeline = AsyncMock()
 
     with patch(
         "app.bots.telegram.handlers.create_intelligence_service",
@@ -353,11 +356,14 @@ async def test_procesar_routes_staff_augmentation_to_generate_proposal(
             "PREMIUM": mock_premium,
             "FILTER": mock_standard,
         }),
+    ), patch(
+        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        mock_pipeline,
     ):
         await process_projects(mock_update, mock_context)
 
     mock_premium.generate_proposal.assert_awaited_once()
-    mock_premium.generate_project_fixed_proposal.assert_not_awaited()
+    mock_pipeline.assert_not_awaited()
     mock_repo.update_project_proposal.assert_called_once()
 
 

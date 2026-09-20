@@ -6,6 +6,7 @@ import json
 from app.intelligence.adapters.gemini import GeminiAdapter
 from app.bots.telegram.circuit_breaker import CircuitBreaker
 from app.exceptions import AIConnectionError
+from app.intelligence.pipeline import generate_project_fixed_proposal
 
 @pytest.fixture
 def mock_genai_client():
@@ -569,9 +570,11 @@ async def test_estimate_technical_renders_correct_template_discovery(
         "estimate_type": "discovery",
         "analysis": {"maturity_score": 3, "maturity_reason": "Vague", "entities": {"technologies": [], "deliverables": [], "constraints": []}, "gaps": ["unclear scope"], "branch": "discovery"},
         "model_used": "test-model",
+        "milestones": [],
+        "summary": {"total_hours": 0, "total_budget": 0.0, "delivery_time_weeks": 0, "hourly_rate_applied": 18.0},
         "scope_matrix": {"in_scope": [], "out_of_scope": []},
-        "phase0_hours": 40,
-        "post_discovery_hourly_rate": 150.0,
+        "discovery_hours": 40,
+        "post_discovery_hourly_rate": 18.0,
         "open_questions": ["What is the scope?"]
     })
     mock_genai_client.models.generate_content.return_value.text = valid_discovery_json
@@ -672,8 +675,10 @@ async def test_generate_project_fixed_proposal_accumulates(
     with patch.object(adapter, "analyze_requirement", AsyncMock(return_value=mock_analysis)):
         with patch.object(adapter, "estimate_technical", AsyncMock(return_value=mock_estimate)):
             with patch.object(adapter, "write_commercial_proposal", AsyncMock(return_value=mock_proposal)):
-                result = await adapter.generate_project_fixed_proposal(
-                    project={"title": "Test"},
+                result = await generate_project_fixed_proposal(
+                    {"title": "Test"},
+                    standard_adapter=adapter,
+                    premium_adapter=adapter,
                 )
     assert "analysis" in result
     assert result["analysis"] == mock_analysis

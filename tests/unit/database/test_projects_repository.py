@@ -478,7 +478,7 @@ class TestGetProjectsForDeepAnalysis:
         repo = ProjectsRepository()
         expected = [{"link_hash": "abc", "title": "P1", "ai_score": 7}]
 
-        with patch("app.database.projects_repository.get_database") as mock_get_db:
+        with patch("app.database.projects_repository.get_database") as mock_get_db, patch.dict("os.environ", {"DEBUG_FILTER_LINK_HASH": ""}):
             mock_col = _make_mock_collection()
             mock_get_db.return_value = {"projects": mock_col}
             cursor_mock = MagicMock()

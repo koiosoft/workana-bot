@@ -247,108 +247,79 @@ class TestTechnicalEstimateFullRoundTrip:
 
 
 # ---------------------------------------------------------------------------
-# TechnicalEstimateDiscovery
+# TechnicalEstimateDiscovery (Diseno B: estimacion parcial)
 # ---------------------------------------------------------------------------
 
-
-class TestTechnicalEstimateDiscoveryConstruction:
-    def test_valid_discovery_estimate(self) -> None:
-        estimate = TechnicalEstimateDiscovery.model_validate(
-            _discovery_payload()
-        )
-        assert estimate.estimate_type == "discovery"
-        assert estimate.phase0_hours == 20
-        assert estimate.post_discovery_hourly_rate == 25.0
-        assert estimate.open_questions == ["What is your budget?"]
-
-    def test_scope_matrix_defaults(self) -> None:
-        payload = _discovery_payload(scope_matrix={})
-        estimate = TechnicalEstimateDiscovery.model_validate(payload)
-        assert estimate.scope_matrix.in_scope == []
-        assert estimate.scope_matrix.out_of_scope == []
-
-
-class TestTechnicalEstimateDiscoveryPhase0Hours:
-    def test_rejects_phase0_hours_0(self) -> None:
-        with pytest.raises(ValidationError, match="phase0_hours"):
-            TechnicalEstimateDiscovery.model_validate(
-                _discovery_payload(phase0_hours=0)
-            )
-
-    def test_rejects_negative_phase0_hours(self) -> None:
-        with pytest.raises(ValidationError, match="phase0_hours"):
-            TechnicalEstimateDiscovery.model_validate(
-                _discovery_payload(phase0_hours=-5)
-            )
-
-
-class TestTechnicalEstimateDiscoveryPostDiscoveryRate:
-    def test_rejects_zero_rate(self) -> None:
-        with pytest.raises(ValidationError, match="post_discovery_hourly_rate"):
-            TechnicalEstimateDiscovery.model_validate(
-                _discovery_payload(post_discovery_hourly_rate=0)
-            )
-
-    def test_rejects_negative_rate(self) -> None:
-        with pytest.raises(ValidationError, match="post_discovery_hourly_rate"):
-            TechnicalEstimateDiscovery.model_validate(
-                _discovery_payload(post_discovery_hourly_rate=-1)
-            )
+def _discovery_payload(**overrides: Any) -> dict[str, Any]:
+    """Payload valido del contrato Diseño B (con hito estimable)."""
+    payload = {
+        "estimate_type": "discovery",
+        "analysis": {
+            "maturity_score": 3,
+            "maturity_reason": "parcial",
+            "entities": {"technologies": [], "deliverables": [], "constraints": []},
+            "gaps": ["unclear"],
+            "branch": "discovery",
+        },
+        "model_used": "test-model",
+        "milestones": [
+            {
+                "step": 1,
+                "name": "Integracion base",
+                "tasks": {"t1": {"description": "setup", "hours_with_overhead": 4}},
+                "hours_with_overhead": 4,
+                "subtotal": 72.0,
+            }
+        ],
+        "summary": {
+            "total_hours": 4,
+            "total_budget": 72.0,
+            "delivery_time_weeks": 1,
+            "hourly_rate_applied": 18.0,
+        },
+        "scope_matrix": {"in_scope": ["integracion"], "out_of_scope": ["ui"]},
+        "discovery_hours": 16,
+        "post_discovery_hourly_rate": 18.0,
+        "open_questions": ["Que alcance tiene?"],
+    }
+    payload.update(overrides)
+    return payload
 
 
-class TestTechnicalEstimateDiscoveryOpenQuestions:
-    def test_rejects_empty_questions(self) -> None:
-        with pytest.raises(ValidationError, match="open_questions"):
-            TechnicalEstimateDiscovery.model_validate(
-                _discovery_payload(open_questions=[])
-            )
+class TestTechnicalEstimateDiscoveryDisenoB:
+    def test_accepts_valid_partial_estimate(self) -> None:
+        est = TechnicalEstimateDiscovery.model_validate(_discovery_payload())
+        assert est.discovery_hours == 16
+        assert len(est.milestones) == 1
+        assert est.summary.total_hours == 4
 
-    def test_rejects_blank_questions(self) -> None:
-        with pytest.raises(ValidationError, match="open_questions"):
-            TechnicalEstimateDiscovery.model_validate(
-                _discovery_payload(open_questions=["  "])
-            )
-
-    def test_accepts_meaningful_questions(self) -> None:
+    def test_accepts_empty_estimable_part(self) -> None:
+        """Sin parte estimable: milestones vacio y summary en ceros es valido."""
         payload = _discovery_payload(
-            open_questions=["What stack?", "Timeline?"]
+            milestones=[],
+            summary={"total_hours": 0, "total_budget": 0.0, "delivery_time_weeks": 0, "hourly_rate_applied": 18.0},
         )
-        estimate = TechnicalEstimateDiscovery.model_validate(payload)
-        assert len(estimate.open_questions) == 2
+        est = TechnicalEstimateDiscovery.model_validate(payload)
+        assert est.milestones == []
+        assert est.summary.total_hours == 0
 
+    def test_rejects_zero_discovery_hours(self) -> None:
+        with pytest.raises(ValidationError, match="discovery_hours"):
+            TechnicalEstimateDiscovery.model_validate(_discovery_payload(discovery_hours=0))
 
-class TestTechnicalEstimateDiscoveryScopeDisjoint:
     def test_rejects_overlapping_scope(self) -> None:
-        with pytest.raises(ValidationError, match="scope_matrix"):
-            TechnicalEstimateDiscovery.model_validate(
-                _discovery_payload(
-                    scope_matrix={
-                        "in_scope": ["Design", "Dev"],
-                        "out_of_scope": ["Dev"],
-                    }
-                )
-            )
+        with pytest.raises(ValidationError, match="contradicts itself"):
+            TechnicalEstimateDiscovery.model_validate(_discovery_payload(
+                scope_matrix={"in_scope": ["auth"], "out_of_scope": ["auth"]},
+            ))
 
-    def test_accepts_disjoint_scope(self) -> None:
-        estimate = TechnicalEstimateDiscovery.model_validate(
-            _discovery_payload()
-        )
-        in_set = set(estimate.scope_matrix.in_scope)
-        out_set = set(estimate.scope_matrix.out_of_scope)
-        assert in_set.isdisjoint(out_set)
-
-
-class TestTechnicalEstimateDiscoveryRoundTrip:
-    def test_model_dump_round_trip(self) -> None:
-        estimate = TechnicalEstimateDiscovery.model_validate(
-            _discovery_payload()
-        )
-        dumped = estimate.model_dump(mode="json")
-        restored = TechnicalEstimateDiscovery.model_validate(dumped)
-        assert restored.estimate_type == "discovery"
-        assert restored.phase0_hours == 20
-
-
+    def test_rejects_hours_mismatch(self) -> None:
+        """El guard rail exige que summary.total_hours cuadre con los hitos."""
+        payload = _discovery_payload()
+        payload["summary"]["total_hours"] = 99
+        est = TechnicalEstimateDiscovery.model_validate(payload)
+        with pytest.raises(ValueError, match="does not match"):
+            est.validate_hours_consistency()
 # ---------------------------------------------------------------------------
 # Shared base fields
 # ---------------------------------------------------------------------------
