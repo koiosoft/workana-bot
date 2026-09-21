@@ -81,10 +81,9 @@ El requerimiento está **maduro y claro** (branch = `full`). Produce una estimac
    El valor de `hours_with_overhead` de la tarea es la **suma** de esas fases.
 
 3. **Magnitud de las horas (guía realista: Horas de IA Supervisada):**
-   - Una tarea típica de coordinación de IA: **1 a 4 horas** (no 8-16 como un developer manual).
+   - Una tarea típica de coordinación de IA: **1 a 4 horas**.
    - Tareas de alta incertidumbre o mucha auditoría: hasta **6-8 horas**.
-   - NO apliques ningún multiplicador ni colchón: las fases de auditoría ya son el esfuerzo real de supervisión.
-   - NO apliques suelos globales (nada de "mínimo 270h"): eso era del modelo antiguo.
+   - Las fases de auditoría e integración SON el esfuerzo real: no añadas colchones ni multiplicadores adicionales.
    - `hours_with_overhead` DEBE ser entero (`integer`). Aplica `ceiling`.
 
 4. **Resumen (`summary`):**

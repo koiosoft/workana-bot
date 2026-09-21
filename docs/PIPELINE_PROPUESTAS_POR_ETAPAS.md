@@ -200,7 +200,15 @@ identificable y de una sola línea:
   `proposal_status: "analyzed"` **y** `full_description` **ausente** (marcador de
   "ya enriquecido"). Para repetir una prueba hay que revertir el status y borrar
   `full_description`.
-- **Reinicio:** cambios de código → `restart`; cambios de `.env` → `up -d`.
+- **Reinicio (IMPORTANTE):** el código va por **volumen**, y `docker compose up -d`
+  **NO recarga** si la config del compose no cambió (reporta `Running`, no toca el
+  proceso). Para recargar de verdad:
+  - **Solo código / plantillas `.j2`** → **`docker compose restart app`** (reinicia el
+    proceso y recarga el módulo).
+  - **Cualquier cambio (código o `.env`)** → **`docker compose down app && docker
+    compose up -d app`** (elimina y recrea el contenedor). Esta es la forma segura.
+  - ⚠️ **Nunca** uses `docker compose up -d app` **solo** esperando recargar: no lo hace
+    si la config no cambió.
 
 ## 🧪 Cobertura de tests
 

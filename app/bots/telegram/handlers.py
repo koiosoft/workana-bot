@@ -601,9 +601,19 @@ async def process_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as e:
             failed_count += 1
-            await semaphore.update_activity(processed_count, failed_count, not_found_count)
-            logger.critical(f"Error no recuperable procesando proyecto {title}: {e}", exc_info=True)
-            await update.message.reply_text(f'❌ Error crítico en: {title}. Omitiendo.')
+            import traceback as _tb
+            _stack = _tb.format_exc()
+            # Este bloque NO debe lanzar nunca: si algo aqui falla, se traga
+            # para no romper el lote entero (robustez, T12).
+            try:
+                await semaphore.update_activity(processed_count, failed_count, not_found_count)
+                logger.critical(
+                    f"Error no recuperable procesando proyecto {title}: "
+                    f"{type(e).__name__}: {e}\nTRACEBACK:\n{_stack}"
+                )
+                await update.message.reply_text(f'❌ Error crítico en: {title}. Omitiendo.')
+            except Exception as _notify_err:
+                logger.error(f"Fallo notificando el error de '{title}': {_notify_err}")
             continue
 
         # Actualizar telemetría tras un éxito

@@ -471,7 +471,10 @@ class GeminiAdapter(IntelligencePort):
             response = self.client.models.generate_content(
                 model=self.model_id,
                 contents=prompt,
-                config=dict(response_mime_type="application/json"),
+                config=dict(
+                    response_mime_type="application/json",
+                    max_output_tokens=int(os.getenv("MAX_OUTPUT_TOKENS", "8000")),
+                ),
             )
 
             if circuit_breaker:
@@ -561,7 +564,10 @@ class GeminiAdapter(IntelligencePort):
             response = self.client.models.generate_content(
                 model=self.model_id,
                 contents=prompt,
-                config=dict(response_mime_type="application/json"),
+                config=dict(
+                    response_mime_type="application/json",
+                    max_output_tokens=int(os.getenv("MAX_OUTPUT_TOKENS", "8000")),
+                ),
             )
 
             if circuit_breaker:
@@ -587,7 +593,10 @@ class GeminiAdapter(IntelligencePort):
                 # `estimate_type` lo conoce el orquestador (segun la rama):
                 # si el modelo lo omite, se inyecta deterministicamente.
                 raw_json.setdefault("estimate_type", branch)
-                # Normalizacion determinista de hitos (espejo de OpenRouter).
+                # Normalizacion determinista de horas (espejo de OpenRouter):
+                # hito = suma de sus tareas; summary = suma de hitos.
+                _rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
+                _calc_total = 0
                 for ms in raw_json.get("milestones", []) or []:
                     if not isinstance(ms, dict):
                         continue
@@ -597,8 +606,35 @@ class GeminiAdapter(IntelligencePort):
                             (t.get("hours_with_overhead", 0) or 0)
                             for t in tasks.values() if isinstance(t, dict)
                         )
-                        ms.setdefault("hours_with_overhead", total_ms)
-                        ms.setdefault("subtotal", total_ms * int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18")))
+                    else:
+                        total_ms = ms.get("hours_with_overhead", 0) or 0
+                    ms["hours_with_overhead"] = total_ms
+                    ms["subtotal"] = total_ms * _rate
+                    _calc_total += total_ms
+                if _calc_total and isinstance(raw_json.get("summary"), dict):
+                    _summ = raw_json["summary"]
+                    _summ["total_hours"] = _calc_total
+                    _summ["total_budget"] = round(_calc_total * _rate, 2)
+                    _summ.setdefault("delivery_time_weeks", max(1, round(_calc_total / 40)))
+                    _summ["hourly_rate_applied"] = float(_rate)
+                # Fallback discovery (espejo de OpenRouter).
+                if branch != "full":
+                    raw_json.setdefault("discovery_hours", 8)
+                    raw_json.setdefault("post_discovery_hourly_rate", 18.0)
+                    if not raw_json.get("open_questions"):
+                        raw_json["open_questions"] = [
+                            "Confirmar el alcance funcional y tecnico del proyecto antes de estimar."
+                        ]
+                    # Normalizacion scope_matrix (espejo de OpenRouter).
+                    sm = raw_json.get("scope_matrix")
+                    if isinstance(sm, dict):
+                        for key in ("in_scope", "out_of_scope"):
+                            items = sm.get(key)
+                            if isinstance(items, list):
+                                sm[key] = [
+                                    (i.get("item", "") if isinstance(i, dict) else i)
+                                    for i in items
+                                ]
 
             if branch == "full":
                 validated = TechnicalEstimateFull.model_validate(raw_json)
@@ -685,7 +721,10 @@ class GeminiAdapter(IntelligencePort):
         try:
             response = self.client.models.generate_content(
                 model=self.model_id,
-                contents=prompt
+                contents=prompt,
+                config=dict(
+                    max_output_tokens=int(os.getenv("MAX_OUTPUT_TOKENS", "8000")),
+                ),
             )
 
             if circuit_breaker:

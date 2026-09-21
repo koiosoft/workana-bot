@@ -131,6 +131,7 @@ class OpenRouterAdapter(IntelligencePort):
         self,
         prompt: str,
         circuit_breaker: Optional["CircuitBreaker"] = None,
+        per_attempt_timeout: float = 100.0,
     ) -> str:
         """
         Realiza una llamada POST al endpoint de chat completions de OpenRouter
@@ -138,15 +139,29 @@ class OpenRouterAdapter(IntelligencePort):
 
         Incluye lógica de reintentos con backoff exponencial para errores
         transitorios de red (RemoteProtocolError, TimeoutException).
+
+        *per_attempt_timeout* acota cada intento (default 100s; la Etapa 3 con
+        el modelo PREMIUM pasa un valor mayor).
         """
         headers: dict[str, str] = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
 
+        # La salida de las propuestas es prosa comercial acotada (~600-1500
+        # tokens). Sin `max_tokens`, los modelos "reasoner" generan 3-5x lo
+        # necesario (~3500 tokens), tardando >100s y disparando timeouts.
+        # `reasoning.enabled=false` desactiva el pensamiento interno: para
+        # redactar un pitch no aporta y multiplica la latencia.
         payload: dict[str, Any] = {
             "model": self.model_id,
             "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": int(os.getenv("MAX_OUTPUT_TOKENS", "8000")),
+            "reasoning": {"enabled": False},
+            # Fuerza JSON valido (universal, casi todos los proveedores lo
+            # soportan). Si el modelo no lo soporta, OpenRouter lo ignora y
+            # caemos en los normalizadores deterministas del post-parseo.
+            "response_format": {"type": "json_object"},
         }
 
         last_error: Exception | None = None
@@ -156,7 +171,6 @@ class OpenRouterAdapter(IntelligencePort):
         # el cierre del cliente se queda bloqueado). `asyncio.wait_for` garantiza
         # que ningun `await` de httpx pueda colgarse indefinidamente: si vence,
         # se cancela la coroutine y se trata como error transitorio reintentable.
-        per_attempt_timeout = 100.0  # > httpx read (90s) para dar margen limpio
 
         for attempt in range(self._MAX_RETRIES + 1):
             try:
@@ -646,6 +660,10 @@ class OpenRouterAdapter(IntelligencePort):
         logger.info("🤖 Etapa 1 — analizando requerimiento...")
         self._select_model(self.flash_strategy)
         self._set_delay(self.flash_strategy)
+        logger.info(
+            f"📤 [ETAPA1] {link_hash[:12]} prompt_len={len(prompt)} "
+            f"preview={_one_line(prompt)[:120]!r}"
+        )
         logger.debug(
             f"[PIPELINE][link_hash={link_hash}][ETAPA1][INPUT] "
             f"model={self.model_id} threshold={maturity_threshold} "
@@ -654,7 +672,9 @@ class OpenRouterAdapter(IntelligencePort):
         )
 
         try:
-            text_response = await self._chat_completion(prompt, circuit_breaker)
+            text_response = await self._chat_completion(
+                prompt, circuit_breaker, per_attempt_timeout=150.0
+            )
         except AIConnectionError:
             raise
         logger.debug(
@@ -748,6 +768,10 @@ class OpenRouterAdapter(IntelligencePort):
         logger.info(f"🤖 Etapa 2 — estimación técnica (branch={branch})...")
         self._select_model(self.flash_strategy)
         self._set_delay(self.flash_strategy)
+        logger.info(
+            f"📤 [ETAPA2] {link_hash[:12]} branch={branch!r} "
+            f"prompt_len={len(prompt)} preview={_one_line(prompt)[:120]!r}"
+        )
         logger.debug(
             f"[PIPELINE][link_hash={link_hash}][ETAPA2][INPUT] "
             f"model={self.model_id} branch={branch!r} template={template_name!r} "
@@ -757,7 +781,9 @@ class OpenRouterAdapter(IntelligencePort):
         )
 
         try:
-            text_response = await self._chat_completion(prompt, circuit_breaker)
+            text_response = await self._chat_completion(
+                prompt, circuit_breaker, per_attempt_timeout=150.0
+            )
         except AIConnectionError:
             raise
         logger.debug(
@@ -772,10 +798,20 @@ class OpenRouterAdapter(IntelligencePort):
         try:
             raw_json = json.loads(self._extract_json_object(text_response))
         except json.JSONDecodeError as e:
-            logger.error(f"Etapa 2 JSON parse error: {e} | raw={text_response!r}")
-            raise PipelineError(
-                f"estimate_technical: invalid JSON from LLM — {e}"
-            ) from e
+            # El modelo a veces emite JSON malformado (coma/llave faltante).
+            # Un reintento inmediato suele resolverlo: se re-llama al LLM una
+            # vez antes de abortar el pipeline.
+            logger.warning(f"Etapa 2 JSON malformado ({e}); reintentando el LLM...")
+            try:
+                text_response = await self._chat_completion(
+                    prompt, circuit_breaker, per_attempt_timeout=150.0
+                )
+                raw_json = json.loads(self._extract_json_object(text_response))
+            except json.JSONDecodeError as e2:
+                logger.error(f"Etapa 2 JSON parse error: {e2} | raw={text_response!r}")
+                raise PipelineError(
+                    f"estimate_technical: invalid JSON from LLM — {e2}"
+                ) from e2
 
         # El contrato `_EstimateBase`/`_EstimateEnvelope` exige `analysis`
         # (subdocumento de Etapa 1) y `model_used` (traza de auditoria). La
@@ -791,8 +827,13 @@ class OpenRouterAdapter(IntelligencePort):
             # `estimate_type` lo conoce el orquestador (segun la rama), no el LLM:
             # si el modelo lo omite, se inyecta deterministicamente.
             raw_json.setdefault("estimate_type", branch)
-            # Normalizacion determinista de hitos: si el LLM omite campos
-            # calculables, se rellenan aqui (no dependemos de que los emita).
+            # Normalizacion determinista de horas: el LLM escribe a ojo los
+            # `hours_with_overhead` de tareas, hitos y `summary`, y NO los
+            # mantiene consistentes (por eso el guard rail detectaba descuadres).
+            # Se recalculan aqui: hito = suma de sus tareas; summary = suma de
+            # hitos. Asi el descuadre es imposible.
+            rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
+            calc_total_hours = 0
             for ms in raw_json.get("milestones", []) or []:
                 if not isinstance(ms, dict):
                     continue
@@ -802,8 +843,43 @@ class OpenRouterAdapter(IntelligencePort):
                         (t.get("hours_with_overhead", 0) or 0)
                         for t in tasks.values() if isinstance(t, dict)
                     )
-                    ms.setdefault("hours_with_overhead", total_ms)
-                    ms.setdefault("subtotal", total_ms * int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18")))
+                else:
+                    total_ms = ms.get("hours_with_overhead", 0) or 0
+                ms["hours_with_overhead"] = total_ms
+                ms["subtotal"] = total_ms * rate
+                calc_total_hours += total_ms
+            # `summary` se recalcula si hay hitos (la rama full/discovery con
+            # hitos). Si no hay hitos, se respeta lo que emita el modelo.
+            if calc_total_hours and isinstance(raw_json.get("summary"), dict):
+                summ = raw_json["summary"]
+                summ["total_hours"] = calc_total_hours
+                summ["total_budget"] = round(calc_total_hours * rate, 2)
+                summ.setdefault("delivery_time_weeks", max(1, round(calc_total_hours / 40)))
+                summ["hourly_rate_applied"] = float(rate)
+            # Fallback determinista para la rama discovery: el modelo a veces
+            # omite `discovery_hours` / `post_discovery_hourly_rate`. Sus
+            # defaults son conocidos por el orquestador (no del LLM).
+            if branch != "full":
+                raw_json.setdefault("discovery_hours", 8)
+                raw_json.setdefault("post_discovery_hourly_rate", 18.0)
+                # `open_questions` lo exige el contrato (min_length=1). Si el
+                # modelo no propuso ninguna, se deja una generica de aclaracion.
+                if not raw_json.get("open_questions"):
+                    raw_json["open_questions"] = [
+                        "Confirmar el alcance funcional y tecnico del proyecto antes de estimar."
+                    ]
+                # Normalizacion de scope_matrix: el modelo a veces devuelve items
+                # como objetos {"item": str, ...} en vez de strings planos. El
+                # contrato exige List[str]; se aplanan aqui (deterministico).
+                sm = raw_json.get("scope_matrix")
+                if isinstance(sm, dict):
+                    for key in ("in_scope", "out_of_scope"):
+                        items = sm.get(key)
+                        if isinstance(items, list):
+                            sm[key] = [
+                                (i.get("item", "") if isinstance(i, dict) else i)
+                                for i in items
+                            ]
 
         try:
             if branch == "full":
@@ -875,6 +951,10 @@ class OpenRouterAdapter(IntelligencePort):
         logger.info("🤖 Etapa 3 — redactando propuesta comercial (PREMIUM)...")
         self._select_model(self.pro_strategy)
         self._set_delay(self.pro_strategy)
+        logger.info(
+            f"📤 [ETAPA3] {link_hash[:12]} prompt_len={len(prompt)} "
+            f"preview={_one_line(prompt)[:120]!r}"
+        )
         logger.debug(
             f"[PIPELINE][link_hash={link_hash}][ETAPA3][INPUT] "
             f"model={self.model_id} prompt_len={len(prompt)} "
@@ -882,7 +962,9 @@ class OpenRouterAdapter(IntelligencePort):
         )
 
         try:
-            text_response = await self._chat_completion(prompt, circuit_breaker)
+            text_response = await self._chat_completion(
+                prompt, circuit_breaker, per_attempt_timeout=240.0
+            )
         except AIConnectionError:
             raise
         logger.debug(

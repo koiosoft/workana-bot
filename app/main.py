@@ -21,6 +21,12 @@ load_dotenv()
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 ADMIN_ID = os.getenv('MY_TELEGRAM_ID')
 
+# La consola de Docker (sink por defecto de loguru -> stderr) se limita a INFO:
+# los logger.debug (prompts/respuestas completos de la IA) NO deben ensuciar la
+# consola. Esos volcados completos van a logs/pipeline_debug.log (DEBUG).
+logger.remove()
+import sys as _sys
+logger.add(_sys.stderr, level="INFO", colorize=True)
 logger.add("logs/bot.log", rotation="10 MB", retention="10 days", level="INFO")
 # Post-mortem de debugging del pipeline por etapas: NO es para consumo del
 # bot/Telegram/API. Vuelca a disco el payload enviado a la IA y su respuesta

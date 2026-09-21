@@ -94,8 +94,7 @@ Para cada hito:
 **Reglas de horas (Horas de IA Supervisada, sin suelos ni colchones):**
 - Cada tarea va de **1 a 4 horas** típicamente (coordinación de IA). Tareas de alta incertidumbre o auditoría: hasta **6-8 horas**.
 - En la `description` de cada tarea, indica el desglose: `Fases: prompting/arq Xh + iteración Yh + auditoría Zh + integración Wh`; `hours_with_overhead` es la **suma**. (El nombre del campo es del contrato de Workana; NO implica ningún colchón artificial.)
-- NO apliques ningún multiplicador ni colchón (1.25/1.2): las fases de auditoría ya son el esfuerzo real de supervisión.
-- NO apliques suelos globales (nada de "mínimo 270h"): eso era del modelo antiguo de programador humano.
+- Las fases de auditoría e integración SON el esfuerzo real: no añadas colchones ni multiplicadores adicionales.
 - `hours_with_overhead` DEBE ser entero (`integer`). Aplica `ceiling`.
 
 `summary` (de la parte estimable):
@@ -106,8 +105,8 @@ Para cada hito:
 
 ### Parte 2 — Lo que queda para discovery
 
-- `scope_matrix.in_scope`: lo que SÍ se cotiza en los hitos. DEBE reflejar los hitos producidos en la Parte 1; si hay al menos un hito, NO puede estar vacío.
-- `scope_matrix.out_of_scope`: lo que NO se puede estimar y queda para discovery (los vacíos/incertidumbres que NO entraron en los hitos).
+- `scope_matrix.in_scope`: lista de **strings planos** (una frase por ítem, SIN objetos ni justificaciones). Lo que SÍ se cotiza en los hitos. DEBE reflejar los hitos producidos en la Parte 1; si hay al menos un hito, NO puede estar vacío.
+- `scope_matrix.out_of_scope`: lista de **strings planos** (una frase por ítem, SIN objetos ni justificaciones). Lo que NO se puede estimar y queda para discovery (los vacíos/incertidumbres que NO entraron en los hitos).
 - `discovery_hours`: horas de reunión/consultoría necesarias para aclarar lo desconocido. Sugerencia: {{ suggested_discovery_hours }} (4h por vacío, mínimo 8), ajústalo al caso. Entero ≥ 1.
 - `post_discovery_hourly_rate`: tarifa para el trabajo posterior por horas, típicamente {{ POST_DISCOVERY_HOURLY_RATE }}.
 - `open_questions`: preguntas concretas al cliente para cerrar los vacíos (una por cada incertidumbre relevante; mínimo 1).

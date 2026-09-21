@@ -328,6 +328,10 @@ def _assert_hours_consistent(model: _T) -> _T:
                     "loc": ("summary", "total_hours"),
                     "msg": f"Value error, {exc}",
                     "input": None,
+                    # Pydantic v2 exige `ctx.error` para el tipo `value_error`:
+                    # sin esta clave, `from_exception_data` lanza
+                    # `TypeError: 'error' required in context`.
+                    "ctx": {"error": exc},
                 }
             ]
             raise ValidationError.from_exception_data(
