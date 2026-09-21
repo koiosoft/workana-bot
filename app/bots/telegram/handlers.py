@@ -22,6 +22,10 @@ from app.exceptions import (
     CircuitBreakerCritical,
     CircuitBreakerTrippedError,
 )
+# `PlaywrightTimeoutError` se usa en el bucle de scraping (reintentos). Se
+# importa desde patchright (el mismo que usa el scraper), evitando el NameError
+# que impedia capturar el timeout y reintentar.
+from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 
 

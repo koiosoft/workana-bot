@@ -462,17 +462,48 @@ class WorkanaScraperAdapter(ScraperPort):
         return all_projects
 
     async def _is_project_not_found(self, page: Page) -> bool:
-        """
-        Verifica si la página actual es una de 'Proyecto no encontrado' usando Locators de Playwright.
-        Esta función asume que el elemento ya es visible y no espera.
+        """Detecta paginas de error de Workana: proyecto no encontrado o acceso denegado.
+
+        Usa Locators de Playwright; asume que el elemento ya es visible y no espera.
+        Cubre:
+          - 'Proyecto no encontrado' (proyecto eliminado).
+          - 'Access Denied' / 'You don't have permission' (contenido restringido).
         """
         error_locator = page.locator("section.error-section h2.error-title")
-        # Usamos count() que es inmediato y no espera.
         if await error_locator.count() > 0:
-            text = await error_locator.inner_text()
-            if text.strip() == "Proyecto no encontrado":
-                logger.warning(f"🚫 Detectada página 'Proyecto no encontrado' en: {page.url}")
+            text = (await error_locator.inner_text()).strip()
+            lower = text.lower()
+            if text == "Proyecto no encontrado" or "access denied" in lower:
+                logger.warning(f"🚫 Pagina de error de Workana ({text!r}) en: {page.url}")
                 return True
+        return False
+
+    async def _is_cloudflare_challenge(self, page: Page) -> bool:
+        """Detecta una pagina de desafio anti-bot de Cloudflare ('Just a moment...').
+
+        Cuando el bot (headless, sin sesion) es bloqueado, Workana devuelve el
+        challenge de Cloudflare en lugar del proyecto. La pagina NO contiene
+        `.expander`, asi que sin esta deteccion el scraper esperaria 30s en vano.
+        Detectarlo permite fallar rapido y con un mensaje claro.
+        """
+        try:
+            # El challenge puede inyectarse por JS un instante despues del goto;
+            # se da un margen corto antes de decidir.
+            await page.wait_for_timeout(1500)
+            url = page.url or ""
+            if "__cf_chl" in url or "cf_chl_rt" in url:
+                logger.warning(f"🛡️ Challenge Cloudflare (URL) en: {url}")
+                return True
+            title = (await page.title() or "").strip().lower()
+            if "just a moment" in title or "un momento" in title:
+                logger.warning(f"🛡️ Challenge Cloudflare (titulo={title!r}) en: {url}")
+                return True
+            html = await page.content()
+            if "challenges.cloudflare.com" in html or "cf-chl" in html:
+                logger.warning(f"🛡️ Challenge Cloudflare (HTML) en: {url}")
+                return True
+        except Exception as exc:  # noqa: BLE001 - la deteccion no debe romper el flujo
+            logger.debug(f"[scraper] No se pudo comprobar el challenge: {exc}")
         return False
 
     async def fetch_full_detail(self, url: str) -> dict | None:
@@ -496,27 +527,33 @@ class WorkanaScraperAdapter(ScraperPort):
                 logger.info(f"🔍 Extrayendo detalle profundo de: {url}")
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
-                # --- INICIO: Lógica de espera robusta ---
-                combined_selector = "article, section.error-section"
-                try:
-                    # Esperamos a que CUALQUIERA de los dos selectores principales esté presente
-                    await page.wait_for_selector(combined_selector, timeout=15000)
-                except PlaywrightTimeoutError:
-                    # Si ninguno aparece, es un error irrecuperable para este scraper.
-                    await page.screenshot(path="debug_timeout_page.png", full_page=True)
-                    logger.error(
-                        f"Timeout esperando el contenido principal ('article') o una sección de error "
-                        f"en {url}. Screenshot guardado en 'debug_timeout_page.png'."
+                # Si Cloudflare bloquea (challenge 'Just a moment...'), fallar rapido
+                # en vez de esperar 30s a un `.expander` que nunca aparecera.
+                if await self._is_cloudflare_challenge(page):
+                    raise PlaywrightTimeoutError(
+                        f"Cloudflare bloqueo el acceso a {url} (challenge anti-bot)"
                     )
-                    raise # Relanzamos la excepción para que la maneje el bucle de reintentos
 
-                # Ahora que sabemos que uno de los dos elementos existe, verificamos si es la página de error.
-                if await self._is_project_not_found(page):
+                # --- Inicio: deteccion robusta de pagina valida ---
+                # Si no hay 'article' (pagina de proyecto), NO esperamos 30s a
+                # `.expander`: identificamos que pagina es y fallamos rapido.
+                if await page.locator("section.error-section").count() > 0:
+                    # 'Proyecto no encontrado' o 'Access Denied' -> terminal.
                     return None
-                # --- FIN: Lógica de espera robusta ---
+                if await page.locator("article").count() == 0:
+                    # Ni proyecto ni error conocido: home/challenge/bloqueo.
+                    title = (await page.title() or "").strip()
+                    raise PlaywrightTimeoutError(
+                        f"Pagina sin articulo de proyecto en {url} "
+                        f"(titulo={title!r}; posible bloqueo/redireccion)"
+                    )
+                # --- Fin ---
+
 
                 # Si no es una página de error, podemos proceder a la extracción de forma segura.
-                full_description = await page.locator(".expander").inner_text()
+                # Timeout corto: si no aparece, es una pagina no esperada;
+                # no bloquear 30s (ya validamos que hay 'article' arriba).
+                full_description = await page.locator(".expander").inner_text(timeout=8000)
                 extra_details_list = await page.locator("article > p.mt20").all_text_contents()
                 if extra_details_list:
                     filtered_details = [

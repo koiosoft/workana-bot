@@ -97,11 +97,10 @@ Para cada hito:
 - Las fases de auditoría e integración SON el esfuerzo real: no añadas colchones ni multiplicadores adicionales.
 - `hours_with_overhead` DEBE ser entero (`integer`). Aplica `ceiling`.
 
-`summary` (de la parte estimable):
-- `total_hours`: suma EXACTA de `hours_with_overhead` de todos los hitos (entero).
-- `total_budget`: `total_hours` × {{ HOURLY_RATE }} (float, 2 decimales).
-- `delivery_time_weeks`: semanas estimadas (entero, mínimo 1).
-- `hourly_rate_applied`: {{ HOURLY_RATE }}.
+**Solo hitos.** No emitas el `summary`: el sistema lo calcula a partir de tus
+hitos (total de horas, presupuesto, plazo). Tu único trabajo numérico es que
+cada hito cuadre con la suma de sus tareas.
+
 
 ### Parte 2 — Lo que queda para discovery
 

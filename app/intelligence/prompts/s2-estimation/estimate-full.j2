@@ -86,13 +86,9 @@ El requerimiento está **maduro y claro** (branch = `full`). Produce una estimac
    - Las fases de auditoría e integración SON el esfuerzo real: no añadas colchones ni multiplicadores adicionales.
    - `hours_with_overhead` DEBE ser entero (`integer`). Aplica `ceiling`.
 
-4. **Resumen (`summary`):**
-   - `total_hours`: suma EXACTA de `hours_with_overhead` de todos los hitos (entero).
-   - `total_budget`: `total_hours` × {{ HOURLY_RATE }} (float).
-   - `delivery_time_weeks`: `ceil(total_hours / {{ BASE_WEEKLY_HOURS }})`, mínimo 1.
-   - `hourly_rate_applied`: {{ HOURLY_RATE }}.
-
-5. **Cuadre (crítico):** `summary.total_hours` == suma de horas de los hitos; cada hito == suma de sus tareas. Un descuadre aborta el pipeline.
+4. **Solo hitos.** No emitas el `summary`: el sistema lo calcula a partir de tus
+   hitos (total de horas, presupuesto, plazo). Tu único trabajo numérico es que
+   cada hito cuadre con la suma de sus tareas.
 
 **IMPORTANTE:** No generes texto comercial ni persuasivo. Solo números y estructura técnica.
 

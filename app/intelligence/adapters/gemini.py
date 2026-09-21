@@ -611,12 +611,13 @@ class GeminiAdapter(IntelligencePort):
                     ms["hours_with_overhead"] = total_ms
                     ms["subtotal"] = total_ms * _rate
                     _calc_total += total_ms
-                if _calc_total and isinstance(raw_json.get("summary"), dict):
-                    _summ = raw_json["summary"]
-                    _summ["total_hours"] = _calc_total
-                    _summ["total_budget"] = round(_calc_total * _rate, 2)
-                    _summ.setdefault("delivery_time_weeks", max(1, round(_calc_total / 40)))
-                    _summ["hourly_rate_applied"] = float(_rate)
+                if _calc_total:
+                    raw_json["summary"] = {
+                        "total_hours": _calc_total,
+                        "total_budget": round(_calc_total * _rate, 2),
+                        "delivery_time_weeks": max(1, -(-_calc_total // 40)),
+                        "hourly_rate_applied": float(_rate),
+                    }
                 # Fallback discovery (espejo de OpenRouter).
                 if branch != "full":
                     raw_json.setdefault("discovery_hours", 8)

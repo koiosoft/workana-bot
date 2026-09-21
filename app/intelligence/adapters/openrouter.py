@@ -848,14 +848,16 @@ class OpenRouterAdapter(IntelligencePort):
                 ms["hours_with_overhead"] = total_ms
                 ms["subtotal"] = total_ms * rate
                 calc_total_hours += total_ms
-            # `summary` se recalcula si hay hitos (la rama full/discovery con
-            # hitos). Si no hay hitos, se respeta lo que emita el modelo.
-            if calc_total_hours and isinstance(raw_json.get("summary"), dict):
-                summ = raw_json["summary"]
-                summ["total_hours"] = calc_total_hours
-                summ["total_budget"] = round(calc_total_hours * rate, 2)
-                summ.setdefault("delivery_time_weeks", max(1, round(calc_total_hours / 40)))
-                summ["hourly_rate_applied"] = float(rate)
+            # El `summary` lo CONSTRUYE el adapter (no el LLM): todos sus campos
+            # son calculables. El modelo solo decide hitos/tareas/horas; los
+            # agregados se derivan aqui, de modo que el cuadre es imposible.
+            if calc_total_hours:
+                raw_json["summary"] = {
+                    "total_hours": calc_total_hours,
+                    "total_budget": round(calc_total_hours * rate, 2),
+                    "delivery_time_weeks": max(1, -(-calc_total_hours // 40)),
+                    "hourly_rate_applied": float(rate),
+                }
             # Fallback determinista para la rama discovery: el modelo a veces
             # omite `discovery_hours` / `post_discovery_hourly_rate`. Sus
             # defaults son conocidos por el orquestador (no del LLM).

@@ -118,21 +118,26 @@ class TestFetchFullDetail:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_project_not_found(self):
-        """Should return None when _is_project_not_found returns True."""
+        """Debe devolver None cuando la pagina tiene 'section.error-section'."""
         adapter = WorkanaScraperAdapter()
-        with patch.object(adapter, '_is_project_not_found', new_callable=AsyncMock) as mock_not_found:
-            mock_not_found.return_value = True
-            with patch('app.scraper.adapters.workana.async_playwright') as mock_pw:
-                mock_browser = AsyncMock()
-                mock_context = AsyncMock()
-                mock_page = AsyncMock()
-                mock_pw.return_value.__aenter__.return_value.chromium.launch = AsyncMock(return_value=mock_browser)
-                mock_browser.new_context = AsyncMock(return_value=mock_context)
-                mock_context.new_page = AsyncMock(return_value=mock_page)
-                mock_page.goto = AsyncMock()
-                mock_page.wait_for_selector = AsyncMock()
-                result = await adapter.fetch_full_detail("http://test.com/123")
-                assert result is None
+        with patch('app.scraper.adapters.workana.async_playwright') as mock_pw:
+            mock_browser = AsyncMock()
+            mock_context = AsyncMock()
+            mock_page = AsyncMock()
+            mock_pw.return_value.__aenter__.return_value.chromium.launch = AsyncMock(return_value=mock_browser)
+            mock_browser.new_context = AsyncMock(return_value=mock_context)
+            mock_context.new_page = AsyncMock(return_value=mock_page)
+            mock_page.goto = AsyncMock()
+            # El nuevo flujo usa .locator(...).count() para decidir la pagina.
+            mock_page.locator = MagicMock()
+            def count_side_effect(selector):
+                loc = MagicMock()
+                # Hay seccion de error -> se detecta como pagina invalida (None).
+                loc.count = AsyncMock(return_value=1 if selector == "section.error-section" else 0)
+                return loc
+            mock_page.locator.side_effect = count_side_effect
+            result = await adapter.fetch_full_detail("http://test.com/123")
+            assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_detail_when_project_found(self):
@@ -148,7 +153,6 @@ class TestFetchFullDetail:
                 mock_browser.new_context = AsyncMock(return_value=mock_context)
                 mock_context.new_page = AsyncMock(return_value=mock_page)
                 mock_page.goto = AsyncMock()
-                mock_page.wait_for_selector = AsyncMock()
                 # Mock locators for detail extraction
                 mock_expander = AsyncMock()
                 mock_expander.inner_text = AsyncMock(return_value="Full description content")
@@ -163,6 +167,10 @@ class TestFetchFullDetail:
                 mock_budget.inner_text = AsyncMock(return_value="$1000 - $2000")
 
                 def locator_side_effect(selector):
+                    if selector == "section.error-section":
+                        loc = MagicMock(); loc.count = AsyncMock(return_value=0); return loc
+                    if selector == "article":
+                        loc = MagicMock(); loc.count = AsyncMock(return_value=1); return loc
                     if selector == ".expander":
                         return mock_expander
                     elif selector == "article > p.mt20":
@@ -174,7 +182,6 @@ class TestFetchFullDetail:
                     return AsyncMock()
 
                 # page.locator() is NOT awaitable; it returns a Locator object.
-                # We need a regular MagicMock, not AsyncMock.
                 mock_page.locator = MagicMock()
                 mock_page.locator.side_effect = locator_side_effect
                 result = await adapter.fetch_full_detail("http://test.com/123")
