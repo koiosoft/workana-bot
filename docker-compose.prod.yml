@@ -1,0 +1,87 @@
+# =============================================================================
+# docker-compose.prod.yml  —  DESPLIEGUE DE PRODUCCION (servidor Ubuntu)
+# =============================================================================
+#
+# Modelo: el servidor SIEMPRE corre la rama `stable`.
+#   Actualizar produccion =  git pull stable  +  `docker compose ... up -d --build`
+#   (usa scripts/devops/deploy_prod.sh). NO se especifica rama manualmente.
+#
+# Diferencias clave con docker-compose.yml (dev):
+#   * NO hay bind-mount de codigo (`./app:/usr/src/app`). La imagen es INMUTABLE:
+#     se construye con `docker build` desde el commit de `stable`.
+#   * Produccion usa MongoDB ATLAS (ver MONGO_URI en .env). El mongodb local
+#     queda detras de un PERFIL (`local-db`) desactivado por defecto.
+#   * La sesion de Workana (state.json) NO se monta aqui. Si se necesita, se
+#     combina con el override `docker-compose.prod.session.yml` (perfil session).
+#
+# Uso (SIEMPRE desde el clon de prod en el servidor):
+#   docker compose -f docker-compose.prod.yml up -d --build              # Atlas (prod normal)
+#   docker compose -f docker-compose.prod.yml --profile local-db up -d   # + Mongo local (pruebas)
+#
+# Variables: las toma de `.env` (junto a este archivo) mediante `env_file`.
+#   Ver `.env.prod.example` para lo minimo obligatorio.
+# =============================================================================
+
+services:
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: workana-bot-app:stable
+    container_name: workana_bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      # Solo datos persistentes del bot (NO codigo).
+      - ./browser_data:/usr/src/app/browser_data
+    tty: true
+    networks:
+      - workana_network
+
+  api:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: workana-bot-api:stable
+    container_name: workana_api
+    restart: always
+    working_dir: /usr/src
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      # Solo localhost: el acceso externo va por reverse-proxy / tunel.
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    networks:
+      - workana_network
+
+  # ---------------------------------------------------------------------------
+  # MongoDB LOCAL (perfil 'local-db') — DESACTIVADO por defecto.
+  # Produccion usa Atlas. Levantar solo si necesitas un Mongo local de pruebas:
+  #   docker compose -f docker-compose.prod.yml --profile local-db up -d
+  # ---------------------------------------------------------------------------
+  mongodb:
+    image: mongo:8.0.4
+    container_name: workana_db
+    restart: always
+    profiles: ["local-db"]
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - ./data/db:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS}
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet -u $${MONGO_INITDB_ROOT_USERNAME} -p $${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - workana_network
+
+networks:
+  workana_network:
+    driver: bridge

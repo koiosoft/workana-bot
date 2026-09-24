@@ -1,0 +1,20 @@
+# =============================================================================
+# docker-compose.prod.session.yml  —  OVERRIDE opcional: sesion de Workana
+# =============================================================================
+#
+# Anade el montaje de `state.json` (sesion de Workana) al servicio `app`.
+# Se usa SOLO cuando WORKANA_USE_SESSION=true y existe un state.json nativo
+# del servidor. Evita el bug de Docker creando un DIRECTORIO ./state.json.
+#
+# Uso combinado (prod + sesion):
+#   docker compose -f docker-compose.prod.yml -f docker-compose.prod.session.yml up -d --build
+#
+# El agente lo activa automaticamente si .env tiene WORKANA_USE_SESSION=true
+# (ver scripts/devops/deploy_prod.sh).
+# =============================================================================
+
+services:
+  app:
+    volumes:
+      - ./browser_data:/usr/src/app/browser_data
+      - ./state.json:/usr/src/app/state.json
