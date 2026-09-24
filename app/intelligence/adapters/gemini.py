@@ -16,6 +16,7 @@ from app.models.analysis import RequirementAnalysis
 from app.models.estimate import TechnicalEstimateFull, TechnicalEstimateDiscovery, _assert_hours_consistent
 from app.intelligence.config import get_maturity_threshold
 from app.intelligence.estimate_normalizer import normalize_estimate_hours
+from app.intelligence.description_sanitizer import apply_formatted_description
 from typing import TYPE_CHECKING
 from httpx import RemoteProtocolError
 
@@ -410,20 +411,10 @@ class GeminiAdapter(IntelligencePort):
 
             if circuit_breaker:
                 circuit_breaker.record_success()
-            
-            # BUGFIX B2 (espejo de OpenRouter): `if response.text` es truthy para
-            # whitespace, y `.strip()` lo reduce a "" — borrando la descripcion
-            # real. Se exige contenido no-blanco; si no, se conserva la original.
-            formatted = response.text.strip() if response.text else ""
-            if formatted:
-                logger.success("✅ Descripción formateada exitosamente.")
-                return formatted
-
-            logger.warning(
-                "La IA de formateo no devolvió texto útil (vacío/whitespace). "
-                "Usando descripción original."
-            )
-            return description
+            # Contrato compartido: sanea la salida (unwrap JSON, prompt-leak)
+            # y cae a la descripcion original si no hay texto plano util.
+            # NO reimplementar aqui la validacion (vive en description_sanitizer).
+            return apply_formatted_description(response.text, description)
 
         except google.genai.errors.APIError as e:
             logger.error(f"Error en API de IA durante el formateo de descripción: {e}")

@@ -18,6 +18,7 @@ from app.models.estimate import (
 )
 from app.intelligence.config import get_maturity_threshold
 from app.intelligence.estimate_normalizer import normalize_estimate_hours
+from app.intelligence.description_sanitizer import apply_formatted_description
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -134,6 +135,7 @@ class OpenRouterAdapter(IntelligencePort):
         prompt: str,
         circuit_breaker: Optional["CircuitBreaker"] = None,
         per_attempt_timeout: float = 100.0,
+        json_mode: bool = True,
     ) -> str:
         """
         Realiza una llamada POST al endpoint de chat completions de OpenRouter
@@ -144,6 +146,12 @@ class OpenRouterAdapter(IntelligencePort):
 
         *per_attempt_timeout* acota cada intento (default 100s; la Etapa 3 con
         el modelo PREMIUM pasa un valor mayor).
+
+        *json_mode* activa ``response_format={"type":"json_object"}``. Debe
+        ser ``False`` para tareas que esperan PROSA (p. ej. el formateador de
+        descripciones): forzar JSON hacia un prompt de prosas hacia que el
+        modelo envolvia el texto en un objeto y se persistia el envoltorio
+        crudo como ``full_description``.
         """
         headers: dict[str, str] = {
             "Authorization": f"Bearer {self.api_key}",
@@ -163,8 +171,12 @@ class OpenRouterAdapter(IntelligencePort):
             # Fuerza JSON valido (universal, casi todos los proveedores lo
             # soportan). Si el modelo no lo soporta, OpenRouter lo ignora y
             # caemos en los normalizadores deterministas del post-parseo.
-            "response_format": {"type": "json_object"},
+            # Solo para tareas estructuradas: el formateador de descripciones
+            # pasa ``json_mode=False`` para recibir prosa.
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
 
         last_error: Exception | None = None
 
@@ -587,22 +599,14 @@ class OpenRouterAdapter(IntelligencePort):
         try:
             self._select_model(self.filter_strategy)
 
-            text_response = await self._chat_completion(prompt, circuit_breaker)
-
-            # BUGFIX B2: `if text_response` es truthy para whitespace ("   ", "\n"),
-            # y `.strip()` lo reduce a "". Eso BORRABA la descripcion real del
-            # scraper (se guardaba ""). Ahora se exige contenido no-blanco; si el
-            # modelo no aporta texto util, se conserva la descripcion original.
-            formatted = text_response.strip() if text_response else ""
-            if formatted:
-                logger.success("✅ Descripción formateada exitosamente.")
-                return formatted
-
-            logger.warning(
-                "La IA de formateo no devolvió texto útil (vacío/whitespace). "
-                "Usando descripción original."
+            text_response = await self._chat_completion(
+                prompt, circuit_breaker, json_mode=False
             )
-            return description
+
+            # Contrato compartido: sanea la salida (unwrap JSON, prompt-leak)
+            # y cae a la descripcion original si no hay texto plano util.
+            # NO reimplementar aqui la validacion (vive en description_sanitizer).
+            return apply_formatted_description(text_response, description)
 
         except (httpx.RemoteProtocolError, httpx.HTTPError) as e:
             logger.error(
