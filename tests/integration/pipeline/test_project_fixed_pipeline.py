@@ -377,12 +377,14 @@ async def test_guard_rail_invalid_json_in_stage2_raises_pipeline_error(
     """INT005: When Stage 2 (estimate_technical) receives invalid JSON,
     it must raise PipelineError and NOT proceed to Stage 3.
     """
-    # Stage 1 succeeds
+    # Stage 1 succeeds (1 call). Stage 2 recibe SIEMPRE invalid JSON para
+    # forzar el agotamiento de reintentos y el PipelineError del guard-rail
+    # (el retry reintenta el mismo input hasta _MAX_RETRIES).
     analysis_response = f"```json\n{VALID_ANALYSIS_JSON}\n```"
-
+    responses = [analysis_response] + [INVALID_JSON_RESPONSE] * 10
     with patch.object(
         adapter, "_chat_completion",
-        _mock_chat_completion([analysis_response, INVALID_JSON_RESPONSE]),
+        _mock_chat_completion(responses),
     ), patch.object(adapter, "_render_prompt", return_value="prompt"):
         mock_stage3 = AsyncMock()
         with patch.object(adapter, "write_commercial_proposal", mock_stage3):

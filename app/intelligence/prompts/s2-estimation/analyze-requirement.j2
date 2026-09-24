@@ -43,6 +43,11 @@ Regla de decisión:
 ```
 {{ full_description }}
 ```
+{% if extra_info %}
+
+## INDICACIÓN ADICIONAL (tener en cuenta en el análisis)
+{{ extra_info }}
+{% endif %}
 {% endblock %}
 
 {% block professional_persona %}

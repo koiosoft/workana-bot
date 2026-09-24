@@ -17,6 +17,7 @@ from app.models.estimate import (
     _assert_hours_consistent,
 )
 from app.intelligence.config import get_maturity_threshold
+from app.intelligence.estimate_normalizer import normalize_estimate_hours
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ def _one_line(value: Any) -> str:
     contenido completo en una unica linea legible.
     """
     return str(value).replace("\n", "\\n").replace("\r", "\\r")
+
 
 
 class OpenRouterAdapter(IntelligencePort):
@@ -635,6 +637,7 @@ class OpenRouterAdapter(IntelligencePort):
         project: dict,
         maturity_threshold: int = 8,
         circuit_breaker: Optional["CircuitBreaker"] = None,
+        extra_info: str = "",
     ) -> dict[str, Any]:
         """Etapa 1: analiza el requerimiento con el modelo STANDARD.
         
@@ -653,6 +656,7 @@ class OpenRouterAdapter(IntelligencePort):
             "s2-estimation/analyze-requirement.j2",
             full_description=full_description,
             threshold=maturity_threshold,
+            extra_info=extra_info,
         )
         link_hash = project.get("link_hash", "?")
         title = project.get("title", "?")
@@ -709,13 +713,16 @@ class OpenRouterAdapter(IntelligencePort):
             f"{json.dumps(validated.model_dump(mode='json'), ensure_ascii=False)}"
         )
         logger.success("✅ Etapa 1 superó la validación Pydantic.")
-        return cast(dict[str, Any], validated.model_dump(mode="json"))
+        result = validated.model_dump(mode="json")
+        result["extra_info"] = extra_info
+        return cast(dict[str, Any], result)
 
     async def estimate_technical(
         self,
         project: dict,
         analysis: dict,
         circuit_breaker: Optional["CircuitBreaker"] = None,
+        extra_info: str = "",
     ) -> dict[str, Any]:
         """Etapa 2: produce la estimación técnica a partir del análisis.
         
@@ -760,6 +767,7 @@ class OpenRouterAdapter(IntelligencePort):
             analysis_json=analysis_json,
             hourly_rate=int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18")),
             post_discovery_hourly_rate=float(os.getenv("POST_DISCOVERY_HOURLY_RATE", "18")),
+            extra_info=extra_info,
         )
 
         link_hash = project.get("link_hash", "?")
@@ -780,124 +788,77 @@ class OpenRouterAdapter(IntelligencePort):
             f"RENDERED={_one_line(prompt)}"
         )
 
-        try:
-            text_response = await self._chat_completion(
-                prompt, circuit_breaker, per_attempt_timeout=150.0
-            )
-        except AIConnectionError:
-            raise
-        logger.debug(
-            f"[PIPELINE][link_hash={link_hash}][ETAPA2][RAW_RESPONSE] "
-            f"model={self.model_id} branch={branch!r} "
-            f"RESPONSE={_one_line(text_response)}"
-        )
-        if not text_response:
-            logger.warning("La IA no devolvió texto en estimate_technical.")
-            raise PipelineError("estimate_technical: LLM returned no text")
-
-        try:
-            raw_json = json.loads(self._extract_json_object(text_response))
-        except json.JSONDecodeError as e:
-            # El modelo a veces emite JSON malformado (coma/llave faltante).
-            # Un reintento inmediato suele resolverlo: se re-llama al LLM una
-            # vez antes de abortar el pipeline.
-            logger.warning(f"Etapa 2 JSON malformado ({e}); reintentando el LLM...")
+        # Bucle de reintentos UNIFICADO: cubre llamada LLM, JSON malformado Y
+        # validacion Pydantic. Todas son "el LLM fallo"; el mismo mecanismo y
+        # el mismo N (self._MAX_RETRIES) que la reconexion de red.
+        last_error: Exception | None = None
+        raw_json: Any = None
+        validated: Any = None
+        text_response: str = ""
+        for attempt in range(self._MAX_RETRIES + 1):
             try:
                 text_response = await self._chat_completion(
                     prompt, circuit_breaker, per_attempt_timeout=150.0
                 )
-                raw_json = json.loads(self._extract_json_object(text_response))
-            except json.JSONDecodeError as e2:
-                logger.error(f"Etapa 2 JSON parse error: {e2} | raw={text_response!r}")
-                raise PipelineError(
-                    f"estimate_technical: invalid JSON from LLM — {e2}"
-                ) from e2
-
-        # El contrato `_EstimateBase`/`_EstimateEnvelope` exige `analysis`
-        # (subdocumento de Etapa 1) y `model_used` (traza de auditoria). La
-        # plantilla es un prompt, no emite esos campos, asi que se inyectan
-        # antes de validar.
-        if isinstance(raw_json, dict):
+            except AIConnectionError:
+                raise
             logger.debug(
-                f"[PIPELINE][link_hash={link_hash}][ETAPA2]"
-                f"[RAW_LLM_KEYS_PRE_INJECTION] {sorted(raw_json.keys())}"
+                f"[PIPELINE][link_hash={link_hash}][ETAPA2][RAW_RESPONSE] "
+                f"model={self.model_id} branch={branch!r} "
+                f"RESPONSE={_one_line(text_response)}"
             )
-            raw_json.setdefault("analysis", analysis)
-            raw_json.setdefault("model_used", self.model_id)
-            # `estimate_type` lo conoce el orquestador (segun la rama), no el LLM:
-            # si el modelo lo omite, se inyecta deterministicamente.
-            raw_json.setdefault("estimate_type", branch)
-            # Normalizacion determinista de horas: el LLM escribe a ojo los
-            # `hours_with_overhead` de tareas, hitos y `summary`, y NO los
-            # mantiene consistentes (por eso el guard rail detectaba descuadres).
-            # Se recalculan aqui: hito = suma de sus tareas; summary = suma de
-            # hitos. Asi el descuadre es imposible.
-            rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
-            calc_total_hours = 0
-            for ms in raw_json.get("milestones", []) or []:
-                if not isinstance(ms, dict):
+            if not text_response:
+                last_error = PipelineError("estimate_technical: LLM returned no text")
+                logger.warning("La IA no devolvio texto en estimate_technical.")
+                if attempt < self._MAX_RETRIES:
                     continue
-                tasks = ms.get("tasks") or {}
-                if isinstance(tasks, dict):
-                    total_ms = sum(
-                        (t.get("hours_with_overhead", 0) or 0)
-                        for t in tasks.values() if isinstance(t, dict)
-                    )
-                else:
-                    total_ms = ms.get("hours_with_overhead", 0) or 0
-                ms["hours_with_overhead"] = total_ms
-                ms["subtotal"] = total_ms * rate
-                calc_total_hours += total_ms
-            # El `summary` lo CONSTRUYE el adapter (no el LLM): todos sus campos
-            # son calculables. El modelo solo decide hitos/tareas/horas; los
-            # agregados se derivan aqui, de modo que el cuadre es imposible.
-            if calc_total_hours:
-                raw_json["summary"] = {
-                    "total_hours": calc_total_hours,
-                    "total_budget": round(calc_total_hours * rate, 2),
-                    "delivery_time_weeks": max(1, -(-calc_total_hours // 40)),
-                    "hourly_rate_applied": float(rate),
-                }
-            # Fallback determinista para la rama discovery: el modelo a veces
-            # omite `discovery_hours` / `post_discovery_hourly_rate`. Sus
-            # defaults son conocidos por el orquestador (no del LLM).
-            if branch != "full":
-                raw_json.setdefault("discovery_hours", 8)
-                raw_json.setdefault("post_discovery_hourly_rate", 18.0)
-                # `open_questions` lo exige el contrato (min_length=1). Si el
-                # modelo no propuso ninguna, se deja una generica de aclaracion.
-                if not raw_json.get("open_questions"):
-                    raw_json["open_questions"] = [
-                        "Confirmar el alcance funcional y tecnico del proyecto antes de estimar."
-                    ]
-                # Normalizacion de scope_matrix: el modelo a veces devuelve items
-                # como objetos {"item": str, ...} en vez de strings planos. El
-                # contrato exige List[str]; se aplanan aqui (deterministico).
-                sm = raw_json.get("scope_matrix")
-                if isinstance(sm, dict):
-                    for key in ("in_scope", "out_of_scope"):
-                        items = sm.get(key)
-                        if isinstance(items, list):
-                            sm[key] = [
-                                (i.get("item", "") if isinstance(i, dict) else i)
-                                for i in items
-                            ]
+                raise last_error
+            try:
+                raw_json = json.loads(self._extract_json_object(text_response))
 
-        try:
-            if branch == "full":
-                validated: Any = TechnicalEstimateFull.model_validate(raw_json)
-                validated = _assert_hours_consistent(validated)
-            else:
-                validated = TechnicalEstimateDiscovery.model_validate(raw_json)
-                validated = _assert_hours_consistent(validated)
-        except ValidationError as e:
-            logger.error(
-                f"Etapa 2 Pydantic validation failed: {e} | "
-                f"raw={text_response!r}"
-            )
+                # Inyecciones del orquestador (no las emite el prompt).
+                if isinstance(raw_json, dict):
+                    raw_json.setdefault("analysis", analysis)
+                    raw_json.setdefault("model_used", self.model_id)
+                    raw_json.setdefault("estimate_type", branch)
+                    normalize_estimate_hours(raw_json, branch)
+                try:
+                    if branch == "full":
+                        validated = TechnicalEstimateFull.model_validate(raw_json)
+                        validated = _assert_hours_consistent(validated)
+                    else:
+                        validated = TechnicalEstimateDiscovery.model_validate(raw_json)
+                        validated = _assert_hours_consistent(validated)
+                except ValidationError as ve:
+                    last_error = ve
+                    logger.warning(
+                        f"Etapa 2 intento {attempt + 1}/{self._MAX_RETRIES + 1} "
+                        f"Pydantic fallo: {ve} | raw={text_response!r}"
+                    )
+                    if attempt < self._MAX_RETRIES:
+                        continue
+                    raise PipelineError(
+                        f"estimate_technical: Pydantic validation failed — {ve}"
+                    ) from ve
+            except json.JSONDecodeError as je:
+                last_error = je
+                logger.warning(
+                    f"Etapa 2 intento {attempt + 1}/{self._MAX_RETRIES + 1} "
+                    f"JSON malformado: {je} | raw={text_response!r}"
+                )
+                if attempt < self._MAX_RETRIES:
+                    continue
+                raise PipelineError(
+                    f"estimate_technical: invalid JSON from LLM — {je}"
+                ) from je
+            # Exito: salir del bucle.
+            break
+        else:
+            # Agotados los reintentos sin exito.
             raise PipelineError(
-                f"estimate_technical: Pydantic validation failed — {e}"
-            ) from e
+                f"estimate_technical: agotados los {self._MAX_RETRIES + 1} intentos "
+                f"— {last_error}"
+            )
 
         logger.debug(
             f"[PIPELINE][link_hash={link_hash}][ETAPA2][VALIDATED] "
@@ -907,13 +868,16 @@ class OpenRouterAdapter(IntelligencePort):
         logger.success(
             f"✅ Etapa 2 (branch={branch}) superó la validación Pydantic."
         )
-        return cast(dict[str, Any], validated.model_dump(mode="json"))
+        result = validated.model_dump(mode="json")
+        result["extra_info"] = extra_info
+        return cast(dict[str, Any], result)
 
     async def write_commercial_proposal(
         self,
         project: dict,
         technical_estimate: dict,
         circuit_breaker: Optional["CircuitBreaker"] = None,
+        extra_info: str = "",
     ) -> dict[str, Any]:
         """Etapa 3: redacta la propuesta comercial (modelo PREMIUM).
         
@@ -946,6 +910,7 @@ class OpenRouterAdapter(IntelligencePort):
             hourly_rate=hourly_rate,
             project_payload_json=json.dumps(project_payload, indent=2),
             technical_estimate_json=json.dumps(technical_estimate, indent=2),
+            extra_info=extra_info,
         )
         link_hash = project.get("link_hash", "?")
 
@@ -1005,6 +970,7 @@ class OpenRouterAdapter(IntelligencePort):
             f"[PIPELINE][link_hash={link_hash}][ETAPA3][VALIDATED] "
             f"{json.dumps(proposal_data, ensure_ascii=False)}"
         )
+        proposal_data["extra_info"] = extra_info
         return proposal_data
 
 

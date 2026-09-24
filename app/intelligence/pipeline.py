@@ -50,6 +50,7 @@ async def generate_project_fixed_proposal(
     standard_adapter: IntelligencePort,
     premium_adapter: IntelligencePort,
     circuit_breaker: Optional["CircuitBreaker"] = None,
+    extra_info: str = "",
 ) -> dict[str, Any]:
     """Orquesta Etapa 1 -> 2 -> 3 para ``project_fixed``.
 
@@ -60,6 +61,10 @@ async def generate_project_fixed_proposal(
             Puede ser de un provider distinto al de ``premium_adapter``.
         premium_adapter: adapter que sirve la Etapa 3 (modelo PREMIUM).
         circuit_breaker: estado compartido del circuit breaker, si aplica.
+        extra_info: informacion adicional OPCIONAL que se agrega al contexto de
+            las tres etapas para REORIENTAR el resultado (p.ej. el operador
+            detecta algo al ver la propuesta y quiere ajustarlo). Vacio = sin
+            efecto. No es feedback del cliente: es un dato mas del proyecto.
 
     Returns:
         JSON acumulado ``{"analysis": ..., "estimate": ..., "proposal": ...}``.
@@ -86,6 +91,7 @@ async def generate_project_fixed_proposal(
             project=project,
             maturity_threshold=threshold,
             circuit_breaker=circuit_breaker,
+            extra_info=extra_info,
         )
     except PipelineError as e:
         logger.error(
@@ -105,6 +111,7 @@ async def generate_project_fixed_proposal(
             project=project,
             analysis=analysis,
             circuit_breaker=circuit_breaker,
+            extra_info=extra_info,
         )
     except PipelineError as e:
         logger.error(
@@ -123,6 +130,7 @@ async def generate_project_fixed_proposal(
             project=project,
             technical_estimate=estimate,
             circuit_breaker=circuit_breaker,
+            extra_info=extra_info,
         )
     except PipelineError as e:
         logger.error(

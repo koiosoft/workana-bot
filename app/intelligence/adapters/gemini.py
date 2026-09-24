@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from app.models.analysis import RequirementAnalysis
 from app.models.estimate import TechnicalEstimateFull, TechnicalEstimateDiscovery, _assert_hours_consistent
 from app.intelligence.config import get_maturity_threshold
+from app.intelligence.estimate_normalizer import normalize_estimate_hours
 from typing import TYPE_CHECKING
 from httpx import RemoteProtocolError
 
@@ -35,6 +36,8 @@ def _one_line(value: Any) -> str:
     contenido completo en una unica linea legible (espejo de openrouter).
     """
     return str(value).replace("\n", "\\n").replace("\r", "\\r")
+
+
 
 class GeminiAdapter(IntelligencePort):
     def __init__(
@@ -437,7 +440,8 @@ class GeminiAdapter(IntelligencePort):
         self,
         project: dict,
         maturity_threshold: int = 8,
-        circuit_breaker: "CircuitBreaker" | None = None
+        circuit_breaker: "CircuitBreaker" | None = None,
+        extra_info: str = "",
     ) -> dict[str, Any]:
         """Stage 1: analyze the requirement using the STANDARD model.
 
@@ -452,6 +456,7 @@ class GeminiAdapter(IntelligencePort):
             "s2-estimation/analyze-requirement.j2",
             full_description=full_description,
             threshold=maturity_threshold,
+            extra_info=extra_info,
         )
         link_hash = project.get("link_hash", "?")
         title = project.get("title", "?")
@@ -495,7 +500,9 @@ class GeminiAdapter(IntelligencePort):
                 f"{json.dumps(validated.model_dump(mode='json'), ensure_ascii=False)}"
             )
             logger.success("✅ Requirement analysis passed Pydantic validation.")
-            return validated.model_dump(mode="json")
+            result = validated.model_dump(mode="json")
+            result["extra_info"] = extra_info
+            return result
 
         except json.JSONDecodeError as e:
             logger.error(f"Stage 1 JSON parse error: {e}")
@@ -523,7 +530,8 @@ class GeminiAdapter(IntelligencePort):
         self,
         project: dict,
         analysis: dict,
-        circuit_breaker: "CircuitBreaker" | None = None
+        circuit_breaker: "CircuitBreaker" | None = None,
+        extra_info: str = "",
     ) -> dict[str, Any]:
         """Stage 2: produce a technical estimate based on the requirement analysis.
 
@@ -545,6 +553,7 @@ class GeminiAdapter(IntelligencePort):
             analysis_json=json.dumps(analysis, indent=2),
             hourly_rate=int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18")),
             post_discovery_hourly_rate=float(os.getenv("POST_DISCOVERY_HOURLY_RATE", "18")),
+            extra_info=extra_info,
         )
 
         link_hash = project.get("link_hash", "?")
@@ -593,49 +602,9 @@ class GeminiAdapter(IntelligencePort):
                 # `estimate_type` lo conoce el orquestador (segun la rama):
                 # si el modelo lo omite, se inyecta deterministicamente.
                 raw_json.setdefault("estimate_type", branch)
-                # Normalizacion determinista de horas (espejo de OpenRouter):
-                # hito = suma de sus tareas; summary = suma de hitos.
-                _rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
-                _calc_total = 0
-                for ms in raw_json.get("milestones", []) or []:
-                    if not isinstance(ms, dict):
-                        continue
-                    tasks = ms.get("tasks") or {}
-                    if isinstance(tasks, dict):
-                        total_ms = sum(
-                            (t.get("hours_with_overhead", 0) or 0)
-                            for t in tasks.values() if isinstance(t, dict)
-                        )
-                    else:
-                        total_ms = ms.get("hours_with_overhead", 0) or 0
-                    ms["hours_with_overhead"] = total_ms
-                    ms["subtotal"] = total_ms * _rate
-                    _calc_total += total_ms
-                if _calc_total:
-                    raw_json["summary"] = {
-                        "total_hours": _calc_total,
-                        "total_budget": round(_calc_total * _rate, 2),
-                        "delivery_time_weeks": max(1, -(-_calc_total // 40)),
-                        "hourly_rate_applied": float(_rate),
-                    }
-                # Fallback discovery (espejo de OpenRouter).
-                if branch != "full":
-                    raw_json.setdefault("discovery_hours", 8)
-                    raw_json.setdefault("post_discovery_hourly_rate", 18.0)
-                    if not raw_json.get("open_questions"):
-                        raw_json["open_questions"] = [
-                            "Confirmar el alcance funcional y tecnico del proyecto antes de estimar."
-                        ]
-                    # Normalizacion scope_matrix (espejo de OpenRouter).
-                    sm = raw_json.get("scope_matrix")
-                    if isinstance(sm, dict):
-                        for key in ("in_scope", "out_of_scope"):
-                            items = sm.get(key)
-                            if isinstance(items, list):
-                                sm[key] = [
-                                    (i.get("item", "") if isinstance(i, dict) else i)
-                                    for i in items
-                                ]
+                # Normalizacion determinista (modulo compartido, comun a todos
+                # los providers): claves slug, horas, summary, fallbacks, scope.
+                normalize_estimate_hours(raw_json, branch)
 
             if branch == "full":
                 validated = TechnicalEstimateFull.model_validate(raw_json)
@@ -650,7 +619,9 @@ class GeminiAdapter(IntelligencePort):
                 f"{json.dumps(validated.model_dump(mode='json'), ensure_ascii=False)}"
             )
             logger.success(f"✅ Technical estimate (branch={branch}) passed Pydantic validation.")
-            return validated.model_dump(mode="json")
+            result = validated.model_dump(mode="json")
+            result["extra_info"] = extra_info
+            return result
 
         except json.JSONDecodeError as e:
             logger.error(f"Stage 2 JSON parse error: {e} | raw={response.text!r}")
@@ -678,7 +649,8 @@ class GeminiAdapter(IntelligencePort):
         self,
         project: dict,
         technical_estimate: dict,
-        circuit_breaker: "CircuitBreaker" | None = None
+        circuit_breaker: "CircuitBreaker" | None = None,
+        extra_info: str = "",
     ) -> dict[str, Any]:
         """Stage 3: write the commercial proposal from the validated technical estimate.
 
@@ -707,6 +679,7 @@ class GeminiAdapter(IntelligencePort):
             hourly_rate=hourly_rate,
             project_payload_json=json.dumps(project_payload, indent=2),
             technical_estimate_json=json.dumps(technical_estimate, indent=2),
+            extra_info=extra_info,
         )
 
         logger.info("🤖 Stage 3 — writing commercial proposal (PREMIUM)...")
@@ -758,6 +731,7 @@ class GeminiAdapter(IntelligencePort):
                 f"{json.dumps(proposal_data, ensure_ascii=False)}"
             )
 
+            proposal_data["extra_info"] = extra_info
             return proposal_data
 
         except RemoteProtocolError as e:

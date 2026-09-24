@@ -69,6 +69,11 @@ El requerimiento de este proyecto está **solo parcialmente claro** (branch = `d
 - Entregables mencionados: {{ deliverables | tojson }}
 - Restricciones mencionadas: {{ constraints | tojson }}
 - Vacíos/incertidumbres detectados ({{ gap_count }}): {{ gaps | tojson }}
+{% if extra_info %}
+
+## INDICACIÓN ADICIONAL (reorienta la estimación)
+{{ extra_info }}
+{% endif %}
 
 ## CÓMO ESTIMAR
 
@@ -87,14 +92,14 @@ El requerimiento de este proyecto está **solo parcialmente claro** (branch = `d
 Para cada hito:
 - `step`: entero 1..N, único y consecutivo.
 - `name`: nombre corto del hito.
-- `tasks`: diccionario `{ "clave": { "description": str, "hours_with_overhead": int } }`.
+- `tasks`: diccionario `{ "clave": { "description": str, "hours_with_overhead": int } }`. **La `clave` es el TITULO visible de la tarea: un nombre corto y legible de la ACTIVIDAD real** (ej: `Diseñar esquema de BD`, `Implementar login JWT`). Usa mayusculas iniciales y texto natural (con tildes). PROHIBIDO nombres genericos (`T1`, `Tarea 1`) y PROHIBIDO nombrar por fase (`Auth prompting`, `CRUD front`).
 - `hours_with_overhead`: entero. DEBE ser igual a la suma de las horas de sus tareas.
 - `subtotal`: horas del hito × tarifa.
 
-**Reglas de horas (Horas de IA Supervisada, sin suelos ni colchones):**
-- Cada tarea va de **1 a 4 horas** típicamente (coordinación de IA). Tareas de alta incertidumbre o auditoría: hasta **6-8 horas**.
-- En la `description` de cada tarea, indica el desglose: `Fases: prompting/arq Xh + iteración Yh + auditoría Zh + integración Wh`; `hours_with_overhead` es la **suma**. (El nombre del campo es del contrato de Workana; NO implica ningún colchón artificial.)
-- Las fases de auditoría e integración SON el esfuerzo real: no añadas colchones ni multiplicadores adicionales.
+**Reglas de tareas y horas:**
+- Cada hito se divide en las **actividades concretas** necesarias (tipicamente 2 a 5). Cada tarea es **trabajo real del proyecto**, no una fase metodologica.
+- `description`: una frase que explique QUE se hace, un poco mas detallada que el nombre de la clave. **NO incluyas desglose de horas ni fases**.
+- Cada tarea va de **1 a 4 horas** tipicamente; alta incertidumbre o auditoria: hasta **6-8 horas**.
 - `hours_with_overhead` DEBE ser entero (`integer`). Aplica `ceiling`.
 
 **Solo hitos.** No emitas el `summary`: el sistema lo calcula a partir de tus

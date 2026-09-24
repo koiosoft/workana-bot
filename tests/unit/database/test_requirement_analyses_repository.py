@@ -130,6 +130,7 @@ class TestInsert:
             "analysis",
             "maturity_threshold_used",
             "model_used",
+            "extra_info",
             "created_at",
         }
         assert doc["project_id"] == "pid1"

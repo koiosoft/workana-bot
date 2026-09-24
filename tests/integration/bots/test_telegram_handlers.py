@@ -281,20 +281,15 @@ async def test_procesar_routes_project_fixed_to_staged_pipeline(
             "FILTER": mock_standard,
         }),
     ), patch(
-        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        "app.bots.telegram.handlers.generate_and_persist_proposal",
         mock_pipeline,
-    ), patch.object(
-        RequirementAnalysesRepository, "insert", AsyncMock(return_value="id1"),
-    ), patch.object(
-        TechnicalEstimatesRepository, "insert", AsyncMock(return_value="id2"),
     ):
         await process_projects(mock_update, mock_context)
 
     mock_pipeline.assert_awaited_once()
-    # With successful pipeline, the handler calls update_full_details
-    # and collection.update_one to set proposal_generated status
+    # El handler delega la persistencia (3 colecciones + status) al servicio
+    # compartido; solo actualiza los detalles scrapeados en el proyecto.
     mock_repo.update_full_details.assert_awaited_once()
-    mock_repo.collection.update_one.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -357,7 +352,7 @@ async def test_procesar_routes_staff_augmentation_to_generate_proposal(
             "FILTER": mock_standard,
         }),
     ), patch(
-        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        "app.bots.telegram.handlers.generate_and_persist_proposal",
         mock_pipeline,
     ):
         await process_projects(mock_update, mock_context)

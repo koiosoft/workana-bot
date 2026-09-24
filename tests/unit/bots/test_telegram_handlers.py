@@ -280,12 +280,8 @@ async def test_process_project_fixed_routes_to_staged_pipeline(
             "FILTER": mock_standard,
         })
     ), patch(
-        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        "app.bots.telegram.handlers.generate_and_persist_proposal",
         mock_pipeline,
-    ), patch.object(
-        RequirementAnalysesRepository, "insert", AsyncMock(return_value="id1")
-    ), patch.object(
-        TechnicalEstimatesRepository, "insert", AsyncMock(return_value="id2")
     ):
         from app.bots.telegram.handlers import process_projects
         await process_projects(mock_update, mock_context)
@@ -296,9 +292,12 @@ async def test_process_project_fixed_routes_to_staged_pipeline(
     call_arg = mock_pipeline.call_args[0][0]
     assert call_arg.get("contract_type") == "project_fixed"
     assert "full_description" in call_arg
-    # Etapas 1-2 -> STANDARD; Etapa 3 -> PREMIUM
-    assert mock_pipeline.call_args.kwargs["standard_adapter"] is mock_standard
-    assert mock_pipeline.call_args.kwargs["premium_adapter"] is mock_premium
+    # El servicio recibe el mapa de adapters; Etapas 1-2 -> STANDARD,
+    # Etapa 3 -> PREMIUM (el servicio los desempaqueta).
+    # `adapters` va como 2o argumento POSICIONAL (full_detail, adapters).
+    passed_adapters = mock_pipeline.call_args[0][1]
+    assert passed_adapters["STANDARD"] is mock_standard
+    assert passed_adapters["PREMIUM"] is mock_premium
 
 
 @pytest.mark.asyncio
@@ -368,7 +367,7 @@ async def test_process_staff_augmentation_routes_to_generate_proposal(
             "FILTER": mock_standard,
         })
     ), patch(
-        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        "app.bots.telegram.handlers.generate_and_persist_proposal",
         mock_pipeline,
     ):
         from app.bots.telegram.handlers import process_projects

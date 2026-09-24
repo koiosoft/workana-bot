@@ -400,7 +400,9 @@ class TestRefineProposalLive:
     """
 
     @pytest.mark.asyncio
+    @pytest.mark.live
     @_skip_no_openrouter
+    @pytest.mark.skip(reason="LLAMADA REAL AL PROVEEDOR (lenta ~40-85s). Desactivado temporalmente; ver plans/current/pendientes-post-rediseno.md (T15). Correr con: pytest -m live")
     @pytest.mark.usefixtures("seed_models_for_refine")
     async def test_refine_endpoint_live_llm(
         self,
@@ -468,6 +470,7 @@ class TestRefineProposalContractType:
         assert "invalid_type" in str(data).lower() or "contract_type" in str(data).lower()
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="LLAMADA REAL AL PROVEEDOR (lenta ~27s, sin mock). Desactivado temporalmente; ver plans/current/pendientes-post-rediseno.md (T15).")
     async def test_refine_contract_type_change_deletes_existing_versions(
         self,
         test_db: AsyncIOMotorDatabase,
@@ -749,6 +752,7 @@ class TestProposalGetPostConsistency:
     fields leaking into the response."""
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="LLAMADA REAL AL PROVEEDOR (lenta ~85s). Desactivado temporalmente; ver plans/current/pendientes-post-rediseno.md (T15).")
     async def test_refine_response_has_same_fields_as_get_project(
         self,
         test_db: AsyncIOMotorDatabase,

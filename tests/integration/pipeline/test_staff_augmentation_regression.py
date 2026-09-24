@@ -205,7 +205,7 @@ async def test_staff_augmentation_handler_routes_to_generate_proposal(
     ), patch.object(
         TechnicalEstimatesRepository, "insert", AsyncMock(return_value="id2"),
     ), patch(
-        "app.bots.telegram.handlers.generate_project_fixed_proposal",
+        "app.bots.telegram.handlers.generate_and_persist_proposal",
         mock_pipeline,
     ):
         await process_projects(mock_update, mock_context)

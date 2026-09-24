@@ -88,6 +88,9 @@ class _EstimateEnvelope(BaseModel):
     link_hash: str = Field(..., min_length=1)
     analysis: RequirementAnalysis
     model_used: str = Field(..., min_length=1)
+    # Indicacion adicional usada al generar (traza de auditoria). Opcional:
+    # los documentos previos no la tienen.
+    extra_info: str = ""
     created_at: datetime
 
 
@@ -236,6 +239,7 @@ class TechnicalEstimatesRepository:
             "estimate_type": estimate_type,
             "analysis": document["analysis"],
             "model_used": model_used,
+            "extra_info": document.get("extra_info", "") or "",
             "created_at": created_at,
         }
         # Only the branch keys present in the input participate in validation;

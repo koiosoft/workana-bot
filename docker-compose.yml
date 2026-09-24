@@ -16,6 +16,26 @@ services:
     networks:
       - workana_network
 
+  # --- Entorno STAGE: mismo codigo, BD y bot distintos -------------------
+  # Corre el bot @stage_workana_bot contra workana_bot_stage (Atlas). Sirve
+  # para validar cambios SIN tocar produccion.
+  stage:
+    build: ./app
+    container_name: workana_bot_stage
+    restart: always
+    volumes:
+      - ./app:/usr/src/app
+      # Sesion de Workana SEPARADA de prod (no comparte browser_data).
+      - ./browser_data_stage:/usr/src/app/browser_data
+    env_file:
+      - .env.stage
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    tty: true
+    networks:
+      - workana_network
+
   api:
     build: ./app
     container_name: workana_api

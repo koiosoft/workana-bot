@@ -141,6 +141,8 @@ class RequirementAnalysesRepository:
                 document.get("maturity_threshold_used"), "maturity_threshold_used"
             ),
             "model_used": model_used,
+            # Indicacion adicional usada al generar (traza de auditoria).
+            "extra_info": document.get("extra_info", "") or "",
             "created_at": created_at,
         }
 

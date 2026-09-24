@@ -66,24 +66,33 @@ El requerimiento está **maduro y claro** (branch = `full`). Produce una estimac
 - Entregables mencionados: {{ deliverables | tojson }}
 - Restricciones mencionadas: {{ constraints | tojson }}
 - Vacíos menores: {{ gaps | tojson }}
+{% if extra_info %}
+
+## INDICACIÓN ADICIONAL (reorienta la estimación)
+{{ extra_info }}
+{% endif %}
 
 ## CÓMO ESTIMAR
 
 1. **Hitos (`milestones`):** entre 2 y 4 hitos lógicos y entregables (saltos de valor, no "días de código"). Cada hito:
    - `step`: entero 1..N, único y consecutivo.
    - `name`: nombre corto del hito.
-   - `tasks`: diccionario `{ "clave": { "description": str, "hours_with_overhead": int } }`.
+   - `tasks`: diccionario `{ "clave": { "description": str, "hours_with_overhead": int } }`. **La `clave` es el TITULO visible de la tarea: un nombre corto y legible de la ACTIVIDAD real** (ej: `Diseñar esquema de BD`, `Implementar login JWT`, `Integrar pasarela de pago`). Usa mayusculas iniciales y texto natural (con tildes). PROHIBIDO nombres genericos (`T1`, `Tarea 1`) y PROHIBIDO nombrar por fase (`Auth prompting`, `CRUD front`).
    - `hours_with_overhead`: entero, suma EXACTA de las Horas de IA Supervisada de sus tareas. (El nombre del campo es del contrato de Workana; su valor NO incluye ningún colchón artificial.)
    - `subtotal`: horas × {{ HOURLY_RATE }}.
 
-2. **Tareas:** cada tarea describe un bloque concreto de trabajo. En su `description`, indica el desglose de dónde vienen las horas, así:
-   `"<qué se hace>. Fases: prompting/arq Xh + iteración Yh + auditoría Zh + integración Wh"`
-   El valor de `hours_with_overhead` de la tarea es la **suma** de esas fases.
+2. **Tareas:** cada hito se divide en las **actividades concretas** necesarias
+   para completarlo (tipicamente 2 a 5). Cada tarea representa **trabajo real del
+   proyecto** (ej: "disenar el esquema de base de datos", "implementar el login con
+   JWT", "integrar la pasarela de pago"), NO una fase metodologica.
+   - `description`: una frase que explique QUE se hace, un poco mas detallada que
+     el nombre de la clave (para que el cliente entienda el alcance). **NO incluyas
+     desglose de horas ni fases** (nada de "Fases: prompting Xh + ...").
+   - `hours_with_overhead`: el total de horas de esa actividad (entero).
 
-3. **Magnitud de las horas (guía realista: Horas de IA Supervisada):**
-   - Una tarea típica de coordinación de IA: **1 a 4 horas**.
-   - Tareas de alta incertidumbre o mucha auditoría: hasta **6-8 horas**.
-   - Las fases de auditoría e integración SON el esfuerzo real: no añadas colchones ni multiplicadores adicionales.
+3. **Magnitud de las horas (guia realista):**
+   - Una tarea tipica: **1 a 4 horas**.
+   - Tareas de alta incertidumbre o mucha auditoria: hasta **6-8 horas**.
    - `hours_with_overhead` DEBE ser entero (`integer`). Aplica `ceiling`.
 
 4. **Solo hitos.** No emitas el `summary`: el sistema lo calcula a partir de tus
