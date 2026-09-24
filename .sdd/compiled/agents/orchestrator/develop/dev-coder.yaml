@@ -21,8 +21,8 @@ phases:
       - pick_role_by_intent:          # semantic: core/logic -> sdd-worker ; UI/components -> sdd-ui-worker
           { sdd_worker: domain_logic_backend, sdd_ui_worker: ui_components_screens }
       - apply: resolve_worker_model
-        args: { agent_role: "${picked_agent}" }
-      - launch: "${picked_agent}"     # resolves to sdd-worker-compiled or sdd-ui-worker-compiled
+        args: { role: "${picked_agent}" }
+      - launch: "${resolved_agent_name}"
         model: "${resolved_model}"
         task: "Task file: ${LOG_DIR}/${TASK_ID}.md. Execute it. MANDATORY: follow [ASSET:...] markers before implementing; return technical justification in the task file."
       - branch: dev_loop
@@ -41,7 +41,7 @@ phases:
 
   arbitration:                        # W-2, sdd-lang §6.7
     steps:
-      - launch: sdd-judge-compiled
+      - launch: "${judge_agent_name}"
         task: "Arbitrate worker doubt for TASK ${TASK_ID}. Issue: ${question}. Files: ${affected_files}. MODE_AUTO. Return DIRECTIVE_FOR_WORKER."
       - wait_result
       - apply: workflow_judge_record_decision

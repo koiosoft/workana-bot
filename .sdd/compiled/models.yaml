@@ -1,8 +1,9 @@
 subagents:
-  sdd-doc-updater-compiled:
+  sdd-doc-updater:
+    name: compiled.sdd-doc-updater
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "off"
       - name: "cheap"
@@ -15,7 +16,8 @@ subagents:
         thinking: "off"
 
 
-  sdd-worker-compiled:
+  sdd-worker:
+    name: compiled.sdd-worker
     model_options:
       - name: "default"
         model: "qwen-token-plan-individual/qwen3.8-flash"
@@ -30,7 +32,8 @@ subagents:
         priority: 3
         thinking: "low"
 
-  sdd-ui-worker-compiled:
+  sdd-ui-worker:
+    name: compiled.sdd-ui-worker
     model_options:
       - name: "default"
         model: "qwen-token-plan-individual/qwen3.8-flash"
@@ -41,15 +44,16 @@ subagents:
         priority: 2
         thinking: "low"
       - name: "fallback"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 3
         thinking: "low"
 
 
-  test-runner-compiled:
+  test-runner:
+    name: compiled.test-runner
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "off"
       - name: "cheap"
@@ -61,10 +65,11 @@ subagents:
         priority: 3
         thinking: "off"
 
-  test-writer-compiled:
+  test-writer:
+    name: compiled.test-writer
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "off"
       - name: "cheap"
@@ -76,10 +81,11 @@ subagents:
         priority: 3
         thinking: "off"
 
-  sdd-reviewer-compiled:
+  sdd-reviewer:
+    name: compiled.sdd-reviewer
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "off"
       - name: "cheap"
@@ -92,9 +98,10 @@ subagents:
         thinking: "off"
 
   sdd-judge:
+    name: compiled.sdd-judge
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "high"
       - name: "cheap"
@@ -105,5 +112,3 @@ subagents:
         model: "qwen-token-plan-individual/deepseek-v4-flash-0731"
         priority: 3
         thinking: "high"
-
-     

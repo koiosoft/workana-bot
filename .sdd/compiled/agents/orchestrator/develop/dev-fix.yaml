@@ -10,7 +10,7 @@ phases:
     steps:
       - for_each: failing_test_files
         do:
-          - launch: test-writer-compiled
+          - launch: "${test_writer_agent_name}"
             task: "Mode: ${mode}. Operation: FixTest. Test file: ${file}"
           - wait_result
       - branch: return_to_caller

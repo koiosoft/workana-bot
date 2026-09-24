@@ -1,2 +1,0 @@
-## Specification: TASK019
-Update docs/USAGE_EXAMPLES.md with a section describing the 4-stage pipeline for project_fixed: Etapa 1 analyze-requirement → Etapa 2A/2B estimate → Etapa 3 write-proposal → Etapa 4 refine-proposal. Document the MATURITY_THRESHOLD env var (default 8) and the branch rule (>=T → full, <T → discovery). Note that staff_augmentation keeps its direct path and that the REST API and Telegram bot responses are unchanged.

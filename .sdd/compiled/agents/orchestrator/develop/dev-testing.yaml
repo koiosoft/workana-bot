@@ -18,7 +18,7 @@ phases:
 
   launch_buildtest:
     steps:
-      - launch: test-writer-compiled
+      - launch: "${test_writer_agent_name}"
         task: "Mode: ${TEST_MODE}. Operation: BuildTest. Test file: ${LOG_DIR}/${TEST_ID}.md"
       - branch: buildtest_loop                       # process next pending (T-1)
 

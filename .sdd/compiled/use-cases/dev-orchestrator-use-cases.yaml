@@ -23,7 +23,30 @@ use_cases:
   module_log_preparation:
     steps:
       - command: bash
-        args: { command: "agent-instructor workflow open ${PROTOCOL}" }
+        args: { command: "agent-instructor workflow open --${PROTOCOL}" }
+
+  # Version drift is a precondition of cycle creation: workflow open compares
+  # the executable's version against the target project's .sdd/.init-version.
+  # If they differ it warns and asks the user to continue under their own risk.
+  # After confirmation it re-reads the executable version; if agent-instructor
+  # was upgraded during the prompt, it aborts and the command must be re-run.
+  workflow_open_version_drift:
+    precondition: "executable version != .sdd/.init-version"
+    steps:
+      - command: ask_user
+        args:
+          prompt: >-
+            .sdd/ initialized with v${INIT_VERSION}, executable is
+            v${EXECUTABLE_VERSION}. Continue under your own risk and
+            responsibility, or exit to upgrade agent-instructor and the
+            project (agent-instructor init) and re-run.
+          options: ["continue", "abort"]
+      - command: bash
+        args: { command: "agent-instructor workflow open --${PROTOCOL} --force" }
+        when: "user chose continue and executable version unchanged"
+      - command: abort
+        args: { reason: "declined, or executable upgraded during prompt; re-run" }
+        when: "user declined, or executable version changed during prompt"
 
   module_dev_coder_mark:
     steps:
@@ -70,4 +93,4 @@ use_cases:
       - command: read
         args: { path: ".sdd/compiled/models.yaml" }
       - command: pick_model_by_priority
-        args: { role: "${picked_agent}-compiled", priority: 1 }
+        args: { role: "${picked_agent}", priority: 1 }      # rol lógico; resuelve name→resolved_agent_name y model→resolved_model

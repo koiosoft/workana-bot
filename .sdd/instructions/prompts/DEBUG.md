@@ -66,8 +66,10 @@ fixed — do not rename, add, or omit fields):
 - **`artifacts`** — the files, classes/interfaces, and configuration the fix
   touches. Leave an empty array `[]` for any sub-list that does not apply; do
   not drop the key.
-- **`tasks`** — **REQUIRED**; an array of at least one task to fix the bug. Each
-  task **MUST** have at least one `acceptance_criteria` entry.
+- **`tasks`** — **REQUIRED**; an array of at least one task to fix the bug
+  **source code**. Tasks are for source-code fixes only — do NOT include
+  test-writing, test-running, or documentation tasks here.
+  Each task **MUST** have at least one `acceptance_criteria` entry.
   Each task **SHOULD** include a `specification` field (array of strings) to capture
   the verbatim bug-report detail (log lines, error messages, stack traces,
   code excerpts) that directly applies to that task — this is the primary

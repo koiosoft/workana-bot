@@ -17,7 +17,7 @@ phases:
 
   next_model_relaunch:
     steps:
-      - advance_one_priority: p1 → p2  per role from .sdd/models.yaml   # preserve thinking
+      - advance_one_priority: p1 → p2  per role from .sdd/compiled/models.yaml   # preserve thinking
       - branch: ask_user_escalation
         when: no_more_models
       - relaunch_same_agent_next_model:                       # worker|test|reviewer per trigger

@@ -63,7 +63,7 @@ When a **reviewer** terminates with OUTPUT_TOKEN_LIMIT on a review pass (REVIEW.
 
 ```
 Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
-  agent: "sdd-reviewer"
+  agent: "<models.yaml['sdd-reviewer'].name — e.g. base.sdd-reviewer>"
   task: "Protocol: ${PROTOCOL}. TASK_ID: ${TASK_ID}. The task file is at: ${LOG_DIR}/DOD-${TASK_ID}.md.\n\nAct as a READ-ONLY reviewer (inspection tools only: read, jcodemunch order/get_symbol_source/get_ranked_context, cbm_connect/cbm_search_graph/cbm_trace_path/cbm_get_code_snippet/cbm_search_code). You MUST NOT use edit, write, or bash.\n\n[NOTE: your PREVIOUS review was TERMINATED BY OUTPUT TOKEN LIMIT on model <prior_model>; this is a scoped relaunch — re-evaluate ONLY this task with a fresh, compact pass.] Inspect the files reported by the worker in its 'affected_files' and verify the implementation against the task description and CONVENTIONS.md / SPEC.md. End your turn with a SINGLE canonical JSON (SUBAGENT_COMMS.md § 1.1/§ 1.5) extended with the `verdicts` array per REVIEW.md R-2."
   model: "<next-priority-model>"
   thinking: "<resolved-value from model option>"

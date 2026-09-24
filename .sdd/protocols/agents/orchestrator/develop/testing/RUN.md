@@ -18,7 +18,7 @@ category: SDD
 
    ```
    Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
-     agent: "test-runner"
+     agent: "<models.yaml['test-runner'].name — e.g. base.test-runner>"
      task: "Mode: ${mode}. Log file: ${log_file_path}. Run all ${mode} tests."
      model: "<resolved-model OR omit>"
      thinking: "<low|high|false from model option, omit if undefined>"

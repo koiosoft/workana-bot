@@ -190,7 +190,7 @@ When `MODE_AUTO == true` and a sub-agent (`sdd-worker` or `test-writer`) raises 
 #### J-2: Invoke sdd-judge Sub-agent
 1. Launch the `sdd-judge` sub-agent via `Agent` with the following payload:
    Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
-     agent: "<models.yaml['sdd-judge'].name — e.g. compiled.sdd-judge>"
+     agent: "<models.yaml['sdd-judge'].name — e.g. base.sdd-judge>"
      task: "Arbitrate technical doubt for task ${task_id}. Issue: ${issue}. Relevant files: ${file_paths.join(', ')}. Attempt: ${attempt}/3. Return a clear directive for the worker."
      async: true
 2. Capture the returned `<judge_agent_id>` for CLI tracking.

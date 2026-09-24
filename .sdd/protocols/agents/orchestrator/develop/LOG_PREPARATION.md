@@ -39,6 +39,32 @@ category: SDD
   label (see `sdd-lang.md` §2 — return labels). On a cycle binding mismatch, follow L-4
   (`workflow open --reindex`) and then return via the same label.
 
+**Version drift (precondition):**
+  - `workflow open` compares the **executable's version** (read from
+    `agent-instructor`'s own `CHANGELOG.md`) against the target project's
+    `.sdd/.init-version` before creating the cycle.
+  - If they match, the cycle opens normally with no prompt.
+  - If they differ, the CLI warns and asks whether to continue, e.g.:
+    ```
+    .sdd/ initialized with v0.29.1, executable is v0.30.0. You may continue
+    under your own risk and responsibility, or exit now to upgrade
+    agent-instructor and the project, then re-run this command.
+    ```
+    - To resolve it cleanly: exit, upgrade `agent-instructor`, run
+      `agent-instructor init` in the target project (which rewrites
+      `.sdd/.init-version`), and re-run `workflow open`.
+    - To proceed anyway: confirm the prompt. Most upgrades are safe
+      improvements, but some can break the in-flight process — continuing is
+      the user's conscious responsibility.
+  - **Do not** bypass the prompt by editing `.sdd/.init-version` by hand;
+    that file is written only by `agent-instructor init`.
+  - **Re-verification guard:** after the user confirms, the CLI re-reads the
+    executable version from disk. If `agent-instructor` was upgraded *while
+    the prompt was on screen*, the in-memory code is obsolete; the CLI aborts
+    and instructs the user to re-run the command. Re-running is safe and
+    expected: the fresh process loads the upgraded code, and if `.init-version`
+    still differs it will simply warn again (continue if you accept the risk).
+
 ### L-2: Dynamic artifacts (recovery option)
 
 - If a task or test needs to be added mid-cycle (e.g., discovered during execution), use the CLI against the active cycle:

@@ -21,7 +21,7 @@ category: SDD
 
      ```
      Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
-       agent: "test-writer"
+       agent: "<models.yaml['test-writer'].name — e.g. base.test-writer>"
        task: "Mode: ${mode}. Operation: FixTest. Test file: <failed_test_file_path>"
        model: "<resolved-model OR omit>"
        thinking: "<low|high|false from model option, omit if undefined>"

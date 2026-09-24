@@ -49,12 +49,16 @@ The `## Reviewer List` section in `.sdd/instructions/${PROTOCOL}.md` is a **hier
 3. Find the first TASK that has **any** `[ ]` ACK child **and** whose matching `## Task List` item is `[x]` (implemented but not yet fully reviewed). If none exist, the review phase is complete — return to `ORCHESTRATOR.md` to continue with the test phases (`TESTING.md`).
 4. Extract the explicit `TASK_ID` (e.g. `TASK001`) from that parent row — **not** its ordinal position.
 
-#### 🔧 Model Selection (`.sdd/models.yaml`)
-Before launching, check if `.sdd/models.yaml` exists. If present, parse YAML, look up the matching `role` (`reviewer`), sort items by `priority` ascending, take the first with a non‑empty `model` (trimmed), then read its `thinking` value **from that model option**. Acceptable values: `"low"`, `"high"`, or `false` (disable thinking). If undefined, omit `model`/`thinking`. Capture the returned `<agent_id>` for use with `agent-instructor workflow add --agent <agent_id> --model <model>`.
+#### 🔧 Agent + Model Selection (`.sdd/models.yaml`)
+Before launching, read `.sdd/models.yaml` and locate the entry by the **logical role** `sdd-reviewer`. From that entry obtain:
+- **`name`** → the runtime name to launch (`base.sdd-reviewer`), the `agent:` of the launch.
+- **`model`** → from `model_options`, sort by `priority` ascending and take the first with a non-empty `model` (trimmed).
+- **`thinking`** → from that same chosen `model_options` entry.
+Acceptable `thinking` values: `"low"`, `"high"`, or `false`. If the entry or role does not exist, omit `name`/`model`/`thinking` and use the default behaviour. Capture the returned `<agent_id>` for use with `agent-instructor workflow add --agent <agent_id> --model <model>`.
 
 ```
 Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
-  agent: "sdd-reviewer"
+  agent: "<models.yaml['sdd-reviewer'].name — e.g. base.sdd-reviewer>"
   task: "Protocol: ${PROTOCOL}. TASK_ID: ${TASK_ID}. The DOD file is at: ${LOG_DIR}/DOD-${TASK_ID}.md.\n\nAct as a READ-ONLY reviewer. You may use inspection tools only (read, jcodemunch order/get_symbol_source/get_ranked_context). You MUST NOT use edit, write, or bash.\n\nInspect the codebase and verify the implementation against ALL acceptance criteria listed in the DOD file. The DOD file contains the ACK Checklist with all criteria for this task. Evaluate each criterion individually. End your turn by emitting a SINGLE canonical JSON object as your final message, with no other text. The JSON must contain:\n\n{\n  \"status\": \"completed\",\n  \"success\": true,\n  \"summary\": \"<concise review summary>\",\n  \"affected_files\": [],\n  \"verdicts\": [\n    {\n      \"ack_id\": \"ACK001\",\n      \"verdict\": \"APPROVED\" | \"REQUIRES_CORRECTION\",\n      \"error_details\": \"<reasons string — ONLY when verdict is REQUIRES_CORRECTION>\",\n      \"rejected_followup\": false\n    },\n    {\n      \"ack_id\": \"ACK002\",\n      ...\n    }\n  ]\n}"
   model: "<resolved-model OR omit if models.yaml absent/undefined>"
   thinking: "<low|high|false from model option, omit if undefined>"

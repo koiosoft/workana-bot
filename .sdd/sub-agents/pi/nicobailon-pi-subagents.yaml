@@ -1,32 +1,34 @@
-# Harness surface to launch/steer sub-agents (pi-subagents). Replaceable: another harness
-# re-implements these same use-cases. This file holds NO result schema — the canonical
-# report_status schema lives once in .sdd/sub-agents/sub-agents-surface.yaml.
-# Keys here are the names referenced by SDD protocol docs.
+# Surface de sub-agentes para Pi + nicobailon/pi-subagents
+# Las KEYs son referenciadas por los protocolos SDD.
+# El LLM debe buscar la KEY aquí antes de invocar.
 
 use_cases:
-  # Launch a sub-agent in background. Base params: agent, task, async, model.
-  # For canonical structured output, the caller may add:
-  #   output_schema = report_status.output_schema  (defined in sub-agents-surface.yaml)
-  #   acceptance    = { ... report:"on" }          (forces the plugin structured_output)
-  # Without outputSchema the sub-agent returns its canonical JSON in text (legacy).
-  launch: "subagent({ agent, task, async, model })"
 
-  # Resume a blocked/paused run preserving context. Params: id, message.
-  resume: "subagent({ action: \"resume\", id, message })"
+  # Lanzar worker/judge/runner en background
+  # Params: agent, task, async, model, thinking
+  launch: "subagent({ agent, task, async, model, thinking })"
 
-  # Redirect a running worker. Params: id, message.
+  # Reanudar worker que quedó "blocked"
+  # Params: agent, resume, task
+  resume: "subagent({ agent, resume, task })"
+
+  # Redirigir worker en plena ejecución
+  # Params: id, message
   steer: "subagent({ action: \"steer\", id, message })"
 
-  # Read an async sub-agent result. Params: id.
+  # Leer resultado de sub-agente async
+  # Params: id
   read_result: "subagent({ action: \"status\", id })"
 
-  # Wait for an async to finish (timeoutMs from wait_timeout_ms) and read result. Params: id.
+  # Esperar a que termine un async (con timeout del YAML) y leer resultado
+  # Params: id
   wait_result: |
     subagent_wait({ id, timeoutMs: 240000 })
     subagent({ action: "status", id })
 
-  # Check an in-flight async status. Params: id.
+  # Consultar estado de un async en vuelo
+  # Params: id
   check_status: "subagent({ action: \"status\", id })"
 
-# Timeout (ms) used by wait_result.
+# ⏱ Timeout configuration (used by wait_result)
 wait_timeout_ms: 240000

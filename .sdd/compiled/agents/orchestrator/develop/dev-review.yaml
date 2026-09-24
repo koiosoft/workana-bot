@@ -21,7 +21,7 @@ phases:
 
   launch_reviewer:
     steps:
-      - launch: sdd-reviewer-compiled
+      - launch: "${reviewer_agent_name}"
         task: "Protocol: ${PROTOCOL}. TASK_ID: ${TASK_ID}. DOD: ${LOG_DIR}/DOD-${TASK_ID}.md. Inspect all ACKs (read-only). Return canonical JSON w/ verdicts[] (APPROVED|REQUIRES_CORRECTION)."
       - wait_result
       - branch: arbitration_or_retry_reviewer
@@ -50,7 +50,7 @@ phases:
 
   judge_arbitration:                    # R-5, sdd-lang §6.7
     steps:
-      - launch: sdd-judge-compiled
+      - launch: "${judge_agent_name}"
         task: "Ambigous REQUIRES_CORRECTION for TASK ${TASK_ID}. Reviewer reason: <error_details>. ACK text vs implementation disagreement. Return DIRECTIVE_FOR_WORKER."
       - wait_result
       - apply: workflow_judge_record_decision
@@ -64,7 +64,7 @@ phases:
       - bash: "agent-instructor workflow update --file ${TASK_ID}.md --status failed"
   fix_and_review:                       # R-5
     steps:
-      - launch: ${task_role_agent}
+      - launch: "${task_role_agent_name}"
         task: "Protocol:${PROTOCOL} TASK:${TASK_ID} file ${LOG_DIR}/${TASK_ID}.md. Fix per reviewer reasons."
       - wait_result
       - bash: "agent-instructor workflow update --file ${TASK_ID}.md --status completed"

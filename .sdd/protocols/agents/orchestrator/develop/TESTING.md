@@ -52,12 +52,16 @@ category: SDD
 3. Determine the test's explicit identifier `TEST_ID` (e.g., `UNIT001`) from the unchecked item — **not** its ordinal position (test number `i`).
 4. Launch `test-writer`:
 
-   #### 🔧 Model Selection (`.sdd/models.yaml`)
-   Before launching, check if `.sdd/models.yaml` exists. If present, parse YAML, look up the matching `role`, sort items by `priority` ascending, take the first with a non‑empty `model` (trimmed), then read its `thinking` value **from that model option**. Acceptable values: `"low"`, `"high"`, or `false` (disable thinking). If undefined, omit `model`/`thinking`. Capture the returned `<subagent_id>` for use with `agent-instructor workflow add --agent <subagent_id> --model <model>`.
+   #### 🔧 Agent + Model Selection (`.sdd/models.yaml`)
+   Before launching, read `.sdd/models.yaml` and locate the entry by the **logical role** (e.g. `test-writer`). From that entry obtain:
+   - **`name`** → the runtime name to launch (`base.<rol>`), the `agent:` of the launch.
+   - **`model`** → from `model_options`, sort by `priority` ascending and take the first with a non-empty `model` (trimmed).
+   - **`thinking`** → from that same chosen `model_options` entry.
+   Acceptable `thinking` values: `"low"`, `"high"`, or `false`. If the entry or role does not exist, omit `name`/`model`/`thinking` and use the default behaviour. Capture the returned `<subagent_id>` for use with `agent-instructor workflow add --agent <subagent_id> --model <model>`.
 
    ```
    Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
-     agent: "test-writer"
+     agent: "<models.yaml['test-writer'].name — e.g. base.test-writer>"
      task: "Mode: ${TEST_MODE}. Operation: BuildTest. Test file: ${LOG_DIR}/${TEST_ID}.md"
      model: "<resolved-model OR omit>"
      thinking: "<low|high|false from model option, omit if undefined>"

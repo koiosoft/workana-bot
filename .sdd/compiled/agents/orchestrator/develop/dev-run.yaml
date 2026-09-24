@@ -1,4 +1,4 @@
-# Orchestrator suite-run module (deterministic): dispatch test-runner-compiled for a suite & write log.
+# Orchestrator suite-run module (deterministic): dispatch the test-runner agent for a suite & write log.
 workflow:
   name: dev-orchestrator-mod-testing-run
   kind: orchestrator_module
@@ -8,7 +8,7 @@ workflow:
 phases:
   run:
     steps:
-      - launch: test-runner-compiled
+      - launch: "${test_runner_agent_name}"
         task: "Mode: ${mode}. Log file: ${log_file_path}. Run all ${mode} tests."
       - wait_result
       - branch: return_with          # structured payload to caller (LOOP)

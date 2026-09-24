@@ -54,12 +54,16 @@ category: SDD
      code, data models, repositories, or general utilities.
 5. Launch the selected sub‑agent (`sdd-ui-worker` or `sdd-worker`) using the `Agent` tool:
 
-   #### 🔧 Model Selection (`.sdd/models.yaml`)
-   Before launching, check if `.sdd/models.yaml` exists. If present, parse YAML, look up the matching `role`, sort items by `priority` ascending, take the first with a non‑empty `model` (trimmed), then read its `thinking` value **from that model option**. Acceptable values: `"low"`, `"high"`, or `false` (disable thinking). If undefined, omit `model`/`thinking`. Capture the returned `<agent_id>` for use with `agent-instructor workflow add --agent <agent_id> --model <model>`.
+   #### 🔧 Agent + Model Selection (`.sdd/models.yaml`)
+   Before launching, read `.sdd/models.yaml` and locate the entry by the **logical role** (e.g. `sdd-worker`, `sdd-ui-worker`). From that entry obtain:
+   - **`name`** → the runtime name to launch (`base.<rol>`), which is the `agent:` of the launch. This is `models.yaml[rol].name`.
+   - **`model`** → from `model_options`, sort by `priority` ascending and take the first with a non-empty `model` (trimmed).
+   - **`thinking`** → from that same chosen `model_options` entry.
+   Acceptable `thinking` values: `"low"`, `"high"`, or `false` (disable thinking). If the entry or role does not exist, omit `name`/`model`/`thinking` and use the default behaviour. Capture the returned `<agent_id>` for use with `agent-instructor workflow add --agent <agent_id> --model <model>`.
 
    ```
    Via `use_case: launch` (ver `.sdd/sub-agents/pi/nicobailon-pi-subagents.yaml`):
-     agent: "<sdd-ui-worker | sdd-worker>"
+     agent: "<models.yaml[rol].name — e.g. base.sdd-ui-worker | base.sdd-worker>"
      task: "Task file: `${LOG_DIR}/${TASK_ID}.md`. Execute the task defined in that file. MANDATORY: Read the ASSET file referenced by `[ASSET: ...]` markers in the task file BEFORE starting implementation and follow its instructions. The ASSET is part of the task spec — its instructions are as binding as the ACK checklist. Do NOT treat asset instructions as scope-widening; they are the implementation details of this task. MANDATORY: return your technical justification (for the Justification section of `${LOG_DIR}/${TASK_ID}.md`) as part of your final result message."
      model: "<resolved-model OR omit if models.yaml absent/undefined>"
      thinking: "<low|high|false from model option, omit if undefined>"

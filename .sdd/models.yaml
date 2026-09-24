@@ -1,8 +1,9 @@
 subagents:
   sdd-doc-updater:
+    name: base.sdd-doc-updater
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "off"
       - name: "cheap"
@@ -16,6 +17,7 @@ subagents:
 
 
   sdd-worker:
+    name: base.sdd-worker
     model_options:
       - name: "default"
         model: "qwen-token-plan-individual/qwen3.8-flash"
@@ -31,6 +33,7 @@ subagents:
         thinking: "low"
 
   sdd-ui-worker:
+    name: base.sdd-ui-worker
     model_options:
       - name: "default"
         model: "qwen-token-plan-individual/qwen3.8-flash"
@@ -41,15 +44,16 @@ subagents:
         priority: 2
         thinking: "low"
       - name: "fallback"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 3
         thinking: "low"
 
 
   test-runner:
+    name: base.test-runner
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "off"
       - name: "cheap"
@@ -62,9 +66,10 @@ subagents:
         thinking: "off"
 
   test-writer:
+    name: base.test-writer
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "off"
       - name: "cheap"
@@ -77,9 +82,10 @@ subagents:
         thinking: "off"
 
   sdd-reviewer:
+    name: base.sdd-reviewer
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "off"
       - name: "cheap"
@@ -92,9 +98,10 @@ subagents:
         thinking: "off"
 
   sdd-judge:
+    name: base.sdd-judge
     model_options:
       - name: "default"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-flash"
         priority: 1
         thinking: "high"
       - name: "cheap"
@@ -105,5 +112,3 @@ subagents:
         model: "qwen-token-plan-individual/deepseek-v4-flash-0731"
         priority: 3
         thinking: "high"
-
-     
