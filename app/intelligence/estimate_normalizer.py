@@ -11,13 +11,14 @@ JSON del LLM y ANTES de validar con Pydantic.
 
 from __future__ import annotations
 
-import os
 from typing import Any
+
+from app.intelligence.config import get_hourly_rate
 
 
 def _rate() -> int:
     """Tarifa horaria de project_fixed (misma que usan las plantillas)."""
-    return int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
+    return get_hourly_rate("project_fixed")
 
 
 def normalize_estimate_hours(raw_json: dict, branch: str = "full") -> dict:

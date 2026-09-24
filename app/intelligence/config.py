@@ -37,3 +37,30 @@ def get_maturity_threshold() -> int:
 
     logger.debug(f"Maturity threshold resolved to {value} (from MATURITY_THRESHOLD={raw!r})")
     return value
+
+
+def get_hourly_rate(contract_type: str = "project_fixed") -> int:
+    """Tarifa horaria (USD) segun el tipo de contrato.
+
+    Fuente unica para ambas tarifas, leidas de entorno con fallback 18:
+
+      - ``project_fixed``       -> ``HOURLY_RATE_PROJECT_FIXED``      (default 18)
+      - ``staff_augmentation``  -> ``HOURLY_RATE_STAFF_AUGMENTATION`` (default 18)
+
+    Cualquier otro valor recae en la tarifa de project_fixed. Reemplaza los
+    literales ``default(25)`` de los templates y el hardcodeo previo, de modo
+    que la tarifa aplicada siempre venga de la configuracion y no del LLM.
+    """
+    if contract_type == "staff_augmentation":
+        raw = os.environ.get("HOURLY_RATE_STAFF_AUGMENTATION", "18")
+    else:
+        raw = os.environ.get("HOURLY_RATE_PROJECT_FIXED", "18")
+    try:
+        value = int(str(raw).strip())
+    except (ValueError, AttributeError):
+        logger.warning(
+            f"Tarifa horaria invalida {raw!r} para contract_type={contract_type!r}; "
+            "usando 18 por defecto."
+        )
+        value = 18
+    return value

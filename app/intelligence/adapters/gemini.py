@@ -14,7 +14,7 @@ from app.exceptions import PipelineError
 from pydantic import ValidationError
 from app.models.analysis import RequirementAnalysis
 from app.models.estimate import TechnicalEstimateFull, TechnicalEstimateDiscovery, _assert_hours_consistent
-from app.intelligence.config import get_maturity_threshold
+from app.intelligence.config import get_maturity_threshold, get_hourly_rate
 from app.intelligence.estimate_normalizer import normalize_estimate_hours
 from app.intelligence.description_sanitizer import apply_formatted_description
 from typing import TYPE_CHECKING
@@ -176,8 +176,8 @@ class GeminiAdapter(IntelligencePort):
         Genera una propuesta económica detallada con hitos basada en el valor por hora.
         Usa diferentes templates según el tipo de contrato detectado.
         """
-        hourly_rate = 25
         contract_type = project.get("contract_type", "project_fixed")
+        hourly_rate = get_hourly_rate(contract_type)
         
         logger.info(f'Generando propuesta para tipo de contrato: {contract_type}')
 
@@ -271,7 +271,7 @@ class GeminiAdapter(IntelligencePort):
         When *contract_type* is ``"staff_augmentation"`` and the template is not
         an initial one, the ``s4-refine/refine-proposal-staffing.j2`` template is used.
         """
-        hourly_rate = 25
+        hourly_rate = get_hourly_rate(contract_type)
         my_skills = [
             "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
             "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",
@@ -304,11 +304,25 @@ class GeminiAdapter(IntelligencePort):
             logger.info(
                 f"🔄 Contract type changed → using initial template '{template_name}'"
             )
+            # El template inicial (write-proposal*.j2) NO calcula milestones:
+            # los inyecta VERBATIM desde ``technical_estimate_json``. Sin el,
+            # el LLM devuelve milestones=[] (0 tareas). Se reconstruye desde la
+            # propuesta actual (milestones+summary) como fallback.
+            technical_estimate_json = json.dumps(
+                {
+                    "milestones": current_proposal.get("milestones", []),
+                    "summary": current_proposal.get("summary", {}),
+                }
+                if isinstance(current_proposal, dict)
+                else {},
+                indent=2,
+            )
             prompt = self._render_prompt(
                 template_name,
                 my_profile_skills=my_skills,
                 hourly_rate=hourly_rate,
                 project_payload_json=json.dumps(project_payload, indent=2),
+                technical_estimate_json=technical_estimate_json,
             )
         elif contract_type == "staff_augmentation":
             logger.info(
@@ -329,6 +343,7 @@ class GeminiAdapter(IntelligencePort):
             )
             prompt = self._render_prompt(
                 "s4-refine/refine-proposal.j2",
+                hourly_rate=hourly_rate,
                 project_payload_json=json.dumps(project_payload, indent=2),
                 current_proposal_json=current_proposal_json,
                 user_feedback_observations=user_feedback_observations,
@@ -649,7 +664,7 @@ class GeminiAdapter(IntelligencePort):
         The ``technical_estimate`` dict (pre-validated by Stage 2) is injected
         verbatim — no numeric recomputation occurs here.
         """
-        hourly_rate = int(os.getenv("HOURLY_RATE_PROJECT_FIXED", "18"))
+        hourly_rate = get_hourly_rate(project.get("contract_type", "project_fixed"))
         my_skills = [
             "Typescript", "React", "Angular", "VueJS", "ReactNative", "IONIC",
             "NestJS", "ExpressJS", "PHP", "Laravel", "Python", "FastAPI", "Django",

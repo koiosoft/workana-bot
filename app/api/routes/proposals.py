@@ -5,7 +5,11 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from app.database.projects_repository import ProjectsRepository
 from app.database.proposal_versions_repository import ProposalVersionsRepository
-from app.intelligence.factory import refine_proposal as refine_proposal_intel
+from app.intelligence.factory import (
+    refine_proposal as refine_proposal_intel,
+    create_intelligence_service,
+)
+from app.services.proposal_pipeline_service import generate_and_persist_proposal
 from loguru import logger
 
 router = APIRouter(tags=["proposals"])
@@ -95,24 +99,72 @@ async def refine_proposal(
             },
         )
 
-    # -- Handle contract type change ----------------------------------------
+    # -- Determine effective contract type ----------------------------------
     requested_contract_type = body.contract_type
     existing_contract_type = project.get("contract_type", "project_fixed")
+    effective_contract_type = (
+        requested_contract_type
+        if requested_contract_type is not None
+        else existing_contract_type
+    )
     contract_type_changed = (
         requested_contract_type is not None
         and requested_contract_type != existing_contract_type
     )
 
+    # -- project_fixed: correr el PIPELINE COMPLETO -------------------------
+    #    Reestimar como proyecto usa el MISMO workflow que el bot
+    #    (/procesar): Etapa 1 (analisis) -> 2 (estimacion) -> 3 (comercial).
+    #    El feedback del usuario viaja como `extra_info` y reorienta las tres
+    #    etapas. Antes se usaba ``refine_proposal`` con el template inicial,
+    #    que NO recibe ``technical_estimate_json`` y devolvia milestones=[]
+    #    (0 tareas) y aplicaba $25 en vez de HOURLY_RATE_PROJECT_FIXED.
+    if effective_contract_type == "project_fixed":
+        try:
+            # Persistir el cambio de tipo de contrato ANTES de generar, para
+            # que la propuesta y el documento queden coherentes (el Dashboard
+            # decide como renderizar segun `contract_type`).
+            if existing_contract_type != "project_fixed":
+                await projects_repo.collection.update_one(
+                    {"_id": ObjectId(projectId)},
+                    {"$set": {"contract_type": "project_fixed"}},
+                )
+                project["contract_type"] = "project_fixed"
+            adapters = await create_intelligence_service()
+            await generate_and_persist_proposal(
+                project,
+                adapters,
+                extra_info=body.user_feedback_observations,
+                source_of_changes="IA",
+            )
+        except Exception as e:
+            logger.error(f"Pipeline refinement failed for project {projectId}: {e}")
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "error": "AI Service Error",
+                    "message": "The pipeline failed to regenerate the proposal.",
+                    "details": str(e),
+                },
+            )
+        # El pipeline ya persistio la version y marco el proyecto.
+        project = await projects_repo.populate_proposal_for_project(project)
+        return project
+
+    # -- staff_augmentation: se mantiene el refine existente ----------------
+    #    Simetria con project_fixed: si el contrato cambio a staff, se refleja
+    #    en el documento para que el Dashboard renderice la propuesta correcta.
     if contract_type_changed:
-        proposals_repo = ProposalVersionsRepository()
-        deleted_count = await proposals_repo.delete_versions_for_project(projectId)
+        await projects_repo.collection.update_one(
+            {"_id": ObjectId(projectId)},
+            {"$set": {"contract_type": "staff_augmentation"}},
+        )
+        project["contract_type"] = "staff_augmentation"
         logger.info(
             f"Contract type changed from '{existing_contract_type}' to "
-            f"'{requested_contract_type}' for project {projectId}. "
-            f"Deleted {deleted_count} proposal versions."
+            f"'{requested_contract_type}' for project {projectId}."
         )
 
-    # -- Generate refined proposal via the intelligence layer ----------------
     try:
         refined = await refine_proposal_intel(
             project=project,
@@ -120,12 +172,6 @@ async def refine_proposal(
             model_id=body.llm_model_id,
             contract_type=requested_contract_type,
         )
-        logger.debug(
-            f"[DEBUG refine] refine_proposal_intel returned | "
-            f"keys={list(refined.keys()) if isinstance(refined, dict) else type(refined).__name__}"
-        )
-        # Guard: the adapter may return an error dict that would silently
-        # flow through to proposal_data storage.
         if isinstance(refined, dict) and "error" in refined:
             logger.error(
                 f"Intelligence service returned an error for project {projectId}: "
@@ -139,6 +185,8 @@ async def refine_proposal(
                     "details": refined["error"],
                 },
             )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Refinement failed for project {projectId}: {str(e)}")
         raise HTTPException(
@@ -149,7 +197,6 @@ async def refine_proposal(
                 "details": str(e),
             },
         )
-
     # -- Extract refinement_justification and inner proposal -----------------
     # The LLM returns a dict with top-level "refinement_justification" and
     # "proposal" keys.  They must be stored separately: justification as a
