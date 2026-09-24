@@ -2,7 +2,7 @@
 name: test-runner
 package: compiled
 description: Test-runner executing unit/integration/UI suites using compiled deterministic YAML workflows (test-runner), fixing environment issues, and reporting via runner schema.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 thinking: off
 tools: mcp, cbm_search_graph, cbm_search_code, cbm_get_code_snippet, find_replace, find_symbol, replace_in_symbol, file_outline, find_references, read, bash, edit, write, contact_supervisor
 defaultReads:

@@ -2,7 +2,7 @@
 name: test-writer
 package: base
 description: Writes and fixes tests (unit, integration, or UI) following SDD protocols.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 thinking: off
 tools: mcp, cbm_search_graph, cbm_search_code, cbm_trace_path, cbm_get_code_snippet, find_replace, find_symbol, replace_in_symbol, file_outline, find_references, move_symbol, read, bash, edit, write
 defaultReads:

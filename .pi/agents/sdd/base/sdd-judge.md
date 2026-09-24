@@ -2,7 +2,7 @@
 name: sdd-judge
 package: base
 description: Deep-reasoning technical arbiter that resolves doubts, ambiguities, or implementation blockages raised by workers during MODE_AUTO execution.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 thinking: high
 tools: mcp, cbm_search_graph, cbm_search_code, cbm_get_code_snippet, find_replace, find_symbol, replace_in_symbol, file_outline, find_references, read
 defaultReads:

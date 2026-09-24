@@ -2,7 +2,7 @@
 name: test-runner
 package: base
 description: Test-runner sub-agent responsible for executing unit, integration, or UI test suites, and automatically fixing environment issues using SPEC.md instructions.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 thinking: off
 tools: mcp, cbm_search_graph, cbm_search_code, cbm_get_code_snippet, find_replace, find_symbol, replace_in_symbol, file_outline, find_references, read, bash, edit, write
 defaultReads:

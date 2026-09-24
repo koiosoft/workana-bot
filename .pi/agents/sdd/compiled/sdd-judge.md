@@ -2,7 +2,7 @@
 name: sdd-judge
 package: compiled
 description: Deep-reasoning technical arbiter resolving worker doubts/blocks via compiled dev-judge workflow; emits JUDGE_ARBITRATION_RESULT for the orchestrator to relay.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 thinking: high
 tools: mcp, cbm_search_graph, cbm_search_code, cbm_get_code_snippet, find_symbol, file_outline, find_references, read, find, bash, contact_supervisor
 acceptanceRole: read-only

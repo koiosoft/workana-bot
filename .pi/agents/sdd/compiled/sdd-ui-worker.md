@@ -2,7 +2,7 @@
 name: sdd-ui-worker
 package: compiled
 description: Executes SDD UI tasks using compiled deterministic YAML workflows (dev-ui-worker) and atomic use cases, keeping the global AST toolkit note.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 thinking: off
 tools: mcp, cbm_search_graph, cbm_search_code, cbm_get_code_snippet, find_replace, find_symbol, replace_in_symbol, file_outline, find_references, read, edit, write, bash, contact_supervisor
 defaultReads:

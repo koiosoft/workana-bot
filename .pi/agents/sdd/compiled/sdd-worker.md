@@ -2,7 +2,7 @@
 name: sdd-worker
 package: compiled
 description: Executes specific SDD protocol tasks using compiled deterministic YAML workflows and atomic use cases, strictly applying codebase-memory and minimal tool rules.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 thinking: off
 tools: mcp, cbm_search_graph, cbm_search_code, cbm_trace_path, cbm_get_code_snippet, find_replace, find_symbol, replace_in_symbol, file_outline, find_references, move_symbol, read, edit, write, bash, contact_supervisor
 defaultReads:

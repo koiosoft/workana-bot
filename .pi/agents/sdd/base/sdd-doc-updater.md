@@ -2,7 +2,7 @@
 name: sdd-doc-updater
 package: base
 description: Updates project documentation files (.sdd/core/SPEC.md, .sdd/core/CONVENTIONS.md, and other specified .md files) based on task specifications, ensuring consistency and accuracy.
-model: deepseek/deepseek-v4-flash
+model: deepseek/deepseek-flash
 thinking: off
 tools: mcp, cbm_search_graph, cbm_search_code, cbm_get_code_snippet, find_replace, find_symbol, replace_in_symbol, file_outline, find_references, move_symbol, read, edit, write
 defaultReads:

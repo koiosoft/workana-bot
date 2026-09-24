@@ -17,7 +17,7 @@ Three KINDS of artifact exist; each has its own shape (below). References betwee
 | Kind | Kind marker | Expresses |
 | --- | --- | --- |
 | Workflow | A role run | A role's run: phases, ordered steps, branches. |
-| Orchestrator-mod | `kind: orchestrator_module` | A reusable phase an orchestrator `apply`s; dispatches `-compiled` sub-agents + CLI. |
+| Orchestrator-mod | `kind: orchestrator_module` | A reusable phase an orchestrator `apply`s; dispatches sub-agents + CLI. |
 | Use-case dict | `use_cases:` map | Reusable atomic operations (tool commands) + shared contracts. |
 | Port | `use_cases:` map of invocations | Maps a role/workflow onto an external runner (harness). Provider-specific & replaceable. |
 
@@ -77,10 +77,10 @@ invalid). Steps bodies are data only — no free sentences, no inline commands.
 
 #### Orchestrator third kind — `launch` (dispatch a sub-agent)
 An ORCHESTRATOR workflow (e.g. dev-orchestrator.yaml) coordinates a cycle by dispatching the
-`-compiled` sub-agents described in the protocol. It may use a third step kind:
+sub-agents described in the protocol. It may use a third step kind:
 
 ```yaml
-- launch: <sub_agent_name>      # name = the <role>-compiled agent (must be defined)
+- launch: <sub_agent_name>      # = models.yaml[<role>].name (resolved by the orchestrator)
   task: <task-arg-string-or-template>
   async: true
   # optional: model/thinking resolved from the model registry; wait_result is the consumer
@@ -88,7 +88,7 @@ An ORCHESTRATOR workflow (e.g. dev-orchestrator.yaml) coordinates a cycle by dis
 
 An orchestrator still uses `apply` for its own lightweight tools (CLI workflows like
 `agent-instructor workflow ...`) and NEVER touches source docs directly. Dispatch targets are
-resolved by name against the set of `-compiled` agents (single definition, §6).
+resolved from the **model registry** (`models.yaml[<role>].name`, single definition, §6).
 
 #### Orchestrator module control vocabulary
 Within an orchestrator (or an ``orchestrator_module``), the following declarative controls are
@@ -106,7 +106,7 @@ state: { TEST_ITERATION_COUNT: 1 }
 # iterate over a known list (e.g. failing_test_files)
 - for_each: <list_var>
   do:
-    - launch: <agent>-compiled
+    - launch: ${resolved_agent_name}
       task: ...
 
 # optional phase / mark (only run when a feature flag is set)

@@ -22,7 +22,6 @@ permission:
     "cat *": allow
     "head *": allow
     "tail *": allow
-    "mv .sdd/instructions/*": allow
 ---
 
 PERMISSION-ONLY profile. No runtime body.
