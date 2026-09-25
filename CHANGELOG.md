@@ -1,6 +1,8 @@
 # Changelog
 
-## [0.1.2] - 2026-09-25
+## [0.2.0] - 2026-09-25
+### Changed
+- **Release v0.2.0**: Separated Docker Compose stacks for development and production environments## [0.1.2] - 2026-09-25
 ### Changed
 - **Release v0.1.2**: Added server deployment guide for stable production setup## [0.1.1] - 2026-09-25
 ### Changed
