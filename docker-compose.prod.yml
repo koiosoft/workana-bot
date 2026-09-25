@@ -84,4 +84,7 @@ services:
 
 networks:
   workana_network:
+    # Nombre FIJO y explícito (no depende del nombre de la carpeta del proyecto).
+    # El frontend (Workana-Dashboard) se une a esta misma red como 'external'.
+    name: workana_net
     driver: bridge
