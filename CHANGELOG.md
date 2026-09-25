@@ -1,6 +1,8 @@
 # Changelog
 
-## [0.1.1] - 2026-09-25
+## [0.1.2] - 2026-09-25
+### Changed
+- **Release v0.1.2**: Added server deployment guide for stable production setup## [0.1.1] - 2026-09-25
 ### Changed
 - **Release v0.1.1**: Workspace cleanup: removed obsolete backup and remediation reports.## [0.1.0] - 2026-09-24
 ### Changed
