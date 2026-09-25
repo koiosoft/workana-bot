@@ -73,12 +73,17 @@ healthcheck → **rollback automático** si algo no arranca.
 
 ## Diferencias dev vs prod (no confundir)
 
-| | Dev (`docker-compose.yml`) | Prod (`docker-compose.prod.yml`) |
+| | Dev (`docker-compose.dev.yml`) | Prod (`docker-compose.prod.yml`) |
 |---|---|---|
 | Código | bind-mount `./app` (working tree) | **imagen inmutable** (build desde `stable`) |
-| Env | `.env` + `.env.stage` | `.env` (prod) |
+| Env | `.env` (valores STAGE, en tu maquina) | `.env` (valores PROD, en el servidor) |
 | Rama | `main` (trabajo) | `stable` (siempre) |
 | Actualizar | editar + reiniciar contenedor | `deploy_prod.sh` |
+
+> **No hay `docker-compose.yml` como default a proposito:** `docker compose up -d`
+> sin `-f` FALLA (fail-safe). El entorno se elige con `-f docker-compose.dev.yml`
+> o `-f docker-compose.prod.yml`. El archivo `.env` es el MISMO nombre en ambas
+> maquinas; cambia su contenido (STAGE en dev, PROD en el servidor).
 
 ## Checklist de primer despliegue (una sola vez)
 

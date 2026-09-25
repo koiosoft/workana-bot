@@ -151,7 +151,7 @@ HOURLY_RATE_STAFF_AUGMENTATION=15  # outsourcing (normalmente menor)
 POST_DISCOVERY_HOURLY_RATE=18
 ```
 
-> ⚠️ Cambiar el `.env` requiere **recrear** el contenedor (`docker compose up -d app`),
+> ⚠️ Cambiar el `.env` requiere **recrear** el contenedor (`docker compose -f docker-compose.dev.yml up -d bot`),
 > no basta `restart` (el `env_file` se lee al crear el contenedor).
 >
 > **Pendiente:** migrar la tarifa a una colección `settings` en BD (editable en runtime).
@@ -203,11 +203,11 @@ identificable y de una sola línea:
 - **Reinicio (IMPORTANTE):** el código va por **volumen**, y `docker compose up -d`
   **NO recarga** si la config del compose no cambió (reporta `Running`, no toca el
   proceso). Para recargar de verdad:
-  - **Solo código / plantillas `.j2`** → **`docker compose restart app`** (reinicia el
+  - **Solo código / plantillas `.j2`** → **`docker compose -f docker-compose.dev.yml restart bot`** (reinicia el
     proceso y recarga el módulo).
-  - **Cualquier cambio (código o `.env`)** → **`docker compose down app && docker
+  - **Cualquier cambio (código o `.env`)** → **`docker compose -f docker-compose.dev.yml down bot && docker
     compose up -d app`** (elimina y recrea el contenedor). Esta es la forma segura.
-  - ⚠️ **Nunca** uses `docker compose up -d app` **solo** esperando recargar: no lo hace
+  - ⚠️ **Nunca** uses `docker compose -f docker-compose.dev.yml up -d bot` **solo** esperando recargar: no lo hace
     si la config no cambió.
 
 ## 🧪 Cobertura de tests

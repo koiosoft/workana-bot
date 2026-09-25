@@ -23,7 +23,7 @@
 # =============================================================================
 
 services:
-  app:
+  bot:
     build:
       context: ./app
       dockerfile: Dockerfile

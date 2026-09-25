@@ -41,3 +41,4 @@ plans
 .sdd/logs/*
 .sdd/logs/agents/
 .codebase-memory/
+.env*

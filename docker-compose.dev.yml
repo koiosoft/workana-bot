@@ -1,5 +1,26 @@
+# =============================================================================
+# docker-compose.dev.yml  —  ENTORNO DE DESARROLLO (tu Mac)
+# =============================================================================
+#
+# Uso en desarrollo:
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# IMPORTANTE: NO se usa `docker-compose.yml` como nombre por defecto (a
+# proposito). Asi, un `docker compose up -d` sin `-f` FALLA en vez de levantar
+# el entorno equivocado. El entorno lo eliges TU con `-f`:
+#
+#   docker-compose.dev.yml   -> desarrollo  (esta maquina; .env con values STAGE)
+#   docker-compose.prod.yml  -> produccion  (servidor;    .env con values PROD)
+#
+# Este compose usa el archivo `.env` (vive SOLO en la maquina, no en git).
+# En tu Mac, `.env` debe contener los valores de STAGE (token @stage_workana_bot,
+# BD workana_bot_stage). En el servidor, `.env` contiene los de PROD.
+# El MISMO nombre de archivo, distinto contenido por maquina.
+# =============================================================================
+
 services:
-  app:
+  bot:
+    # Bot de Telegram (@stage_workana_bot en tu Mac). Hace polling.
     build: ./app
     container_name: workana_bot
     restart: always
@@ -16,27 +37,8 @@ services:
     networks:
       - workana_network
 
-  # --- Entorno STAGE: mismo codigo, BD y bot distintos -------------------
-  # Corre el bot @stage_workana_bot contra workana_bot_stage (Atlas). Sirve
-  # para validar cambios SIN tocar produccion.
-  stage:
-    build: ./app
-    container_name: workana_bot_stage
-    restart: always
-    volumes:
-      - ./app:/usr/src/app
-      # Sesion de Workana SEPARADA de prod (no comparte browser_data).
-      - ./browser_data_stage:/usr/src/app/browser_data
-    env_file:
-      - .env.stage
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    tty: true
-    networks:
-      - workana_network
-
   api:
+    # API FastAPI. El frontend la consume como http://api:8000
     build: ./app
     container_name: workana_api
     restart: always
@@ -76,4 +78,7 @@ services:
 
 networks:
   workana_network:
+    # Nombre FIJO y explicito (no depende del nombre de la carpeta del proyecto).
+    # Mismo nombre que en prod, para consistencia.
+    name: workana_net
     driver: bridge
